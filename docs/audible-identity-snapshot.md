@@ -1,6 +1,6 @@
 # Audible identity snapshot format
 
-**Status:** snapshot DTO, strict serializer, and secret-store persistence wrapper are implemented. Live Audible sign-in, identity reconstruction, refresh integration, and Android runtime validation are not implemented.
+**Status:** snapshot DTO, strict serializer, secret-store persistence wrapper, and AudibleApi identity reconstruction mapper are implemented and CI-verified. Live Audible sign-in, refresh integration, lifecycle coordination, and Android runtime validation are not implemented.
 
 ## Scope
 
@@ -52,7 +52,7 @@ The encrypted plaintext is a single UTF-8 JSON envelope with an explicit schema 
 
 The ellipses are explanatory placeholders, not valid credential values. The serialized payload must only exist in memory until ISecretStore.SetAsync succeeds. `AudibleIdentitySnapshotStore` now uses the dedicated `audible_identity_v1` key and stores the whole JSON payload in one ISecretStore value. It returns no identity for absent, invalid, unsupported, or cryptographically unreadable payloads; ordinary storage I/O failures propagate. Use a dedicated key such as audible_identity_v1; the secret store's AES-GCM authentication protects ciphertext integrity. Reject unknown schema versions, missing required fields, malformed token/key material, invalid timestamps, and oversized payloads. Do not silently downgrade or fall back to plaintext.
 
-The envelope is intentionally app-owned rather than serializing the upstream Identity object directly. This avoids relying on upstream JSON converters or their persistence/protection fallback behavior. A restore mapper must reconstruct validated AudibleApi value objects and call the supported IIdentity.Update(...) method only after every field has been validated.
+The envelope is intentionally app-owned rather than serializing the upstream Identity object directly. This avoids relying on upstream JSON converters or their persistence/protection fallback behavior. A restore mapper reconstructs validated AudibleApi value objects and calls the supported `Identity.Update(...)` method only after the envelope and every strongly typed credential have been validated. This only proves that the in-memory object was populated; it does not prove that credentials are currently accepted by Audible.
 
 ## Persistence and lifecycle rules
 
@@ -73,7 +73,9 @@ The envelope is intentionally app-owned rather than serializing the upstream Ide
 - [ ] Add mapping tests for every field, duplicate cookies, exact access-token expiry, missing required values, and invalid key/token material.
 - [x] Add secret-store wrapper tests for serialized round-trip, invalid/unsupported payload, cryptographic failure, storage failure, and clear. Tests use a fake ISecretStore; Android Keystore encryption is not exercised by these unit tests. Atomic replacement guarantees are not established by the ISecretStore interface and must not be assumed.
 - [ ] Add lifecycle tests for identity updates, failed persistence, concurrent refresh/update, interrupted writes, and disconnect racing with refresh.
-- [ ] Verify the actual AudibleApi 14.1.2 public constructors and update/event semantics before writing the adapter.
+- [x] Verify the actual AudibleApi 14.1.2 public constructors and update/event semantics before writing the adapter.
+- [x] Add a restore mapper that validates the snapshot, resolves the locale, reconstructs AudibleApi value objects, and calls `Identity.Update(...)` without network access.
+- [ ] Add a lifecycle coordinator that owns refresh and explicit awaited persistence; do not use `IdentityMaintainer.CreateAsync` because it may refresh or deregister/register during construction.
 - [ ] Build ARMv7 and ARM64; then perform physical Android 10 tests before claiming runtime support.
 
 ## Current implementation boundary\n\n`ISecretStore` documents encryption at rest. The Android implementation uses Android Keystore AES-256-GCM and commits ciphertext to app-private SharedPreferences. The abstraction exposes no transaction or compare-and-swap contract; this wrapper makes one SetAsync call for replacement but does not claim cross-implementation atomicity. A future lifecycle coordinator must await SaveAsync explicitly; this class does not subscribe to synchronous identity events.\n\n## Explicit non-goals
