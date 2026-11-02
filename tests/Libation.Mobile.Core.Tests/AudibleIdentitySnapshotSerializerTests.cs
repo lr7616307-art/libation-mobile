@@ -1,0 +1,104 @@
+using Libation.Mobile.Audible;
+using Xunit;
+
+namespace Libation.Mobile.Core.Tests;
+
+public sealed class AudibleIdentitySnapshotSerializerTests
+{
+    [Fact]
+    public void SerializeAndDeserialize_RoundTripsCompleteSnapshot()
+    {
+        var expected = CreateSnapshot();
+
+        var json = AudibleIdentitySnapshotSerializer.Serialize(expected);
+        var actual = AudibleIdentitySnapshotSerializer.Deserialize(json);
+
+        Assert.Equal(expected, actual);
+        Assert.Equal(expected.Cookies, actual.Cookies);
+        Assert.Equal(expected.AccessTokenExpiresAtUtc, actual.AccessTokenExpiresAtUtc);
+    }
+
+    [Fact]
+    public void Deserialize_PreservesDuplicateCookieNamesAndOrder()
+    {
+        var snapshot = CreateSnapshot() with
+        {
+            Cookies =
+            [
+                new AudibleCookieSnapshot { Name = "session", Value = "first" },
+                new AudibleCookieSnapshot { Name = "other", Value = "middle" },
+                new AudibleCookieSnapshot { Name = "session", Value = "second" }
+            ]
+        };
+
+        var actual = AudibleIdentitySnapshotSerializer.Deserialize(
+            AudibleIdentitySnapshotSerializer.Serialize(snapshot));
+
+        Assert.Equal(new[] { "first", "middle", "second" }, actual.Cookies.Select(x => x.Value));
+        Assert.Equal(new[] { "session", "other", "session" }, actual.Cookies.Select(x => x.Name));
+    }
+
+    [Fact]
+    public void Deserialize_RejectsUnsupportedSchemaVersion()
+    {
+        var json = AudibleIdentitySnapshotSerializer.Serialize(CreateSnapshot())
+            .Replace("\"schemaVersion\":1", "\"schemaVersion\":99");
+
+        Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotSerializer.Deserialize(json));
+    }
+
+    [Fact]
+    public void Deserialize_RejectsUnknownFields()
+    {
+        var json = AudibleIdentitySnapshotSerializer.Serialize(CreateSnapshot())
+            .Replace("\"provider\":", "\"unexpected\":true,\"provider\":");
+
+        Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotSerializer.Deserialize(json));
+    }
+
+    [Fact]
+    public void Serialize_RejectsMalformedTokenPrefix()
+    {
+        var snapshot = CreateSnapshot() with { RefreshToken = "not-a-refresh-token" };
+
+        Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotSerializer.Serialize(snapshot));
+    }
+
+    [Fact]
+    public void Serialize_RejectsMissingPrivateKey()
+    {
+        var snapshot = CreateSnapshot() with { PrivateKey = " " };
+
+        Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotSerializer.Serialize(snapshot));
+    }
+
+    [Fact]
+    public void Deserialize_RejectsOversizedPayload()
+    {
+        var json = new string('x', AudibleIdentitySnapshot.MaximumSerializedBytes + 1);
+
+        Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotSerializer.Deserialize(json));
+    }
+
+    private static AudibleIdentitySnapshot CreateSnapshot() => new()
+    {
+        SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
+        Provider = AudibleIdentitySnapshot.ProviderName,
+        AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+        LocaleName = "us",
+        AccessToken = "Atna|test-access",
+        AccessTokenExpiresAtUtc = new DateTimeOffset(2027, 4, 5, 6, 7, 8, TimeSpan.Zero),
+        RefreshToken = "Atnr|test-refresh",
+        PrivateKey = "test-private-key-material",
+        AdpToken = "{enc:YWJj,key:ZGVm,iv:Z2hp,name:QURQVG9rZW5FbmNyeXB0aW9uS2V5,serial:Mg==}",
+        Cookies =
+        [
+            new AudibleCookieSnapshot { Name = "session", Value = "cookie-value" }
+        ],
+        DeviceSerialNumber = "device-serial",
+        DeviceType = "device-type",
+        AmazonAccountId = "account-id",
+        DeviceName = "device-name",
+        StoreAuthenticationCookie = "store-cookie"
+    };
+}
