@@ -50,7 +50,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsSyncing { get => _isSyncing; private set { if (_isSyncing == value) return; _isSyncing = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanSync)); } }
     public bool CanSync => _syncService is not null && !IsSyncing;
     public string SyncStatus { get => _syncStatus; private set { if (_syncStatus == value) return; _syncStatus = value; OnPropertyChanged(); } }
-    public DateTimeOffset? LastSuccessfulSync { get => _lastSuccessfulSync; private set { if (_lastSuccessfulSync == value) return; _lastSuccessfulSync = value; OnPropertyChanged(); } }
+    public DateTimeOffset? LastSuccessfulSync
+    {
+        get => _lastSuccessfulSync;
+        private set
+        {
+            if (_lastSuccessfulSync == value) return;
+            _lastSuccessfulSync = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(LastSuccessfulSyncLabel));
+        }
+    }
+    public string LastSuccessfulSyncLabel => LastSuccessfulSync is null
+        ? "No successful sync yet."
+        : $"Last successful sync: {LastSuccessfulSync.Value.ToLocalTime():g}";
 
     public async Task SyncLibraryAsync(CancellationToken cancellationToken = default)
     {
