@@ -1,16 +1,35 @@
 namespace Libation.Mobile.Core;
 
 /// <summary>
-/// Coordinates authentication with encrypted session persistence.
-/// It does not implement provider-specific login, network transport or token refresh policy.
+/// Coordinates external-browser sign-in with encrypted session persistence.
+/// No provider-specific network or authentication implementation is included.
 /// </summary>
 public sealed class AccountConnectionService(
     IAccountAuthenticator authenticator,
     AccountSessionStore sessions)
 {
-    public async Task<AccountConnectionState> ConnectAsync(CancellationToken cancellationToken = default)
+    public async Task<ExternalSignInChallenge> BeginSignInAsync(
+        AccountSignInRequest request, CancellationToken cancellationToken = default)
     {
-        var session = await authenticator.SignInAsync(cancellationToken);
+        ArgumentNullException.ThrowIfNull(request);
+        request.Validate();
+        var challenge = await authenticator.BeginSignInAsync(request, cancellationToken);
+        if (string.IsNullOrWhiteSpace(challenge.ChallengeId)
+            || !challenge.AuthorizationUri.IsAbsoluteUri
+            || challenge.AuthorizationUri.Scheme != Uri.UriSchemeHttps
+            || challenge.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+            throw new InvalidOperationException("The provider returned an invalid sign-in challenge.");
+
+        return challenge;
+    }
+
+    public async Task<AccountConnectionState> CompleteSignInAsync(
+        string challengeId, string responseUrl, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(challengeId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(responseUrl);
+
+        var session = await authenticator.CompleteSignInAsync(challengeId, responseUrl, cancellationToken);
         ValidateSession(session);
         await sessions.SaveAsync(session, cancellationToken);
         return ToState(session);
@@ -19,10 +38,9 @@ public sealed class AccountConnectionService(
     public async Task<AccountConnectionState> GetStateAsync(CancellationToken cancellationToken = default)
     {
         var session = await sessions.LoadAsync(cancellationToken);
-        if (session is null)
-            return new(AccountConnectionStatus.Disconnected, null, null);
-
-        return ToState(session);
+        return session is null
+            ? new(AccountConnectionStatus.Disconnected, null, null)
+            : ToState(session);
     }
 
     public async Task<AccountConnectionState> RefreshAsync(CancellationToken cancellationToken = default)
@@ -37,8 +55,8 @@ public sealed class AccountConnectionService(
         return ToState(refreshed);
     }
 
-    public async Task DisconnectAsync(CancellationToken cancellationToken = default)
-        => await sessions.ClearAsync(cancellationToken);
+    public Task DisconnectAsync(CancellationToken cancellationToken = default)
+        => sessions.ClearAsync(cancellationToken);
 
     private static AccountConnectionState ToState(AccountSession session)
     {
