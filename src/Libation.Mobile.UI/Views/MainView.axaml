@@ -48,6 +48,7 @@
         <StackPanel Spacing="8">
           <TextBlock Text="Library sync" FontSize="18" FontWeight="SemiBold" />
           <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap" FontSize="13" />
+          <TextBlock Text="{Binding LastSuccessfulSyncLabel}" TextWrapping="Wrap" FontSize="12" Opacity="0.7" />
           <Button Content="Sync library" IsEnabled="{Binding CanSync}" Click="SyncLibraryClicked" />
         </StackPanel>
       </Border>
