@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Libation.Mobile.Core/Libation.Mobile.Core.csproj" />
+    <ProjectReference Include="../../src/Libation.Mobile.Audible/Libation.Mobile.Audible.csproj" />
     <ProjectReference Include="../../src/Libation.Mobile.UI/Libation.Mobile.UI.csproj" />
   </ItemGroup>
 </Project>
