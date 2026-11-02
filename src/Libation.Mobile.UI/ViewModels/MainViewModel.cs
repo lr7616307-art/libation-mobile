@@ -16,6 +16,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _newAuthor = string.Empty;
     private string _newNarrator = string.Empty;
     private string _newLength = string.Empty;
+    private string? _editingBookId;
     private bool _isLoading;
     private string _errorMessage = string.Empty;
 
@@ -39,38 +40,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string SearchText
     {
         get => _searchText;
-        set
-        {
-            if (_searchText == value) return;
-            _searchText = value;
-            OnPropertyChanged();
-            ApplyFilter(_allBooks);
-        }
+        set { if (_searchText == value) return; _searchText = value; OnPropertyChanged(); ApplyFilter(_allBooks); }
     }
 
     public string NewTitle { get => _newTitle; set => SetField(ref _newTitle, value); }
     public string NewAuthor { get => _newAuthor; set => SetField(ref _newAuthor, value); }
     public string NewNarrator { get => _newNarrator; set => SetField(ref _newNarrator, value); }
     public string NewLength { get => _newLength; set => SetField(ref _newLength, value); }
+    public bool IsEditing => _editingBookId is not null;
+    public string SaveButtonLabel => IsEditing ? "Save changes" : "Save to local catalogue";
 
     private IReadOnlyList<Audiobook> _allBooks = [];
-
-    public bool IsLoading
-    {
-        get => _isLoading;
-        private set { if (_isLoading == value) return; _isLoading = value; OnPropertyChanged(); }
-    }
-
+    public bool IsLoading { get => _isLoading; private set { if (_isLoading == value) return; _isLoading = value; OnPropertyChanged(); } }
     public string ErrorMessage
     {
         get => _errorMessage;
-        private set
-        {
-            if (_errorMessage == value) return;
-            _errorMessage = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasError));
-        }
+        private set { if (_errorMessage == value) return; _errorMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); }
     }
 
     public bool HasBooks => Books.Count > 0;
@@ -93,27 +78,39 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 await _repository.ReplaceAllAsync(InitialSamples, cancellationToken);
                 stored = await _repository.GetBooksAsync(cancellationToken);
             }
-
             _allBooks = stored;
             ApplyFilter(_allBooks);
             await ReloadQueueAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch (Exception)
-        {
-            ErrorMessage = "Could not load local data. Check app storage and try again.";
-            _allBooks = [];
-            ApplyFilter(_allBooks);
-        }
-        finally
-        {
-            IsLoading = false;
-            _loadGate.Release();
-        }
+        catch (Exception) { ErrorMessage = "Could not load local data. Check app storage and try again."; _allBooks = []; ApplyFilter(_allBooks); }
+        finally { IsLoading = false; _loadGate.Release(); }
     }
 
-    public Task ReloadAsync(CancellationToken cancellationToken = default)
-        => InitializeAsync(cancellationToken);
+    public Task ReloadAsync(CancellationToken cancellationToken = default) => InitializeAsync(cancellationToken);
+
+    public void BeginEdit(string audiobookId)
+    {
+        var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+        if (book is null || !book.CanDelete) return;
+        _editingBookId = book.Id;
+        NewTitle = book.Title;
+        NewAuthor = book.Author;
+        NewNarrator = book.Narrator;
+        NewLength = book.Length;
+        OnPropertyChanged(nameof(IsEditing));
+        OnPropertyChanged(nameof(SaveButtonLabel));
+        ErrorMessage = string.Empty;
+    }
+
+    public void CancelEdit()
+    {
+        _editingBookId = null;
+        ClearEditor();
+        OnPropertyChanged(nameof(IsEditing));
+        OnPropertyChanged(nameof(SaveButtonLabel));
+        ErrorMessage = string.Empty;
+    }
 
     public async Task AddBookAsync(CancellationToken cancellationToken = default)
     {
@@ -127,14 +124,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         try
         {
-            var book = new Audiobook(Guid.NewGuid().ToString("N"), title, author,
-                NewNarrator.Trim(), NewLength.Trim(), "Manually added");
+            Audiobook book;
+            if (_editingBookId is not null)
+            {
+                var existing = _allBooks.FirstOrDefault(x => x.Id == _editingBookId);
+                if (existing is null) { CancelEdit(); ErrorMessage = "This audiobook is no longer in the catalogue."; return; }
+                book = existing with { Title = title, Author = author, Narrator = NewNarrator.Trim(), Length = NewLength.Trim() };
+            }
+            else
+            {
+                book = new Audiobook(Guid.NewGuid().ToString("N"), title, author, NewNarrator.Trim(), NewLength.Trim(), "Manually added");
+            }
+
             await _repository.UpsertAsync(book, cancellationToken);
             _allBooks = await _repository.GetBooksAsync(cancellationToken);
-            NewTitle = string.Empty;
-            NewAuthor = string.Empty;
-            NewNarrator = string.Empty;
-            NewLength = string.Empty;
+            _editingBookId = null;
+            ClearEditor();
+            OnPropertyChanged(nameof(IsEditing));
+            OnPropertyChanged(nameof(SaveButtonLabel));
             ApplyFilter(_allBooks);
             ErrorMessage = string.Empty;
         }
@@ -147,12 +154,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
-            if (book is null || string.Equals(book.Status, "Demo", StringComparison.Ordinal))
-            {
-                ErrorMessage = "Demo entries are protected; only manually added entries can be deleted.";
-                return;
-            }
-
+            if (book is null || !book.CanDelete) { ErrorMessage = "Demo entries are protected; only manually added entries can be deleted."; return; }
+            if (_editingBookId == audiobookId) CancelEdit();
             await _repository.RemoveAsync(audiobookId, cancellationToken);
             _allBooks = await _repository.GetBooksAsync(cancellationToken);
             ApplyFilter(_allBooks);
@@ -164,30 +167,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken);
-            await ReloadQueueAsync(cancellationToken);
-            ErrorMessage = string.Empty;
-        }
+        try { await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken); await ReloadQueueAsync(cancellationToken); ErrorMessage = string.Empty; }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { ErrorMessage = "Could not update the local download queue."; }
     }
 
-    public Task RetryFailedAsync(string audiobookId, CancellationToken cancellationToken = default)
-        => EnqueueAsync(audiobookId, cancellationToken);
+    public Task RetryFailedAsync(string audiobookId, CancellationToken cancellationToken = default) => EnqueueAsync(audiobookId, cancellationToken);
 
     public async Task RemoveFromQueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            await _downloadQueue.RemoveAsync(audiobookId, cancellationToken);
-            await ReloadQueueAsync(cancellationToken);
-            ErrorMessage = string.Empty;
-        }
+        try { await _downloadQueue.RemoveAsync(audiobookId, cancellationToken); await ReloadQueueAsync(cancellationToken); ErrorMessage = string.Empty; }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { ErrorMessage = "Could not remove the item from the local download queue."; }
     }
+
+    private void ClearEditor() { NewTitle = string.Empty; NewAuthor = string.Empty; NewNarrator = string.Empty; NewLength = string.Empty; }
 
     private async Task ReloadQueueAsync(CancellationToken cancellationToken)
     {
