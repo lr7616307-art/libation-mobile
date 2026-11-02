@@ -1,6 +1,6 @@
 # Audible identity snapshot format
 
-**Status:** design specification only. This document does not claim that Audible sign-in or identity restoration is implemented.
+**Status:** snapshot DTO, strict serializer, and secret-store persistence wrapper are implemented. Live Audible sign-in, identity reconstruction, refresh integration, and Android runtime validation are not implemented.
 
 ## Scope
 
@@ -50,13 +50,13 @@ The encrypted plaintext is a single UTF-8 JSON envelope with an explicit schema 
 }
 ~~~
 
-The ellipses are explanatory placeholders, not valid credential values. The serialized payload must only exist in memory until ISecretStore.SetAsync succeeds. Use a dedicated key such as audible_identity_v1; the secret store's AES-GCM authentication protects ciphertext integrity. Reject unknown schema versions, missing required fields, malformed token/key material, invalid timestamps, and oversized payloads. Do not silently downgrade or fall back to plaintext.
+The ellipses are explanatory placeholders, not valid credential values. The serialized payload must only exist in memory until ISecretStore.SetAsync succeeds. `AudibleIdentitySnapshotStore` now uses the dedicated `audible_identity_v1` key and stores the whole JSON payload in one ISecretStore value. It returns no identity for absent, invalid, unsupported, or cryptographically unreadable payloads; ordinary storage I/O failures propagate. Use a dedicated key such as audible_identity_v1; the secret store's AES-GCM authentication protects ciphertext integrity. Reject unknown schema versions, missing required fields, malformed token/key material, invalid timestamps, and oversized payloads. Do not silently downgrade or fall back to plaintext.
 
 The envelope is intentionally app-owned rather than serializing the upstream Identity object directly. This avoids relying on upstream JSON converters or their persistence/protection fallback behavior. A restore mapper must reconstruct validated AudibleApi value objects and call the supported IIdentity.Update(...) method only after every field has been validated.
 
 ## Persistence and lifecycle rules
 
-1. Save a complete identity snapshot as one encrypted value. Never save access/refresh tokens independently.
+1. Implemented: `AudibleIdentitySnapshotStore` saves a complete identity snapshot as one ISecretStore value. Never save access/refresh tokens independently.
 2. Subscribe to Identity.Updated and serialize persistence through one async gate. Identity updates must not race and overwrite a newer snapshot with an older one.
 3. An update is not considered durable until encrypted storage has committed. Persistence failure must fail the login/refresh operation and surface a safe, non-secret error.
 4. Do not allow a refresh to return success to the app until its resulting identity has been durably saved.
@@ -65,17 +65,17 @@ The envelope is intentionally app-owned rather than serializing the upstream Ide
 7. On restore, treat missing/corrupt/unreadable ciphertext or an unsupported schema as disconnected and require re-authentication. Never log the exception payload, token, cookie, key, or serialized envelope.
 8. Exclude this record from Android backup and all user-visible library backup/export operations.
 9. Keep the browser response URL and sign-in cookies in process memory only; never place them in the snapshot or an Android intent/deep link.
-10. The existing Android secret store currently imposes a 16 KiB plaintext limit. Measure realistic complete snapshots before implementation and either retain a justified bound or deliberately raise it with tests; do not truncate.
+10. The snapshot serializer and Android secret store both enforce a 16 KiB plaintext limit. Real-world complete snapshots have not yet been measured; do not truncate, and revisit this limit before live account testing.
 
 ## Implementation sequence
 
-- [ ] Add an app-owned immutable snapshot DTO and strict versioned serializer/deserializer.
+- [x] Add an app-owned immutable snapshot DTO and strict versioned serializer/deserializer.
 - [ ] Add mapping tests for every field, duplicate cookies, exact access-token expiry, missing required values, and invalid key/token material.
-- [ ] Add store tests for encrypted round-trip, unsupported version, corrupt ciphertext, storage failure, and atomic replacement.
+- [x] Add secret-store wrapper tests for serialized round-trip, invalid/unsupported payload, cryptographic failure, storage failure, and clear. Tests use a fake ISecretStore; Android Keystore encryption is not exercised by these unit tests. Atomic replacement guarantees are not established by the ISecretStore interface and must not be assumed.
 - [ ] Add lifecycle tests for identity updates, failed persistence, concurrent refresh/update, interrupted writes, and disconnect racing with refresh.
 - [ ] Verify the actual AudibleApi 14.1.2 public constructors and update/event semantics before writing the adapter.
 - [ ] Build ARMv7 and ARM64; then perform physical Android 10 tests before claiming runtime support.
 
-## Explicit non-goals
+## Current implementation boundary\n\n`ISecretStore` documents encryption at rest. The Android implementation uses Android Keystore AES-256-GCM and commits ciphertext to app-private SharedPreferences. The abstraction exposes no transaction or compare-and-swap contract; this wrapper makes one SetAsync call for replacement but does not claim cross-implementation atomicity. A future lifecycle coordinator must await SaveAsync explicitly; this class does not subscribe to synchronous identity events.\n\n## Explicit non-goals
 
 This format does not implement browser login, token refresh, device registration, library sync, audio downloading, or DRM handling. No live account credentials are required for format tests.
