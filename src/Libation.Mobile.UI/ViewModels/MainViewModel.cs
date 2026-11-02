@@ -12,6 +12,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly IDownloadQueue _downloadQueue;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private string _searchText = string.Empty;
+    private string _newTitle = string.Empty;
+    private string _newAuthor = string.Empty;
+    private string _newNarrator = string.Empty;
+    private string _newLength = string.Empty;
     private bool _isLoading;
     private string _errorMessage = string.Empty;
 
@@ -42,6 +46,30 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             ApplyFilter(_allBooks);
         }
+    }
+
+    public string NewTitle
+    {
+        get => _newTitle;
+        set => SetField(ref _newTitle, value);
+    }
+
+    public string NewAuthor
+    {
+        get => _newAuthor;
+        set => SetField(ref _newAuthor, value);
+    }
+
+    public string NewNarrator
+    {
+        get => _newNarrator;
+        set => SetField(ref _newNarrator, value);
+    }
+
+    public string NewLength
+    {
+        get => _newLength;
+        set => SetField(ref _newLength, value);
     }
 
     private IReadOnlyList<Audiobook> _allBooks = [];
@@ -110,6 +138,44 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public Task ReloadAsync(CancellationToken cancellationToken = default)
         => InitializeAsync(cancellationToken);
 
+    public async Task AddBookAsync(CancellationToken cancellationToken = default)
+    {
+        var title = NewTitle.Trim();
+        var author = NewAuthor.Trim();
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(author))
+        {
+            ErrorMessage = "Enter at least the audiobook title and author.";
+            return;
+        }
+
+        try
+        {
+            var book = new Audiobook(
+                Guid.NewGuid().ToString("N"),
+                title,
+                author,
+                NewNarrator.Trim(),
+                NewLength.Trim(),
+                "Manually added");
+            await _repository.UpsertAsync(book, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            NewTitle = string.Empty;
+            NewAuthor = string.Empty;
+            NewNarrator = string.Empty;
+            NewLength = string.Empty;
+            ApplyFilter(_allBooks);
+            ErrorMessage = string.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "Could not save this audiobook to the local catalogue.";
+        }
+    }
+
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         try
@@ -177,6 +243,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(Books));
         OnPropertyChanged(nameof(HasBooks));
         OnPropertyChanged(nameof(EmptyMessage));
+    }
+
+    private void SetField(ref string field, string value, [CallerMemberName] string? propertyName = null)
+    {
+        if (field == value) return;
+        field = value;
+        OnPropertyChanged(propertyName);
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
