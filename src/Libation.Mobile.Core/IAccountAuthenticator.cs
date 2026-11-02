@@ -1,12 +1,17 @@
 namespace Libation.Mobile.Core;
 
 /// <summary>
-/// Provider-specific authentication boundary. Implementations must use the provider's
-/// supported sign-in flow and must not log credentials, tokens, cookies or auth responses.
-/// No provider implementation is included yet.
+/// Provider-specific browser-based authentication boundary. The provider adapter must use
+/// the supported sign-in flow; it must not log passwords, response URLs, tokens or cookies.
 /// </summary>
 public interface IAccountAuthenticator
 {
-    Task<AccountSession> SignInAsync(CancellationToken cancellationToken = default);
-    Task<AccountSession> RefreshAsync(AccountSession currentSession, CancellationToken cancellationToken = default);
+    Task<ExternalSignInChallenge> BeginSignInAsync(
+        AccountSignInRequest request, CancellationToken cancellationToken = default);
+
+    Task<AccountSession> CompleteSignInAsync(
+        string challengeId, string responseUrl, CancellationToken cancellationToken = default);
+
+    Task<AccountSession> RefreshAsync(
+        AccountSession currentSession, CancellationToken cancellationToken = default);
 }
