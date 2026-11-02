@@ -18,6 +18,8 @@ public sealed class JsonDownloadQueueTests
         var item = Assert.Single(await new JsonDownloadQueue(path).GetItemsAsync());
         Assert.Equal("book-1", item.AudiobookId);
         Assert.Equal(DownloadStatus.Queued, item.Status);
+        Assert.False(item.CanRetry);
+        Assert.False(item.HasErrorMessage);
         Assert.Null(item.ErrorMessage);
         Assert.Equal(item.AddedAtUtc, item.UpdatedAtUtc);
     }
@@ -35,6 +37,7 @@ public sealed class JsonDownloadQueueTests
 
         var item = Assert.Single(await new JsonDownloadQueue(path).GetItemsAsync());
         Assert.Equal(DownloadStatus.Completed, item.Status);
+        Assert.False(item.CanRetry);
         Assert.Null(item.ErrorMessage);
         Assert.True(item.UpdatedAtUtc >= item.AddedAtUtc);
     }
@@ -47,11 +50,18 @@ public sealed class JsonDownloadQueueTests
         await queue.EnqueueAsync("book-1");
         await queue.UpdateStatusAsync("book-1", DownloadStatus.Failed, "Network unavailable");
 
+        var failedItem = Assert.Single(await queue.GetItemsAsync());
+        Assert.True(failedItem.CanRetry);
+        Assert.True(failedItem.HasErrorMessage);
+        Assert.Equal("Network unavailable", failedItem.ErrorMessage);
+
         await queue.EnqueueAsync("book-1");
 
-        var item = Assert.Single(await queue.GetItemsAsync());
-        Assert.Equal(DownloadStatus.Queued, item.Status);
-        Assert.Null(item.ErrorMessage);
+        var retriedItem = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Queued, retriedItem.Status);
+        Assert.False(retriedItem.CanRetry);
+        Assert.False(retriedItem.HasErrorMessage);
+        Assert.Null(retriedItem.ErrorMessage);
     }
 
     [Fact]
