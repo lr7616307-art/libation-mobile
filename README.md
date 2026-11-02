@@ -4,7 +4,7 @@ An independent, unofficial Android community client project exploring a mobile i
 
 ## Project status
 
-**Early prototype.** The current app is a sample-data UI scaffold. It does not yet sign in to Audible, sync a real library, download audiobooks, or integrate the upstream Libation engine. No APK is verified as installable yet.
+**Early prototype.** The current app is a sample-data UI scaffold. A JSON-backed local catalogue repository and core tests are in place, but the UI is not yet connected to it. The app does not yet sign in to Audible, sync a real library, download audiobooks, or integrate the upstream Libation engine. APKs compile in CI for ARMv7 and ARM64; installation and runtime compatibility are not yet verified on a physical device.
 
 ## Device targets
 
