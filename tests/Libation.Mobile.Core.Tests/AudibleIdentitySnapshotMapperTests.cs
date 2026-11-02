@@ -47,6 +47,45 @@ public sealed class AudibleIdentitySnapshotMapperTests
     }
 
     [Fact]
+    public void Restore_RejectsMalformedAdpTokenWithoutLeakingParserException()
+    {
+        using var rsa = RSA.Create(2048);
+        var snapshot = CreateSnapshot(rsa.ExportRSAPrivateKeyPem()) with
+        {
+            AdpToken = "not-an-adp-token"
+        };
+
+        var error = Assert.Throws<InvalidDataException>(
+            () => AudibleIdentitySnapshotMapper.Restore(snapshot));
+
+        Assert.IsType<Exception>(error.InnerException);
+    }
+
+    [Fact]
+    public void Restore_RejectsInvalidAccessToken()
+    {
+        using var rsa = RSA.Create(2048);
+        var snapshot = CreateSnapshot(rsa.ExportRSAPrivateKeyPem()) with
+        {
+            AccessToken = "invalid-access-token"
+        };
+
+        Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotMapper.Restore(snapshot));
+    }
+
+    [Fact]
+    public void Restore_RejectsInvalidRefreshToken()
+    {
+        using var rsa = RSA.Create(2048);
+        var snapshot = CreateSnapshot(rsa.ExportRSAPrivateKeyPem()) with
+        {
+            RefreshToken = "invalid-refresh-token"
+        };
+
+        Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotMapper.Restore(snapshot));
+    }
+
+    [Fact]
     public void Restore_RejectsUnknownLocale()
     {
         using var rsa = RSA.Create(2048);
