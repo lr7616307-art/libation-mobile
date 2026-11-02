@@ -10,3 +10,15 @@
 8. Validate legal notices and GPL-3.0 corresponding-source obligations before public binary releases.
 
 No upstream engine code is currently included in this repository.
+
+## Account lifecycle boundary (implemented)
+
+The core now contains `IAccountAuthenticator`, `AccountConnectionService` and a
+credential-free `AccountConnectionState`. The service persists sign-in results through
+`AccountSessionStore`, delegates refresh to a provider adapter, reports disconnected /
+connected / expired states, and clears stored sessions on explicit disconnect.
+
+The provider adapter is deliberately not implemented yet. Before connecting to Audible,
+the next audit must map the pinned upstream authentication flow, device identity handling,
+token lifecycle, marketplace selection, and current provider requirements. Do not invent
+endpoints or treat a generic username/password form as a supported authentication flow.
