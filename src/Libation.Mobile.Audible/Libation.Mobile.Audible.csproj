@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AudibleApi" Version="14.1.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Libation.Mobile.Core/Libation.Mobile.Core.csproj" />
+  </ItemGroup>
+</Project>
