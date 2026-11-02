@@ -59,9 +59,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
             SyncStatus = "Provider not connected. Audible library sync is not available yet.";
             return;
         }
-        if (!await _syncGate.WaitAsync(0, cancellationToken)) return;
+        var gateAcquired = false;
         try
         {
+            if (!await _syncGate.WaitAsync(0, cancellationToken)) return;
+            gateAcquired = true;
             IsSyncing = true;
             SyncStatus = "Syncing library metadata…";
             var count = await _syncService.SyncAsync(cancellationToken);
@@ -72,7 +74,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             SyncStatus = "Sync cancelled. Your local catalogue was not intentionally changed.";
-            throw;
+            return;
         }
         catch (Exception)
         {
@@ -80,8 +82,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         finally
         {
-            IsSyncing = false;
-            _syncGate.Release();
+            if (gateAcquired)
+            {
+                IsSyncing = false;
+                _syncGate.Release();
+            }
         }
     }
 
