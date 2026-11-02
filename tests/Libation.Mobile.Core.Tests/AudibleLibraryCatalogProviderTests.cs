@@ -58,6 +58,37 @@ public sealed class AudibleLibraryCatalogProviderTests
             () => provider.GetLibraryAsync(cancellation.Token));
     }
 
+    [Fact]
+    public async Task GetLibraryAsync_StopsBetweenPagesWhenCancelled()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var provider = new AudibleLibraryCatalogProvider(_ => PagesAndCancel(cancellation));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => provider.GetLibraryAsync(cancellation.Token));
+    }
+
+    [Fact]
+    public async Task GetLibraryAsync_SkipsNullItemsWithinPage()
+    {
+        var provider = new AudibleLibraryCatalogProvider(_ => Pages(
+            [null!, new Item { Asin = "A1", Title = "Valid", Authors = [new Person { Name = "Writer" }] }]));
+
+        var result = await provider.GetLibraryAsync();
+
+        var item = Assert.Single(result);
+        Assert.Equal("A1", item.ProviderId);
+        Assert.Equal("Writer", item.Author);
+    }
+
+    private static async IAsyncEnumerable<Item[]> PagesAndCancel(CancellationTokenSource cancellation)
+    {
+        yield return [new Item { Asin = "A1", Title = "First" }];
+        cancellation.Cancel();
+        await Task.Yield();
+        yield return [new Item { Asin = "A2", Title = "Second" }];
+    }
+
     private static async IAsyncEnumerable<Item[]> Pages(params Item[][] pages)
     {
         foreach (var page in pages)
