@@ -37,5 +37,11 @@ public partial class MainView : UserControl
             await _viewModel.EnqueueAsync(book.Id);
     }
 
+    private async void RemoveQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: DownloadQueueItem item })
+            await _viewModel.RemoveFromQueueAsync(item.AudiobookId);
+    }
+
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 }
