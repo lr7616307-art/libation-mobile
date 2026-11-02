@@ -16,12 +16,15 @@
       </Border>
       <Border CornerRadius="12" Padding="14" BorderBrush="#555555" BorderThickness="1">
         <StackPanel Spacing="8">
-          <TextBlock Text="Add an audiobook" FontSize="18" FontWeight="SemiBold" />
+          <TextBlock Text="Add or edit an audiobook" FontSize="18" FontWeight="SemiBold" />
           <TextBox PlaceholderText="Title (required)" Text="{Binding NewTitle, UpdateSourceTrigger=PropertyChanged}" />
           <TextBox PlaceholderText="Author (required)" Text="{Binding NewAuthor, UpdateSourceTrigger=PropertyChanged}" />
           <TextBox PlaceholderText="Narrator (optional)" Text="{Binding NewNarrator, UpdateSourceTrigger=PropertyChanged}" />
           <TextBox PlaceholderText="Length, e.g. 8h 30m (optional)" Text="{Binding NewLength, UpdateSourceTrigger=PropertyChanged}" />
-          <Button Content="Save to local catalogue" Click="AddBookClicked" />
+          <Grid ColumnDefinitions="*,Auto">
+            <Button Grid.Column="0" Content="{Binding SaveButtonLabel}" Click="AddBookClicked" />
+            <Button Grid.Column="1" Content="Cancel" Margin="8,0,0,0" IsVisible="{Binding IsEditing}" Click="CancelEditClicked" />
+          </Grid>
           <TextBlock Text="Entries are stored on this device only." FontSize="12" Opacity="0.65" />
         </StackPanel>
       </Border>
@@ -43,10 +46,10 @@
                   <TextBlock Text="{Binding Length}" FontSize="12" HorizontalAlignment="Right" />
                   <TextBlock Text="{Binding Status}" FontSize="11" Opacity="0.7" HorizontalAlignment="Right" />
                 </StackPanel>
-                <Grid Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto" Margin="0,10,0,0">
+                <Grid Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto" Margin="0,10,0,0">
                   <Button Grid.Column="0" Content="Add to queue" Click="QueueClicked" />
-                  <Button Grid.Column="1" Content="Delete" Margin="8,0,0,0"
-                          IsEnabled="{Binding CanDelete}" Click="DeleteBookClicked" />
+                  <Button Grid.Column="1" Content="Edit" Margin="8,0,0,0" IsEnabled="{Binding CanDelete}" Click="EditBookClicked" />
+                  <Button Grid.Column="2" Content="Delete" Margin="8,0,0,0" IsEnabled="{Binding CanDelete}" Click="DeleteBookClicked" />
                 </Grid>
               </Grid>
             </Border>
