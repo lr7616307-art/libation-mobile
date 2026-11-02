@@ -48,29 +48,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public string NewTitle
-    {
-        get => _newTitle;
-        set => SetField(ref _newTitle, value);
-    }
-
-    public string NewAuthor
-    {
-        get => _newAuthor;
-        set => SetField(ref _newAuthor, value);
-    }
-
-    public string NewNarrator
-    {
-        get => _newNarrator;
-        set => SetField(ref _newNarrator, value);
-    }
-
-    public string NewLength
-    {
-        get => _newLength;
-        set => SetField(ref _newLength, value);
-    }
+    public string NewTitle { get => _newTitle; set => SetField(ref _newTitle, value); }
+    public string NewAuthor { get => _newAuthor; set => SetField(ref _newAuthor, value); }
+    public string NewNarrator { get => _newNarrator; set => SetField(ref _newNarrator, value); }
+    public string NewLength { get => _newLength; set => SetField(ref _newLength, value); }
 
     private IReadOnlyList<Audiobook> _allBooks = [];
 
@@ -94,7 +75,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public bool HasBooks => Books.Count > 0;
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
-    public bool HasQueueItems => QueueItems.Count > 0;
     public bool IsQueueEmpty => QueueItems.Count == 0;
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
     public string EmptyMessage => HasBooks ? string.Empty :
@@ -118,10 +98,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             ApplyFilter(_allBooks);
             await ReloadQueueAsync(cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception)
         {
             ErrorMessage = "Could not load local data. Check app storage and try again.";
@@ -150,13 +127,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         try
         {
-            var book = new Audiobook(
-                Guid.NewGuid().ToString("N"),
-                title,
-                author,
-                NewNarrator.Trim(),
-                NewLength.Trim(),
-                "Manually added");
+            var book = new Audiobook(Guid.NewGuid().ToString("N"), title, author,
+                NewNarrator.Trim(), NewLength.Trim(), "Manually added");
             await _repository.UpsertAsync(book, cancellationToken);
             _allBooks = await _repository.GetBooksAsync(cancellationToken);
             NewTitle = string.Empty;
@@ -166,14 +138,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
             ApplyFilter(_allBooks);
             ErrorMessage = string.Empty;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not save this audiobook to the local catalogue."; }
+    }
+
+    public async Task RemoveBookAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        try
         {
-            throw;
+            var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+            if (book is null || string.Equals(book.Status, "Demo", StringComparison.Ordinal))
+            {
+                ErrorMessage = "Demo entries are protected; only manually added entries can be deleted.";
+                return;
+            }
+
+            await _repository.RemoveAsync(audiobookId, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+            ErrorMessage = string.Empty;
         }
-        catch (Exception)
-        {
-            ErrorMessage = "Could not save this audiobook to the local catalogue.";
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not delete this audiobook from the local catalogue."; }
     }
 
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
@@ -184,14 +170,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await ReloadQueueAsync(cancellationToken);
             ErrorMessage = string.Empty;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            ErrorMessage = "Could not update the local download queue.";
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not update the local download queue."; }
     }
 
     public Task RetryFailedAsync(string audiobookId, CancellationToken cancellationToken = default)
@@ -205,23 +185,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
             await ReloadQueueAsync(cancellationToken);
             ErrorMessage = string.Empty;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            ErrorMessage = "Could not remove the item from the local download queue.";
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not remove the item from the local download queue."; }
     }
 
     private async Task ReloadQueueAsync(CancellationToken cancellationToken)
     {
         var items = await _downloadQueue.GetItemsAsync(cancellationToken);
         QueueItems.Clear();
-        foreach (var item in items)
-            QueueItems.Add(item);
-        OnPropertyChanged(nameof(HasQueueItems));
+        foreach (var item in items) QueueItems.Add(item);
         OnPropertyChanged(nameof(IsQueueEmpty));
         OnPropertyChanged(nameof(QueueCountLabel));
     }
@@ -229,17 +201,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void ApplyFilter(IReadOnlyList<Audiobook> source)
     {
         var query = SearchText.Trim();
-        var matches = string.IsNullOrEmpty(query)
-            ? source
-            : source.Where(book =>
-                book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                book.Author.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                book.Narrator.Contains(query, StringComparison.OrdinalIgnoreCase));
-
+        var matches = string.IsNullOrEmpty(query) ? source :
+            source.Where(book => book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                 book.Author.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                 book.Narrator.Contains(query, StringComparison.OrdinalIgnoreCase));
         Books.Clear();
-        foreach (var book in matches)
-            Books.Add(book);
-
+        foreach (var book in matches) Books.Add(book);
         OnPropertyChanged(nameof(Books));
         OnPropertyChanged(nameof(HasBooks));
         OnPropertyChanged(nameof(EmptyMessage));
