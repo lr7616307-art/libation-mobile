@@ -18,15 +18,21 @@ public sealed class AudibleLibraryCatalogProvider : ILibraryCatalogProvider
     private readonly Func<LibraryOptions, IAsyncEnumerable<Item[]>> getPages;
 
     public AudibleLibraryCatalogProvider(Api api)
-        : this((api ?? throw new ArgumentNullException(nameof(api)))
-            .GetLibraryItemsPagesAsync)
+        : this(CreatePageReader(api))
     {
     }
 
-    internal AudibleLibraryCatalogProvider(
+    /// <summary>Creates a provider around a page reader; useful for deterministic tests and alternate hosts.</summary>
+    public AudibleLibraryCatalogProvider(
         Func<LibraryOptions, IAsyncEnumerable<Item[]>> getPages)
     {
         this.getPages = getPages ?? throw new ArgumentNullException(nameof(getPages));
+    }
+
+    private static Func<LibraryOptions, IAsyncEnumerable<Item[]>> CreatePageReader(Api api)
+    {
+        ArgumentNullException.ThrowIfNull(api);
+        return options => api.GetLibraryItemsPagesAsync(options, PageSize, MaxConcurrentPages);
     }
 
     public async Task<IReadOnlyList<RemoteAudiobook>> GetLibraryAsync(
