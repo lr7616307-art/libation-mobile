@@ -34,7 +34,7 @@ public sealed class AndroidSecretStore : ISecretStore
         cancellationToken.ThrowIfCancellationRequested();
 
         using var cipher = Cipher.GetInstance(Transformation);
-        cipher.Init(CipherMode.EncryptMode, GetOrCreateKey());
+        cipher.Init(Javax.Crypto.CipherMode.EncryptMode, GetOrCreateKey());
         var ciphertext = cipher.DoFinal(Encoding.UTF8.GetBytes(value));
         var iv = cipher.GetIV();
         var payload = new byte[1 + iv.Length + ciphertext.Length];
@@ -71,7 +71,7 @@ public sealed class AndroidSecretStore : ISecretStore
         Buffer.BlockCopy(payload, 1 + ivLength, ciphertext, 0, ciphertext.Length);
 
         using var cipher = Cipher.GetInstance(Transformation);
-        cipher.Init(CipherMode.DecryptMode, GetOrCreateKey(), new GCMParameterSpec(128, iv));
+        cipher.Init(Javax.Crypto.CipherMode.DecryptMode, GetOrCreateKey(), new GCMParameterSpec(128, iv));
         var plaintext = cipher.DoFinal(ciphertext);
         return Task.FromResult<string?>(Encoding.UTF8.GetString(plaintext));
     }
