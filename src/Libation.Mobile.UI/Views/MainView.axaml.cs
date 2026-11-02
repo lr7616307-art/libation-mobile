@@ -70,6 +70,9 @@ public partial class MainView : UserControl
     private async void ReloadClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await _viewModel.ReloadAsync();
 
+    private async void SyncLibraryClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await _viewModel.SyncLibraryAsync();
+
     private void SortClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.ToggleSort();
     private void FilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.CycleCatalogueFilter();
 
