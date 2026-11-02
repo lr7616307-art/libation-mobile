@@ -52,7 +52,7 @@ public sealed class AudibleIdentitySnapshotMapperTests
         using var rsa = RSA.Create(2048);
         var snapshot = CreateSnapshot(rsa.ExportRSAPrivateKeyPem()) with
         {
-            AdpToken = "not-an-adp-token"
+            AdpToken = "{bad}"
         };
 
         var error = Assert.Throws<InvalidDataException>(
