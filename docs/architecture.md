@@ -17,4 +17,4 @@ Build an independent Android client that reuses compatible Libation domain and s
 5. Preserve GPL-3.0 notices and publish corresponding source when distributing derived binaries.
 
 ## Current state
-The current UI is a prototype with sample data. Authentication, library sync, download queue, file management and upstream engine integration are not implemented.
+The UI now loads and searches a JSON-backed local catalogue in the app-private data directory. On first launch only, it seeds three clearly labelled demo entries; subsequent launches reload persisted entries. Authentication, real library sync, download queue, file management and upstream engine integration are not implemented.
