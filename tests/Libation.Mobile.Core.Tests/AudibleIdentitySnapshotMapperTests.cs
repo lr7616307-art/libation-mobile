@@ -58,7 +58,7 @@ public sealed class AudibleIdentitySnapshotMapperTests
         var error = Assert.Throws<InvalidDataException>(
             () => AudibleIdentitySnapshotMapper.Restore(snapshot));
 
-        Assert.IsType<Exception>(error.InnerException);
+        Assert.IsType<ArgumentException>(error.InnerException);
     }
 
     [Fact]
