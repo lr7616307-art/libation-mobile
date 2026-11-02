@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using AudibleApi;
 using AudibleApi.Authorization;
 using AudibleApi.Cryptography;
@@ -15,7 +14,7 @@ public static class AudibleIdentitySnapshotMapper
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        // Run the strict envelope validation first, then let AudibleApi validate
+        // Run strict envelope validation first, then let AudibleApi validate
         // the cryptographic/token value objects themselves.
         _ = AudibleIdentitySnapshotSerializer.Serialize(snapshot);
 
@@ -23,9 +22,10 @@ public static class AudibleIdentitySnapshotMapper
         if (locale == Locale.Empty || string.IsNullOrWhiteSpace(locale.Name))
             throw new InvalidDataException("The saved Audible locale is not supported.");
 
+        PrivateKey? privateKey = null;
         try
         {
-            var privateKey = new PrivateKey(snapshot.PrivateKey);
+            privateKey = new PrivateKey(snapshot.PrivateKey);
             var adpToken = new AdpToken(snapshot.AdpToken);
             var accessToken = new AccessToken(snapshot.AccessToken, snapshot.AccessTokenExpiresAtUtc.UtcDateTime);
             var refreshToken = new RefreshToken(snapshot.RefreshToken);
@@ -44,11 +44,19 @@ public static class AudibleIdentitySnapshotMapper
                 snapshot.AmazonAccountId,
                 snapshot.DeviceName,
                 snapshot.StoreAuthenticationCookie);
+
+            // Identity now owns the validated PrivateKey for its lifetime.
+            privateKey = null;
             return identity;
         }
-        catch (Exception ex) when (ex is ArgumentException or FormatException or CryptographicException)
+        catch (Exception ex)
         {
-            throw new InvalidDataException("The saved Audible credentials are not valid AudibleApi values.", ex);
+            // AudibleApi's ADP parser can throw a plain Exception for malformed
+            // input. Normalize malformed saved credentials and release any key
+            // that was created before a later credential failed validation.
+            privateKey?.Dispose();
+            throw new InvalidDataException(
+                "The saved Audible credentials are not valid AudibleApi values.", ex);
         }
     }
 }
