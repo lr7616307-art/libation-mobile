@@ -37,6 +37,12 @@ public partial class MainView : UserControl
             await _viewModel.EnqueueAsync(book.Id);
     }
 
+    private async void RetryQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: DownloadQueueItem item } && item.Status == DownloadStatus.Failed)
+            await _viewModel.RetryFailedAsync(item.AudiobookId);
+    }
+
     private async void RemoveQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: DownloadQueueItem item })
