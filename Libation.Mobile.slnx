@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/Libation.Mobile.Core/Libation.Mobile.Core.csproj" />
+  <Project Path="src/Libation.Mobile.UI/Libation.Mobile.UI.csproj" />
+  <Project Path="src/Libation.Mobile.Android/Libation.Mobile.Android.csproj" />
+</Solution>
