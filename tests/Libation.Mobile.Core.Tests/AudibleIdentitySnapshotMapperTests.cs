@@ -40,7 +40,7 @@ public sealed class AudibleIdentitySnapshotMapperTests
         using var rsa = RSA.Create(2048);
         var snapshot = CreateSnapshot(rsa.ExportRSAPrivateKeyPem()) with
         {
-            AdpToken = "{enc:abc,key:def,iv:ghi,name:wrong,serial:Mg==}"
+            AdpToken = "{enc:abc}{key:def}{iv:ghi}{name:wrong}{serial:Mg==}"
         };
 
         Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotMapper.Restore(snapshot));
@@ -65,7 +65,7 @@ public sealed class AudibleIdentitySnapshotMapperTests
         AccessTokenExpiresAtUtc = new DateTimeOffset(2027, 4, 5, 6, 7, 8, TimeSpan.Zero),
         RefreshToken = "Atnr|test-refresh",
         PrivateKey = privateKey,
-        AdpToken = "{enc:YWJj,key:ZGVm,iv:Z2hp,name:QURQVG9rZW5FbmNyeXB0aW9uS2V5,serial:Mg==}",
+        AdpToken = "{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}",
         Cookies =
         [
             new AudibleCookieSnapshot { Name = "session", Value = "first" },
