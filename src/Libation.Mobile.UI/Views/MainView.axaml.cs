@@ -9,6 +9,12 @@ public partial class MainView : UserControl
 {
     private readonly MainViewModel _viewModel;
 
+    public MainView()
+        : this(new JsonLibraryRepository(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "library.json")))
+    {
+    }
+
     public MainView(ILibraryRepository repository)
     {
         InitializeComponent();
