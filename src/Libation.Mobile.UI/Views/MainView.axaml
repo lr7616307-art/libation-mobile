@@ -28,6 +28,22 @@
           <TextBlock Text="Entries are stored on this device only." FontSize="12" Opacity="0.65" />
         </StackPanel>
       </Border>
+      <Border CornerRadius="12" Padding="14" BorderBrush="#555555" BorderThickness="1">
+        <StackPanel Spacing="8">
+          <TextBlock Text="Backup and restore" FontSize="18" FontWeight="SemiBold" />
+          <TextBlock Text="Export or restore your local catalogue as a JSON file. Backups contain catalogue details only, not account credentials, audio or queue items." TextWrapping="Wrap" FontSize="12" Opacity="0.75" />
+          <Grid ColumnDefinitions="*,*">
+            <Button Grid.Column="0" Content="Export backup" Click="ExportBackupClicked" />
+            <Button Grid.Column="1" Content="Import backup" Margin="8,0,0,0" Click="ImportBackupClicked" />
+          </Grid>
+          <TextBlock Text="{Binding BackupMessage}" TextWrapping="Wrap" FontSize="12" />
+          <TextBlock Text="{Binding PendingImportLabel}" IsVisible="{Binding HasPendingImport}" TextWrapping="Wrap" />
+          <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasPendingImport}">
+            <Button Grid.Column="0" Content="Confirm replace catalogue" Click="ConfirmImportClicked" />
+            <Button Grid.Column="1" Content="Cancel" Margin="8,0,0,0" Click="CancelImportClicked" />
+          </Grid>
+        </StackPanel>
+      </Border>
       <Grid ColumnDefinitions="*,Auto">
         <TextBlock Text="Local catalogue" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
         <Button Grid.Column="1" Content="Reload" Click="ReloadClicked" />

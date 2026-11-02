@@ -19,6 +19,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string? _editingBookId;
     private bool _isLoading;
     private string _errorMessage = string.Empty;
+    private IReadOnlyList<Audiobook>? _pendingImport;
+    private string _backupMessage = string.Empty;
 
     private static readonly Audiobook[] InitialSamples =
     [
@@ -59,6 +61,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasBooks => Books.Count > 0;
+    public string BackupMessage { get => _backupMessage; private set { if (_backupMessage == value) return; _backupMessage = value; OnPropertyChanged(); } }
+    public bool HasPendingImport => _pendingImport is not null;
+    public string PendingImportLabel => _pendingImport is null ? string.Empty : "Backup contains " + _pendingImport.Count + " entries. Confirm to replace the current catalogue.";
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
     public bool IsQueueEmpty => QueueItems.Count == 0;
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
@@ -163,6 +168,59 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { ErrorMessage = "Could not delete this audiobook from the local catalogue."; }
+    }
+
+
+    public async Task ExportBackupAsync(Stream destination, CancellationToken cancellationToken = default)
+    {
+        try { await LibraryBackupService.ExportAsync(destination, _allBooks, cancellationToken); BackupMessage = "Catalogue backup exported successfully."; ErrorMessage = string.Empty; }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not export the catalogue backup."; }
+    }
+
+    public async Task PrepareImportAsync(Stream source, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _pendingImport = await LibraryBackupService.ImportAsync(source, cancellationToken);
+            OnPropertyChanged(nameof(HasPendingImport));
+            OnPropertyChanged(nameof(PendingImportLabel));
+            BackupMessage = "Backup validated. Review the entry count before confirming replacement.";
+            ErrorMessage = string.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _pendingImport = null;
+            OnPropertyChanged(nameof(HasPendingImport));
+            OnPropertyChanged(nameof(PendingImportLabel));
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    public async Task ConfirmImportAsync(CancellationToken cancellationToken = default)
+    {
+        if (_pendingImport is null) return;
+        try
+        {
+            await _repository.ReplaceAllAsync(_pendingImport, cancellationToken);
+            _pendingImport = null;
+            OnPropertyChanged(nameof(HasPendingImport));
+            OnPropertyChanged(nameof(PendingImportLabel));
+            await InitializeAsync(cancellationToken);
+            BackupMessage = "Catalogue restored from backup.";
+            ErrorMessage = string.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not restore the catalogue backup."; }
+    }
+
+    public void CancelImport()
+    {
+        _pendingImport = null;
+        OnPropertyChanged(nameof(HasPendingImport));
+        OnPropertyChanged(nameof(PendingImportLabel));
+        BackupMessage = "Backup import cancelled.";
     }
 
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)

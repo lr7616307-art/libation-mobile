@@ -100,6 +100,52 @@ public sealed class MainViewModelTests
         Assert.Empty(vm.Books);
     }
 
+    [Fact]
+    public async Task BackupImport_RequiresConfirmationBeforeReplacingCatalogue()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.NewTitle = "Current only";
+        vm.NewAuthor = "Current author";
+        await vm.AddBookAsync();
+
+        await using var backup = new MemoryStream();
+        await LibraryBackupService.ExportAsync(backup,
+            [new Audiobook("restored-id", "Restored book", "Restored author", "", "", "Manually added")]);
+        backup.Position = 0;
+        await vm.PrepareImportAsync(backup);
+
+        Assert.True(vm.HasPendingImport);
+        Assert.Contains("1 entries", vm.PendingImportLabel);
+        Assert.Contains(vm.Books, x => x.Title == "Current only");
+
+        await vm.ConfirmImportAsync();
+
+        Assert.False(vm.HasPendingImport);
+        Assert.Single(vm.Books);
+        Assert.Equal("Restored book", vm.Books[0].Title);
+    }
+
+    [Fact]
+    public async Task BackupImport_CanBeCancelledWithoutChangingCatalogue()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        var initialCount = vm.Books.Count;
+
+        await using var backup = new MemoryStream();
+        await LibraryBackupService.ExportAsync(backup,
+            [new Audiobook("other", "Other book", "Author", "", "", "Manually added")]);
+        backup.Position = 0;
+        await vm.PrepareImportAsync(backup);
+        vm.CancelImport();
+
+        Assert.False(vm.HasPendingImport);
+        Assert.Equal(initialCount, vm.Books.Count);
+    }
+
     private static MainViewModel CreateViewModel(string directory)
         => new(new JsonLibraryRepository(Path.Combine(directory, "library.json")),
             new JsonDownloadQueue(Path.Combine(directory, "queue.json")));

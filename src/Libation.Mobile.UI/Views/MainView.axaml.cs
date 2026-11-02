@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using Avalonia.Markup.Xaml;
 using Libation.Mobile.Core;
 using Libation.Mobile.UI.ViewModels;
@@ -8,6 +9,7 @@ namespace Libation.Mobile.UI.Views;
 public partial class MainView : UserControl
 {
     private readonly MainViewModel _viewModel;
+    private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
 
     public MainView()
     {
@@ -27,6 +29,43 @@ public partial class MainView : UserControl
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
     }
+
+    private async void ExportBackupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (provider is null) return;
+        var file = await provider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export catalogue backup",
+            SuggestedFileName = "libation-mobile-backup.json",
+            DefaultExtension = "json",
+            FileTypeChoices = [BackupFileType]
+        });
+        if (file is null) return;
+        await using var stream = await file.OpenWriteAsync();
+        await _viewModel.ExportBackupAsync(stream);
+    }
+
+    private async void ImportBackupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (provider is null) return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import catalogue backup",
+            AllowMultiple = false,
+            FileTypeFilter = [BackupFileType]
+        });
+        if (files.Count == 0) return;
+        await using var stream = await files[0].OpenReadAsync();
+        await _viewModel.PrepareImportAsync(stream);
+    }
+
+    private async void ConfirmImportClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await _viewModel.ConfirmImportAsync();
+
+    private void CancelImportClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CancelImport();
 
     private async void ReloadClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await _viewModel.ReloadAsync();
