@@ -10,21 +10,32 @@ public partial class MainView : UserControl
     private readonly MainViewModel _viewModel;
 
     public MainView()
-        : this(new JsonLibraryRepository(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "library.json")))
     {
+        var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        _viewModel = new MainViewModel(
+            new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json")),
+            new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json")));
+        InitializeComponent();
+        DataContext = _viewModel;
+        _ = _viewModel.InitializeAsync();
     }
 
-    public MainView(ILibraryRepository repository)
+    public MainView(ILibraryRepository repository, IDownloadQueue downloadQueue)
     {
+        _viewModel = new MainViewModel(repository, downloadQueue);
         InitializeComponent();
-        _viewModel = new MainViewModel(repository);
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
     }
 
     private async void ReloadClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await _viewModel.ReloadAsync();
+
+    private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: Audiobook book })
+            await _viewModel.EnqueueAsync(book.Id);
+    }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 }
