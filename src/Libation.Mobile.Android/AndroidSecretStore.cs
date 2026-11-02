@@ -98,6 +98,7 @@ public sealed class AndroidSecretStore : ISecretStore
         var spec = new KeyGenParameterSpec.Builder(
                 KeyAlias,
                 KeyStorePurpose.Encrypt | KeyStorePurpose.Decrypt)
+            .SetKeySize(256)
             .SetBlockModes(KeyProperties.BlockModeGcm)
             .SetEncryptionPaddings(KeyProperties.EncryptionPaddingNone)
             .SetRandomizedEncryptionRequired(true)
