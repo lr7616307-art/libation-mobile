@@ -104,3 +104,22 @@ This is a **candidate design**, not implemented or runtime-proven. Before coding
 - [Authorization contract](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/IAuthorize.cs)
 
 The custom maintainer seam is preferable to trying to configure the process-global `IdentityTokenStorage` for a multi-account mobile app: that global helper is not itself an app-owned persistence abstraction, and the serializer's encryption failure path still falls back to plaintext.
+
+
+## Contributor DTO verification (source inspection, 2026-11-02)
+
+The upstream generated DTO source provides a concrete, non-heuristic mapping:
+
+| Audible API JSON field | DTO property | DTO type | Mobile meaning |
+|---|---|---|---|
+| `authors` | `Item.Authors` | `Person[]?` | Author names |
+| `narrators` | `Item.Narrators` | `Person[]?` | Narrator names |
+| `publisher_name` | `Item.PublisherName` | `string?` | Publisher; never author or narrator |
+
+Each `Person` contains `Asin` and `Name`. There is no per-person `role` discriminator in this DTO shape: the containing array supplies the role. Therefore, author and narrator values must be read only from their corresponding arrays. Preserve all nonblank names in source order; do not infer a role from a person's name, publisher, review author, or any other field. A missing/null array or an array with no usable names maps to an empty string in the current single-string `RemoteAudiobook` contract. Unknown fields/roles must not be promoted into either list.
+
+This establishes the source-backed mapping rule, but does **not** mean the mobile app currently consumes these DTOs. There is still no AudibleApi adapter project in the app. Before closing Issue #4, add the adapter against the exact package version and representative DTO fixture tests for multiple authors, multiple narrators, missing arrays, blank names, and unrelated/unknown contributor data. Keep publisher separate.
+
+Source inspected:
+- [Generated Audible library DTO](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi.Common/LibraryDtoV10.generated.cs) — `Item.Authors`, `Item.Narrators`, `Item.PublisherName`, and `Person.Name`.
+- [Item convenience properties](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi.Common/Item.cs) — confirms `Publisher` aliases `PublisherName`; it does not alias author.
