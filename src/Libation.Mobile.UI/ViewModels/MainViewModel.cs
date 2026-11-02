@@ -11,6 +11,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly ILibraryRepository _repository;
     private readonly IDownloadQueue _downloadQueue;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private readonly SemaphoreSlim _syncGate = new(1, 1);
+    private readonly LibrarySyncService? _syncService;
+    private bool _isSyncing;
+    private string _syncStatus = "Provider not connected. Audible library sync is not available yet.";
+    private DateTimeOffset? _lastSuccessfulSync;
     private string _searchText = string.Empty;
     private string _newTitle = string.Empty;
     private string _newAuthor = string.Empty;
@@ -35,10 +40,49 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ObservableCollection<Audiobook> Books { get; } = [];
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
 
-    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue)
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
+        _syncService = syncService;
+    }
+
+    public bool IsSyncing { get => _isSyncing; private set { if (_isSyncing == value) return; _isSyncing = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanSync)); } }
+    public bool CanSync => _syncService is not null && !IsSyncing;
+    public string SyncStatus { get => _syncStatus; private set { if (_syncStatus == value) return; _syncStatus = value; OnPropertyChanged(); } }
+    public DateTimeOffset? LastSuccessfulSync { get => _lastSuccessfulSync; private set { if (_lastSuccessfulSync == value) return; _lastSuccessfulSync = value; OnPropertyChanged(); } }
+
+    public async Task SyncLibraryAsync(CancellationToken cancellationToken = default)
+    {
+        if (_syncService is null)
+        {
+            SyncStatus = "Provider not connected. Audible library sync is not available yet.";
+            return;
+        }
+        if (!await _syncGate.WaitAsync(0, cancellationToken)) return;
+        try
+        {
+            IsSyncing = true;
+            SyncStatus = "Syncing library metadata…";
+            var count = await _syncService.SyncAsync(cancellationToken);
+            await InitializeAsync(cancellationToken);
+            LastSuccessfulSync = DateTimeOffset.UtcNow;
+            SyncStatus = $"Sync complete. {count} audiobook metadata entr{(count == 1 ? "y" : "ies")} updated.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            SyncStatus = "Sync cancelled. Your local catalogue was not intentionally changed.";
+            throw;
+        }
+        catch (Exception)
+        {
+            SyncStatus = "Sync failed. Your existing local catalogue was kept; try again later.";
+        }
+        finally
+        {
+            IsSyncing = false;
+            _syncGate.Release();
+        }
     }
 
     public string SearchText
