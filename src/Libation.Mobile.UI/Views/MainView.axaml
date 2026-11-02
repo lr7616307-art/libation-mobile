@@ -20,7 +20,7 @@
         <Button Grid.Column="1" Content="Reload" Click="ReloadClicked" />
       </Grid>
       <TextBlock Text="Loading catalogue…" IsVisible="{Binding IsLoading}" FontSize="13" Opacity="0.7" />
-      <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding ErrorMessage.Length}" Foreground="Tomato"
+      <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" Foreground="Tomato"
                  TextWrapping="Wrap" />
       <ItemsControl ItemsSource="{Binding Books}">
         <ItemsControl.ItemTemplate>
