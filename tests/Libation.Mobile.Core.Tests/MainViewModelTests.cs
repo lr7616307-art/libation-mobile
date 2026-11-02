@@ -146,6 +146,40 @@ public sealed class MainViewModelTests
         Assert.Equal(initialCount, vm.Books.Count);
     }
 
+
+    [Fact]
+    public async Task CatalogueSort_TogglesAlphabeticalDirection()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        Assert.Equal("Project Hail Mary", vm.Books[0].Title);
+        vm.ToggleSort();
+        Assert.Equal("The Three-Body Problem", vm.Books[0].Title);
+        Assert.Equal("Sort: Z-A", vm.SortLabel);
+    }
+
+    [Fact]
+    public async Task CatalogueFilter_CyclesAllManualAndDemo()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.NewTitle = "Manual entry";
+        vm.NewAuthor = "Author";
+        await vm.AddBookAsync();
+        vm.CycleCatalogueFilter();
+        Assert.Equal("Filter: Manual", vm.FilterLabel);
+        Assert.Single(vm.Books);
+        Assert.Equal("Manual entry", vm.Books[0].Title);
+        vm.CycleCatalogueFilter();
+        Assert.Equal("Filter: Demo", vm.FilterLabel);
+        Assert.Equal(3, vm.Books.Count);
+        Assert.All(vm.Books, book => Assert.Equal("Demo", book.Status));
+        vm.CycleCatalogueFilter();
+        Assert.Equal(4, vm.Books.Count);
+    }
+
     private static MainViewModel CreateViewModel(string directory)
         => new(new JsonLibraryRepository(Path.Combine(directory, "library.json")),
             new JsonDownloadQueue(Path.Combine(directory, "queue.json")));

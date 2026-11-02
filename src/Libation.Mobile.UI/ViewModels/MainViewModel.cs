@@ -21,6 +21,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _errorMessage = string.Empty;
     private IReadOnlyList<Audiobook>? _pendingImport;
     private string _backupMessage = string.Empty;
+    private bool _sortAscending = true;
+    private int _catalogueFilterIndex;
 
     private static readonly Audiobook[] InitialSamples =
     [
@@ -61,6 +63,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasBooks => Books.Count > 0;
+    public string SortLabel => _sortAscending ? "Sort: A-Z" : "Sort: Z-A";
+    public string FilterLabel => _catalogueFilterIndex switch { 1 => "Filter: Manual", 2 => "Filter: Demo", _ => "Filter: All" };
+    public void ToggleSort() { _sortAscending = !_sortAscending; OnPropertyChanged(nameof(SortLabel)); ApplyFilter(_allBooks); }
+    public void CycleCatalogueFilter() { _catalogueFilterIndex = (_catalogueFilterIndex + 1) % 3; OnPropertyChanged(nameof(FilterLabel)); ApplyFilter(_allBooks); }
     public string BackupMessage { get => _backupMessage; private set { if (_backupMessage == value) return; _backupMessage = value; OnPropertyChanged(); } }
     public bool HasPendingImport => _pendingImport is not null;
     public string PendingImportLabel => _pendingImport is null ? string.Empty : "Backup contains " + _pendingImport.Count + " entries. Confirm to replace the current catalogue.";
@@ -253,10 +259,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void ApplyFilter(IReadOnlyList<Audiobook> source)
     {
         var query = SearchText.Trim();
-        var matches = string.IsNullOrEmpty(query) ? source :
-            source.Where(book => book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                                 book.Author.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                                 book.Narrator.Contains(query, StringComparison.OrdinalIgnoreCase));
+        var matches = source.Where(book =>
+            (_catalogueFilterIndex == 0 ||
+             (_catalogueFilterIndex == 1 && book.CanDelete) ||
+             (_catalogueFilterIndex == 2 && !book.CanDelete)) &&
+            (string.IsNullOrEmpty(query) ||
+             book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+             book.Author.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+             book.Narrator.Contains(query, StringComparison.OrdinalIgnoreCase)));
+        matches = _sortAscending
+            ? matches.OrderBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
+            : matches.OrderByDescending(book => book.Title, StringComparer.OrdinalIgnoreCase);
         Books.Clear();
         foreach (var book in matches) Books.Add(book);
         OnPropertyChanged(nameof(Books));

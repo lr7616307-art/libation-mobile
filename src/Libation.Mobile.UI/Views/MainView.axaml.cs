@@ -70,6 +70,9 @@ public partial class MainView : UserControl
     private async void ReloadClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await _viewModel.ReloadAsync();
 
+    private void SortClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.ToggleSort();
+    private void FilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.CycleCatalogueFilter();
+
     private async void AddBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await _viewModel.AddBookAsync();
 

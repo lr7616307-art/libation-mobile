@@ -44,9 +44,11 @@
           </Grid>
         </StackPanel>
       </Border>
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="Local catalogue" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
-        <Button Grid.Column="1" Content="Reload" Click="ReloadClicked" />
+      <TextBlock Text="Local catalogue" FontSize="20" FontWeight="SemiBold" />
+      <Grid ColumnDefinitions="*,*,Auto">
+        <Button Grid.Column="0" Content="{Binding SortLabel}" Click="SortClicked" />
+        <Button Grid.Column="1" Content="{Binding FilterLabel}" Margin="8,0,0,0" Click="FilterClicked" />
+        <Button Grid.Column="2" Content="Reload" Margin="8,0,0,0" Click="ReloadClicked" />
       </Grid>
       <TextBlock Text="Loading catalogue…" IsVisible="{Binding IsLoading}" FontSize="13" Opacity="0.7" />
       <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" Foreground="Tomato" TextWrapping="Wrap" />
