@@ -5,10 +5,11 @@ using Libation.Mobile.Core;
 
 namespace Libation.Mobile.UI.ViewModels;
 
-/// <summary>Displays a locally persisted catalogue. Initial sample entries are clearly marked as demo data.</summary>
+/// <summary>Displays a locally persisted catalogue and metadata-only download queue.</summary>
 public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly ILibraryRepository _repository;
+    private readonly IDownloadQueue _downloadQueue;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private string _searchText = string.Empty;
     private bool _isLoading;
@@ -23,9 +24,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public ObservableCollection<Audiobook> Books { get; } = [];
+    public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
 
-    public MainViewModel(ILibraryRepository repository)
-        => _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue)
+    {
+        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
+    }
 
     public string SearchText
     {
@@ -50,11 +55,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string ErrorMessage
     {
         get => _errorMessage;
-        private set { if (_errorMessage == value) return; _errorMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); }
+        private set
+        {
+            if (_errorMessage == value) return;
+            _errorMessage = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasError));
+        }
     }
 
     public bool HasBooks => Books.Count > 0;
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
+    public bool HasQueueItems => QueueItems.Count > 0;
+    public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
     public string EmptyMessage => HasBooks ? string.Empty :
         string.IsNullOrWhiteSpace(SearchText) ? "Your local catalogue is empty." : "No matching audiobooks.";
 
@@ -74,6 +87,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
             _allBooks = stored;
             ApplyFilter(_allBooks);
+            await ReloadQueueAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -81,7 +95,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception)
         {
-            ErrorMessage = "Could not load the local catalogue. Check app storage and try again.";
+            ErrorMessage = "Could not load local data. Check app storage and try again.";
             _allBooks = [];
             ApplyFilter(_allBooks);
         }
@@ -94,6 +108,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public Task ReloadAsync(CancellationToken cancellationToken = default)
         => InitializeAsync(cancellationToken);
+
+    public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken);
+            await ReloadQueueAsync(cancellationToken);
+            ErrorMessage = string.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "Could not update the local download queue.";
+        }
+    }
+
+    private async Task ReloadQueueAsync(CancellationToken cancellationToken)
+    {
+        var items = await _downloadQueue.GetItemsAsync(cancellationToken);
+        QueueItems.Clear();
+        foreach (var item in items)
+            QueueItems.Add(item);
+        OnPropertyChanged(nameof(HasQueueItems));
+        OnPropertyChanged(nameof(QueueCountLabel));
+    }
 
     private void ApplyFilter(IReadOnlyList<Audiobook> source)
     {
