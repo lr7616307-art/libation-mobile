@@ -76,3 +76,31 @@ Identity persistence is a further integration blocker:
 - [Identity persistence wrapper](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/IdentityPersister.cs)
 - [Identity JSON serializer and protection fallback](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/Identity.TokenJson.cs)
 - [Identity contract](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/IIdentity.cs)
+
+## Revised secure integration path: bypass the file-based convenience creator
+
+Further inspection found a viable public extension seam that avoids the unsafe file-based identity persistence path:
+
+- `Api` has public constructors accepting an `IIdentityMaintainer` (and optionally an `IHttpClientSharer`).
+- `IIdentityMaintainer` is a small public contract: locale, system clock, device/account identifiers, and async access-token, ADP-token and private-key getters.
+- `IdentityMaintainer.CreateAsync(identity, authorize, systemDateTime)` is public and accepts injected authorization and clock implementations. The normal maintainer updates the in-memory `Identity` during registration/refresh.
+- `Identity` exposes its `Updated` event and token/key/cookie properties through `IIdentity`. A mobile-owned maintainer can therefore own the identity lifecycle and persist snapshots through the app's Keystore-backed secret store, without handing the identity to `IdentityPersister` or calling `EzApiCreator.GetApiAsync`.
+
+This is a **candidate design**, not implemented or runtime-proven. Before coding it, verify the exact public constructors and event behavior against the pinned 14.1.2 package, then implement a mobile maintainer with these requirements:
+
+1. Keep the complete Audible identity snapshot (including private key, ADP token, refresh/access tokens, cookies and device metadata) encrypted as one versioned payload using the app's Android Keystore-backed storage. Never persist a partial generic access/refresh-token pair.
+2. Subscribe to `Identity.Updated` and persist atomically. If persistence fails, fail the login/refresh operation rather than continuing with an identity that will be lost on process death.
+3. Inject the authorization service and clock into the upstream `IdentityMaintainer.CreateAsync(identity, authorize, systemDateTime)` path where possible; inspect `Authorize` construction and dependencies before choosing the concrete implementation.
+4. Expose only the minimum getters required by `IIdentityMaintainer`; never log or return raw secrets to UI code.
+5. Serialize access-token refresh and identity updates; protect the snapshot against concurrent writes and process recreation.
+6. Keep the initial browser callback and final response URL in memory only. Do not route credentials through app links, clipboard, analytics, or logs.
+7. Add tests for encrypted round-trip, persistence failure, interrupted writes, refresh updates, and concurrent refresh attempts before wiring sign-in into the UI.
+
+### Additional verified upstream extension points
+
+- [Authenticated API constructor](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Api%20%5Bpartial%5D.cs)
+- [Identity maintainer contract](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/IIdentityMaintainer.cs)
+- [Identity maintainer factory overloads](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/IdentityMaintainer.cs)
+- [Authorization contract](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/IAuthorize.cs)
+
+The custom maintainer seam is preferable to trying to configure the process-global `IdentityTokenStorage` for a multi-account mobile app: that global helper is not itself an app-owned persistence abstraction, and the serializer's encryption failure path still falls back to plaintext.
