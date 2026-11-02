@@ -43,3 +43,14 @@ authentication adapter, no login screen, no network call, and no claim that acco
 works. A provider adapter must be based on the upstream-supported authentication flow and
 reviewed for current provider terms before it is implemented. Network failures must not
 silently erase a still-stored session; explicit disconnect clears it.
+## External-browser sign-in boundary
+
+The account contract now models a browser handoff: the user supplies a login identifier and
+marketplace, the provider adapter returns a short-lived HTTPS authorization challenge, and
+the app passes the final response URL back to the adapter. The app does not collect or store
+the account password. The adapter must redact the response URL because it may carry
+authentication material. This follows the upstream-documented external login pattern, where
+the user completes sign-in in the browser and returns the resulting URL to Libation.
+
+The current code is still provider-neutral scaffolding. No Audible URL generation, callback
+parsing, account registration, CAPTCHA handling, or token exchange has been implemented.
