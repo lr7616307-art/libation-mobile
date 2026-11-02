@@ -128,6 +128,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task RemoveFromQueueAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _downloadQueue.RemoveAsync(audiobookId, cancellationToken);
+            await ReloadQueueAsync(cancellationToken);
+            ErrorMessage = string.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            ErrorMessage = "Could not remove the item from the local download queue.";
+        }
+    }
+
     private async Task ReloadQueueAsync(CancellationToken cancellationToken)
     {
         var items = await _downloadQueue.GetItemsAsync(cancellationToken);
