@@ -7,6 +7,48 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task SyncLibraryAsync_WithoutProvider_ReportsNotConnected()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+        Assert.Contains("Provider not connected", vm.SyncStatus);
+        Assert.False(vm.CanSync);
+        Assert.False(vm.IsSyncing);
+    }
+
+    [Fact]
+    public async Task SyncLibraryAsync_WithProvider_UpdatesCatalogueAndTimestamp()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var provider = new FakeCatalogProvider([new RemoteAudiobook("remote-1", "Remote title", "Remote author", "Narrator", "5h")]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")), new LibrarySyncService(provider, repository));
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+        Assert.Contains(vm.Books, x => x.Id == "provider:remote-1");
+        Assert.NotNull(vm.LastSuccessfulSync);
+        Assert.Contains("1 audiobook metadata entry updated", vm.SyncStatus);
+        Assert.False(vm.IsSyncing);
+    }
+
+    [Fact]
+    public async Task SyncLibraryAsync_WhenProviderFails_ReportsSafeFailure()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")), new LibrarySyncService(new FakeCatalogProvider(error: new IOException("secret detail")), repository));
+        await vm.InitializeAsync();
+        var before = vm.Books.Select(x => x.Id).ToArray();
+        await vm.SyncLibraryAsync();
+        Assert.Equal(before, vm.Books.Select(x => x.Id).ToArray());
+        Assert.Contains("Sync failed", vm.SyncStatus);
+        Assert.DoesNotContain("secret detail", vm.SyncStatus);
+        Assert.Null(vm.LastSuccessfulSync);
+    }
+
+    [Fact]
     public async Task AddBookAsync_ValidEntryPersistsAndClearsEditor()
     {
         using var directory = new TemporaryDirectory();
@@ -183,6 +225,12 @@ public sealed class MainViewModelTests
     private static MainViewModel CreateViewModel(string directory)
         => new(new JsonLibraryRepository(Path.Combine(directory, "library.json")),
             new JsonDownloadQueue(Path.Combine(directory, "queue.json")));
+
+    private sealed class FakeCatalogProvider(IReadOnlyList<RemoteAudiobook>? books = null, Exception? error = null) : ILibraryCatalogProvider
+    {
+        public Task<IReadOnlyList<RemoteAudiobook>> GetLibraryAsync(CancellationToken cancellationToken = default)
+            => error is null ? Task.FromResult(books ?? (IReadOnlyList<RemoteAudiobook>)[]) : Task.FromException<IReadOnlyList<RemoteAudiobook>>(error);
+    }
 
     private sealed class TemporaryDirectory : IDisposable
     {
