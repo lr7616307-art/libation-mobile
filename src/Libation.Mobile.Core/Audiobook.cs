@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Libation.Mobile.Core;
 
 public sealed record Audiobook(
@@ -6,4 +8,8 @@ public sealed record Audiobook(
     string Author,
     string Narrator,
     string Length,
-    string Status);
+    string Status)
+{
+    [JsonIgnore]
+    public bool CanDelete => !string.Equals(Status, "Demo", StringComparison.Ordinal);
+}
