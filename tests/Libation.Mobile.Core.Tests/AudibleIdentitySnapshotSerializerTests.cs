@@ -13,7 +13,21 @@ public sealed class AudibleIdentitySnapshotSerializerTests
         var json = AudibleIdentitySnapshotSerializer.Serialize(expected);
         var actual = AudibleIdentitySnapshotSerializer.Deserialize(json);
 
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected.SchemaVersion, actual.SchemaVersion);
+        Assert.Equal(expected.Provider, actual.Provider);
+        Assert.Equal(expected.AudibleApiVersion, actual.AudibleApiVersion);
+        Assert.Equal(expected.LocaleName, actual.LocaleName);
+        Assert.Equal(expected.AccessToken, actual.AccessToken);
+        Assert.Equal(expected.AccessTokenExpiresAtUtc, actual.AccessTokenExpiresAtUtc);
+        Assert.Equal(expected.RefreshToken, actual.RefreshToken);
+        Assert.Equal(expected.PrivateKey, actual.PrivateKey);
+        Assert.Equal(expected.AdpToken, actual.AdpToken);
+        Assert.Equal(expected.Cookies, actual.Cookies);
+        Assert.Equal(expected.DeviceSerialNumber, actual.DeviceSerialNumber);
+        Assert.Equal(expected.DeviceType, actual.DeviceType);
+        Assert.Equal(expected.AmazonAccountId, actual.AmazonAccountId);
+        Assert.Equal(expected.DeviceName, actual.DeviceName);
+        Assert.Equal(expected.StoreAuthenticationCookie, actual.StoreAuthenticationCookie);
         Assert.Equal(expected.Cookies, actual.Cookies);
         Assert.Equal(expected.AccessTokenExpiresAtUtc, actual.AccessTokenExpiresAtUtc);
     }
