@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Libation.Mobile.Core;
 using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.UI;
@@ -11,10 +12,13 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
+
         if (ApplicationLifetime is IActivityApplicationLifetime activityLifetime)
-            activityLifetime.MainViewFactory = () => new MainView();
+            activityLifetime.MainViewFactory = () => new MainView(repository);
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewLifetime)
-            singleViewLifetime.MainView = new MainView();
+            singleViewLifetime.MainView = new MainView(repository);
 
         base.OnFrameworkInitializationCompleted();
     }
