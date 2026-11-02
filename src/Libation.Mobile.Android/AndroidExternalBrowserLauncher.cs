@@ -16,8 +16,8 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
             || string.IsNullOrWhiteSpace(authorizationUri.Host))
             throw new ArgumentException("Only absolute HTTPS authorization URLs may be opened.", nameof(authorizationUri));
 
-        var intent = new Intent(Intent.ActionView, Android.Net.Uri.Parse(authorizationUri.AbsoluteUri));
-        if (_context is not Android.App.Activity)
+        var intent = new Intent(Intent.ActionView, global::Android.Net.Uri.Parse(authorizationUri.AbsoluteUri));
+        if (_context is not global::Android.App.Activity)
             intent.AddFlags(ActivityFlags.NewTask);
 
         _context.StartActivity(intent);
