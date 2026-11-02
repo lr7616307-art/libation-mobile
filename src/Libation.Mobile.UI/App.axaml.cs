@@ -12,11 +12,8 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
-
         if (ApplicationLifetime is IActivityApplicationLifetime activityLifetime)
-            activityLifetime.MainViewFactory = () => new MainView(repository);
+            activityLifetime.MainViewFactory = () => new MainView();
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewLifetime)
             singleViewLifetime.MainView = new MainView(repository);
 
