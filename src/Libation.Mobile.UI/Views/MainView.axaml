@@ -6,16 +6,22 @@
         <TextBlock Text="Your library" FontSize="30" FontWeight="Bold" />
         <TextBlock Text="A mobile audiobook manager" FontSize="14" Opacity="0.7" />
       </StackPanel>
-      <TextBox Watermark="Search titles, authors or narrators"
+      <TextBox PlaceholderText="Search titles, authors or narrators"
                Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
       <Border CornerRadius="14" Padding="14" Background="#3157A4">
         <StackPanel Spacing="4">
           <TextBlock Text="PROTOTYPE MODE" FontWeight="Bold" Foreground="White" />
-          <TextBlock Text="Sample entries only. Account sign-in, library sync and downloads are not connected."
+          <TextBlock Text="Local catalogue is connected. Entries marked Demo are sample data; account sign-in, Audible library sync and downloads are not connected."
                      TextWrapping="Wrap" Foreground="White" />
         </StackPanel>
       </Border>
-      <TextBlock Text="Recently added" FontSize="20" FontWeight="SemiBold" />
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="Local catalogue" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Content="Reload" Click="ReloadClicked" />
+      </Grid>
+      <TextBlock Text="Loading catalogue…" IsVisible="{Binding IsLoading}" FontSize="13" Opacity="0.7" />
+      <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding ErrorMessage.Length}" Foreground="Tomato"
+                 TextWrapping="Wrap" />
       <ItemsControl ItemsSource="{Binding Books}">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
@@ -39,10 +45,11 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <TextBlock Text="{Binding EmptyMessage}"
-                 FontSize="13" Opacity="0.7" HorizontalAlignment="Center" />
-      <TextBlock Text="No account connected · No files downloaded" FontSize="12"
-                 Opacity="0.6" HorizontalAlignment="Center" Margin="0,8,0,16" />
+      <TextBlock Text="{Binding EmptyMessage}" FontSize="13" Opacity="0.7"
+                 HorizontalAlignment="Center" />
+      <TextBlock Text="Demo catalogue saved locally · No account connected · No files downloaded"
+                 FontSize="12" Opacity="0.6" TextWrapping="Wrap"
+                 HorizontalAlignment="Center" Margin="0,8,0,16" />
     </StackPanel>
   </ScrollViewer>
 </UserControl>
