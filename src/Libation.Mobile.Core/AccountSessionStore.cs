@@ -1,15 +1,14 @@
+using System.Text.Json;
+
 namespace Libation.Mobile.Core;
 
 /// <summary>
-/// Persists the minimum session state using the injected secure secret store.
+/// Persists the minimum session state as one encrypted record.
 /// This class does not perform sign-in, refresh tokens, or contact an account provider.
 /// </summary>
 public sealed class AccountSessionStore(ISecretStore secrets)
 {
-    private const string AccountIdKey = "account_id";
-    private const string AccessTokenKey = "access_token";
-    private const string RefreshTokenKey = "refresh_token";
-    private const string ExpiryKey = "expires_at_utc";
+    private const string SessionKey = "account_session_v1";
 
     public async Task SaveAsync(AccountSession session, CancellationToken cancellationToken = default)
     {
@@ -18,37 +17,35 @@ public sealed class AccountSessionStore(ISecretStore secrets)
         ArgumentException.ThrowIfNullOrWhiteSpace(session.AccessToken);
         ArgumentException.ThrowIfNullOrWhiteSpace(session.RefreshToken);
 
-        await secrets.SetAsync(AccountIdKey, session.AccountId, cancellationToken);
-        await secrets.SetAsync(AccessTokenKey, session.AccessToken, cancellationToken);
-        await secrets.SetAsync(RefreshTokenKey, session.RefreshToken, cancellationToken);
-        await secrets.SetAsync(ExpiryKey, session.ExpiresAtUtc.ToUniversalTime().ToString("O"), cancellationToken);
+        var normalized = session with { ExpiresAtUtc = session.ExpiresAtUtc.ToUniversalTime() };
+        var serialized = JsonSerializer.Serialize(normalized);
+        await secrets.SetAsync(SessionKey, serialized, cancellationToken);
     }
 
     public async Task<AccountSession?> LoadAsync(CancellationToken cancellationToken = default)
     {
-        var accountId = await secrets.GetAsync(AccountIdKey, cancellationToken);
-        var accessToken = await secrets.GetAsync(AccessTokenKey, cancellationToken);
-        var refreshToken = await secrets.GetAsync(RefreshTokenKey, cancellationToken);
-        var expiryText = await secrets.GetAsync(ExpiryKey, cancellationToken);
-
-        if (accountId is null || accessToken is null || refreshToken is null || expiryText is null)
+        var serialized = await secrets.GetAsync(SessionKey, cancellationToken);
+        if (string.IsNullOrWhiteSpace(serialized))
             return null;
 
-        if (!DateTimeOffset.TryParse(
-                expiryText,
-                System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.RoundtripKind,
-                out var expiresAt))
+        try
+        {
+            var session = JsonSerializer.Deserialize<AccountSession>(serialized);
+            if (session is null
+                || string.IsNullOrWhiteSpace(session.AccountId)
+                || string.IsNullOrWhiteSpace(session.AccessToken)
+                || string.IsNullOrWhiteSpace(session.RefreshToken))
+                return null;
+
+            return session with { ExpiresAtUtc = session.ExpiresAtUtc.ToUniversalTime() };
+        }
+        catch (JsonException)
+        {
+            // Treat corrupt or incompatible persisted data as no session.
             return null;
-
-        return new AccountSession(accountId, accessToken, refreshToken, expiresAt);
+        }
     }
 
-    public async Task ClearAsync(CancellationToken cancellationToken = default)
-    {
-        await secrets.RemoveAsync(AccountIdKey, cancellationToken);
-        await secrets.RemoveAsync(AccessTokenKey, cancellationToken);
-        await secrets.RemoveAsync(RefreshTokenKey, cancellationToken);
-        await secrets.RemoveAsync(ExpiryKey, cancellationToken);
-    }
+    public Task ClearAsync(CancellationToken cancellationToken = default) =>
+        secrets.RemoveAsync(SessionKey, cancellationToken);
 }
