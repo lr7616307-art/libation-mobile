@@ -128,6 +128,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public Task RetryFailedAsync(string audiobookId, CancellationToken cancellationToken = default)
+        => EnqueueAsync(audiobookId, cancellationToken);
+
     public async Task RemoveFromQueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         try
