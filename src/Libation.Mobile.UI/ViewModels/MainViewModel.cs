@@ -50,10 +50,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string ErrorMessage
     {
         get => _errorMessage;
-        private set { if (_errorMessage == value) return; _errorMessage = value; OnPropertyChanged(); }
+        private set { if (_errorMessage == value) return; _errorMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); }
     }
 
     public bool HasBooks => Books.Count > 0;
+    public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
     public string EmptyMessage => HasBooks ? string.Empty :
         string.IsNullOrWhiteSpace(SearchText) ? "Your local catalogue is empty." : "No matching audiobooks.";
 
