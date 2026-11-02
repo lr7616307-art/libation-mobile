@@ -10,14 +10,13 @@ namespace Libation.Mobile.Audible;
 /// Unlike AudibleApi.IdentityMaintainer, this adapter never deregisters/re-registers the device
 /// after a refresh failure and never reports a refreshed token as usable before it is persisted.
 /// </summary>
-public sealed class AudibleIdentityMaintainer : IIdentityMaintainer, IAsyncDisposable
+public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
 {
     private readonly Identity identity;
     private readonly IAuthorize authorize;
     private readonly ISystemDateTime systemDateTime;
     private readonly AudibleIdentitySnapshotStore snapshotStore;
     private readonly SemaphoreSlim gate = new(1, 1);
-    private bool disposed;
 
     public AudibleIdentityMaintainer(
         Identity identity,
@@ -60,11 +59,9 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer, IAsyncDispo
 
     private async Task EnsureFreshAsync()
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
         await gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            ObjectDisposedException.ThrowIf(disposed, this);
             if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
                 return;
 
@@ -132,20 +129,4 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer, IAsyncDispo
         };
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        await gate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (disposed)
-                return;
-            disposed = true;
-            identity.PrivateKey?.Dispose();
-        }
-        finally
-        {
-            gate.Release();
-            gate.Dispose();
-        }
-    }
 }
