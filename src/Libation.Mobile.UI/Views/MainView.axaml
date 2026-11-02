@@ -39,7 +39,7 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-      <TextBlock Text="{Binding EmptyMessage}" IsVisible="{Binding HasBooks, Converter={x:Static BooleanNegationConverter.Instance}}"
+      <TextBlock Text="{Binding EmptyMessage}"
                  FontSize="13" Opacity="0.7" HorizontalAlignment="Center" />
       <TextBlock Text="No account connected · No files downloaded" FontSize="12"
                  Opacity="0.6" HorizontalAlignment="Center" Margin="0,8,0,16" />
