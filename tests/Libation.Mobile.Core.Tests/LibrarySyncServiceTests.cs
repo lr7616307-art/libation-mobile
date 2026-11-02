@@ -30,14 +30,52 @@ public sealed class LibrarySyncServiceTests
     }
 
     [Fact]
-    public async Task Sync_RejectsDuplicateProviderIdsWithoutReplacingLocalCatalogue()
+    public async Task Sync_TrimsProviderIdAndNormalizesOptionalMetadata()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var service = new LibrarySyncService(
+            new FakeProvider([new RemoteAudiobook("  id-1  ", "  Title  ", "  Author  ", "   ", "  ")]),
+            repository);
+
+        var count = await service.SyncAsync();
+        var saved = Assert.Single(await repository.GetBooksAsync());
+
+        Assert.Equal(1, count);
+        Assert.Equal("provider:id-1", saved.Id);
+        Assert.Equal("Title", saved.Title);
+        Assert.Equal("Author", saved.Author);
+        Assert.Empty(saved.Narrator);
+        Assert.Empty(saved.Length);
+    }
+
+    [Theory]
+    [InlineData("", "Title", "Author")]
+    [InlineData("id", "   ", "Author")]
+    [InlineData("id", "Title", "\t ")]
+    public async Task Sync_RejectsWhitespaceRequiredMetadataAtomically(string id, string title, string author)
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([new Audiobook("manual:1", "Keep", "Author", "", "", "Manually added")]);
+        var service = new LibrarySyncService(
+            new FakeProvider([new RemoteAudiobook(id, title, author, "", "")]),
+            repository);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => service.SyncAsync());
+        var saved = Assert.Single(await repository.GetBooksAsync());
+        Assert.Equal("manual:1", saved.Id);
+    }
+
+    [Fact]
+    public async Task Sync_RejectsDuplicateIdsAfterTrimmingWithoutReplacingLocalCatalogue()
     {
         using var directory = new TemporaryDirectory();
         var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
         await repository.ReplaceAllAsync([new Audiobook("manual:1", "Keep", "Author", "", "", "Manually added")]);
         var service = new LibrarySyncService(new FakeProvider([
             new RemoteAudiobook("same", "One", "Author", "", ""),
-            new RemoteAudiobook("same", "Two", "Author", "", "")
+            new RemoteAudiobook(" same ", "Two", "Author", "", "")
         ]), repository);
 
         await Assert.ThrowsAsync<InvalidDataException>(() => service.SyncAsync());
