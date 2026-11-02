@@ -49,6 +49,47 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task SyncLibraryAsync_WhenCancelled_ReportsCancellationWithoutThrowing()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        using var cts = new CancellationTokenSource();
+        var provider = new FakeCatalogProvider(error: new OperationCanceledException());
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")), new LibrarySyncService(provider, repository));
+        await vm.InitializeAsync();
+        cts.Cancel();
+
+        await vm.SyncLibraryAsync(cts.Token);
+
+        Assert.Contains("Sync cancelled", vm.SyncStatus);
+        Assert.False(vm.IsSyncing);
+        Assert.Null(vm.LastSuccessfulSync);
+    }
+
+    [Fact]
+    public async Task SyncLibraryAsync_ConcurrentCallDoesNotStartSecondProviderRequest()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var provider = new BlockingCatalogProvider();
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")), new LibrarySyncService(provider, repository));
+        await vm.InitializeAsync();
+
+        var first = vm.SyncLibraryAsync();
+        await provider.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var second = vm.SyncLibraryAsync();
+        await second;
+        Assert.True(vm.IsSyncing);
+        Assert.Equal(1, provider.CallCount);
+
+        provider.Complete([]);
+        await first;
+
+        Assert.Equal(1, provider.CallCount);
+        Assert.False(vm.IsSyncing);
+    }
+
+    [Fact]
     public async Task AddBookAsync_ValidEntryPersistsAndClearsEditor()
     {
         using var directory = new TemporaryDirectory();
@@ -230,6 +271,24 @@ public sealed class MainViewModelTests
     {
         public Task<IReadOnlyList<RemoteAudiobook>> GetLibraryAsync(CancellationToken cancellationToken = default)
             => error is null ? Task.FromResult(books ?? (IReadOnlyList<RemoteAudiobook>)[]) : Task.FromException<IReadOnlyList<RemoteAudiobook>>(error);
+    }
+
+    private sealed class BlockingCatalogProvider : ILibraryCatalogProvider
+    {
+        private readonly TaskCompletionSource<IReadOnlyList<RemoteAudiobook>> _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<bool> Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int CallCount { get; private set; }
+
+        public Task<IReadOnlyList<RemoteAudiobook>> GetLibraryAsync(CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            Started.TrySetResult(true);
+            return _completion.Task;
+        }
+
+        public void Complete(IReadOnlyList<RemoteAudiobook> books) => _completion.TrySetResult(books);
     }
 
     private sealed class TemporaryDirectory : IDisposable
