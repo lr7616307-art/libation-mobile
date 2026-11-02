@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using AudibleApi;
 using AudibleApi.Authorization;
 using AudibleApi.Cryptography;
