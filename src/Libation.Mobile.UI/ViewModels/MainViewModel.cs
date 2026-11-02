@@ -67,6 +67,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasBooks => Books.Count > 0;
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
     public bool HasQueueItems => QueueItems.Count > 0;
+    public bool IsQueueEmpty => QueueItems.Count == 0;
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
     public string EmptyMessage => HasBooks ? string.Empty :
         string.IsNullOrWhiteSpace(SearchText) ? "Your local catalogue is empty." : "No matching audiobooks.";
@@ -134,6 +135,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         foreach (var item in items)
             QueueItems.Add(item);
         OnPropertyChanged(nameof(HasQueueItems));
+        OnPropertyChanged(nameof(IsQueueEmpty));
         OnPropertyChanged(nameof(QueueCountLabel));
     }
 
