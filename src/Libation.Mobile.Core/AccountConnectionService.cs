@@ -14,13 +14,15 @@ public sealed class AccountConnectionService(
         ArgumentNullException.ThrowIfNull(request);
         request.Validate();
         var challenge = await authenticator.BeginSignInAsync(request, cancellationToken);
-        if (string.IsNullOrWhiteSpace(challenge.ChallengeId)
-            || !challenge.AuthorizationUri.IsAbsoluteUri
-            || challenge.AuthorizationUri.Scheme != Uri.UriSchemeHttps
-            || challenge.ExpiresAtUtc <= DateTimeOffset.UtcNow)
-            throw new InvalidOperationException("The provider returned an invalid sign-in challenge.");
-
-        return challenge;
+        try
+        {
+            ExternalSignInChallengeValidator.Validate(challenge);
+            return challenge;
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException("The provider returned an invalid sign-in challenge.", ex);
+        }
     }
 
     public async Task<AccountConnectionState> CompleteSignInAsync(
