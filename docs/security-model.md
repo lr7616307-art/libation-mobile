@@ -30,3 +30,16 @@ It has not yet been device-tested on Android 10. Keystore key invalidation (for 
 certain device security changes) must be handled by the account layer by requesting sign-in
 again; do not silently replace a key and lose the ability to decrypt old values. A future
 migration should also version the stored payload format.
+
+## Account lifecycle foundation
+
+The shared core now defines a provider-neutral `IAccountAuthenticator` boundary and an
+`AccountConnectionService` that coordinates sign-in results, encrypted session persistence,
+status reporting, refresh delegation and disconnect. UI-facing `AccountConnectionState`
+contains only status, account ID and expiry; it never contains access or refresh tokens.
+
+This is intentionally an interface and lifecycle coordinator only. There is no Audible
+authentication adapter, no login screen, no network call, and no claim that account sign-in
+works. A provider adapter must be based on the upstream-supported authentication flow and
+reviewed for current provider terms before it is implemented. Network failures must not
+silently erase a still-stored session; explicit disconnect clears it.
