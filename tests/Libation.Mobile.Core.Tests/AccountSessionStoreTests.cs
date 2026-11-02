@@ -1,4 +1,5 @@
 using Libation.Mobile.Core;
+using Xunit;
 
 namespace Libation.Mobile.Core.Tests;
 
