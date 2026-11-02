@@ -4,6 +4,8 @@ Repository: https://github.com/rmcrackan/Libation
 License: GPL-3.0  
 Official development guide: https://getlibation.com/docs/development/getting-started
 
+Audit snapshot: upstream `master` at `7f37f3a62e5269ec3f5ccf4906fc30ecccec088d` (2026-10-27). Re-audit before every integration update.
+
 ## Project graph findings
 
 - Upstream targets .NET 10.
