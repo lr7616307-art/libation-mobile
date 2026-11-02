@@ -22,3 +22,16 @@ The provider adapter is deliberately not implemented yet. Before connecting to A
 the next audit must map the pinned upstream authentication flow, device identity handling,
 token lifecycle, marketplace selection, and current provider requirements. Do not invent
 endpoints or treat a generic username/password form as a supported authentication flow.
+## External browser sign-in design
+
+The upstream user guide documents an alternate login where Libation opens or displays a
+sign-in URL, the user completes Amazon/Audible authentication in a browser (including any
+CAPTCHA or additional verification), then returns the final browser URL to Libation. The
+mobile contract now models this handoff using `AccountSignInRequest`,
+`ExternalSignInChallenge`, and `IAccountAuthenticator`. The app must not ask users to type
+their Amazon password into a custom form.
+
+This is a design seam, not a working Audible integration. The provider adapter still needs
+to be mapped from the pinned upstream implementation and reviewed against current provider
+requirements. Do not guess endpoints, redirect formats, client identifiers, or device
+registration values.
