@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Libation.Mobile.UI.Views.MainView">
+  <ScrollViewer>
+    <StackPanel Margin="20" Spacing="16">
+      <StackPanel Spacing="4">
+        <TextBlock Text="LIBATION MOBILE" FontSize="12" FontWeight="Bold" Opacity="0.65" />
+        <TextBlock Text="Your library" FontSize="30" FontWeight="Bold" />
+        <TextBlock Text="A mobile audiobook manager" FontSize="14" Opacity="0.7" />
+      </StackPanel>
+      <TextBox Watermark="Search your audiobooks" />
+      <Border CornerRadius="14" Padding="14" Background="#3157A4">
+        <StackPanel Spacing="4">
+          <TextBlock Text="PROTOTYPE MODE" FontWeight="Bold" Foreground="White" />
+          <TextBlock Text="This screen currently uses sample books. Audible sign-in and library sync are not connected yet."
+                     TextWrapping="Wrap" Foreground="White" />
+        </StackPanel>
+      </Border>
+      <TextBlock Text="Recently added" FontSize="20" FontWeight="SemiBold" />
+      <ItemsControl ItemsSource="{Binding Books}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Border CornerRadius="12" Padding="14" Margin="0,0,0,10"
+                    BorderBrush="#555555" BorderThickness="1">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Title}"
+                           FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Author}"
+                           Margin="0,5,0,0" Opacity="0.75" />
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding Narrator}"
+                           Margin="0,3,0,0" FontSize="12" Opacity="0.65" />
+                <StackPanel Grid.Row="0" Grid.RowSpan="3" Grid.Column="1"
+                            VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="4">
+                  <TextBlock Text="{Binding Length}" FontSize="12" HorizontalAlignment="Right" />
+                  <TextBlock Text="{Binding Status}" FontSize="11" Opacity="0.7"
+                             HorizontalAlignment="Right" />
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <TextBlock Text="No account connected · No files downloaded"
+                 FontSize="12" Opacity="0.6" HorizontalAlignment="Center" Margin="0,8,0,16" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
