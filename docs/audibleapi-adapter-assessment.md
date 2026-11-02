@@ -53,3 +53,26 @@ This is an integration assessment, not a claim that Audible sign-in or sync work
 - [AudibleApi external login callback](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/EzApiCreator/ILoginExternal.cs)
 - [AudibleApi library API](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Api.Library.cs)
 - [Libation device-registration guide](https://github.com/rmcrackan/Libation/blob/master/docs/advanced/device-registration.md)
+
+## Follow-up source inspection: catalogue fields and identity storage
+
+A direct inspection of the upstream `AudibleApi.Common.Item` and `Api.Library.cs` source confirms:
+
+- `Item.ProductId` aliases `Asin`; `LengthInMinutes` aliases `RuntimeLengthMin`; `TitleWithSubtitle` is derived from `Title` and `Subtitle`; `Publisher` aliases `PublisherName`.
+- `LibraryOptions.ResponseGroupOptions.Contributors` exists and serializes to the `contributors` response group. The generated contributor DTO shape and the exact author/narrator role mapping still need to be inspected before mapping. **Do not map Publisher to Author.** Until verified, author/narrator must remain empty rather than mislabelled.
+- `GetAllLibraryItemsAsync` has overloads for response groups, page size and concurrency, but no `CancellationToken` parameter. The paged API is an async enumerable, but the inspected overloads likewise expose no cancellation-token parameter. A mobile adapter must document that cancellation can prevent starting or accepting a result but cannot necessarily abort an in-flight upstream page request.
+
+Identity persistence is a further integration blocker:
+
+- `EzApiCreator.GetApiAsync` takes a filesystem identity path and uses `IdentityPersister` / `JsonFilePersister`; the public flow does not expose a stream or a caller-supplied persistence abstraction.
+- Identity JSON contains access/refresh tokens, private key, ADP token, cookies and device/account identifiers. The library's serializer marks encrypted fields and delegates protection to `IdentityTokenStorage`.
+- Critically, the serializer's `TryProtect` catches protection/store-unavailable failures and **continues by writing plaintext**, while logging that encryption failed. This behavior is not acceptable for a mobile app that promises Keystore-backed storage. Do not assume the library's JSON identity file is encrypted just because the app has an Android Keystore secret store.
+- Before using the convenience `EzApiCreator` file-based flow, the adapter must prove that the upstream secret protector is available and fails closed on Android, or use a supported lower-level API arrangement that keeps identity persistence behind the app's encrypted store. Do not patch or fork upstream cryptographic behavior casually.
+
+### Verified upstream source files
+
+- [Item model](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi.Common/Item.cs)
+- [Library options and paging API](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Api.Library.cs)
+- [Identity persistence wrapper](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/IdentityPersister.cs)
+- [Identity JSON serializer and protection fallback](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/Identity.TokenJson.cs)
+- [Identity contract](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Authorization/IIdentity.cs)
