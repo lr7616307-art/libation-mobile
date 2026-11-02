@@ -34,6 +34,15 @@ public partial class MainView : UserControl
     private async void AddBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await _viewModel.AddBookAsync();
 
+    private void EditBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: Audiobook book } && book.CanDelete)
+            _viewModel.BeginEdit(book.Id);
+    }
+
+    private void CancelEditClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CancelEdit();
+
     private async void DeleteBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book } && book.CanDelete)
