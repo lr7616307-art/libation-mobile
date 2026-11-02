@@ -54,3 +54,10 @@ the user completes sign-in in the browser and returns the resulting URL to Libat
 
 The current code is still provider-neutral scaffolding. No Audible URL generation, callback
 parsing, account registration, CAPTCHA handling, or token exchange has been implemented.
+
+- Authorization challenges must be short-lived HTTPS URLs. Reject non-HTTPS, malformed,
+  empty-ID, and expired challenges before opening them.
+- Launch sign-in in the external browser; never embed a password form or log the challenge
+  URL, response URL, cookies, query values, or authorization headers.
+- The Android browser adapter delegates to Android's activity resolver and does not inspect
+  or persist the browser URL itself.
