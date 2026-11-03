@@ -123,7 +123,7 @@ public sealed class AndroidSecretStore : ISecretStore
             ?? throw new CryptographicException("Android Keystore key is unavailable."));
     }
 
-    private static ISecretKey GetOrCreateKey()
+    private ISecretKey GetOrCreateKey()
     {
         var keyStore = KeyStore.GetInstance("AndroidKeyStore");
         keyStore.Load(null);
