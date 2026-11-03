@@ -69,7 +69,6 @@ public sealed class AudibleIdentityMaintainerTests
         Assert.Equal(1, secrets.SetCalls);
     }
 
-
     [Fact]
     public async Task ConcurrentExpiredTokenRequests_RefreshOnlyOnce()
     {
@@ -146,6 +145,23 @@ public sealed class AudibleIdentityMaintainerTests
 
         var token = await maintainer.GetAccessTokenAsync();
         Assert.Equal("Atna|test-access", token!.Reveal());
+        Assert.Equal(1, secrets.RemoveCalls);
+        Assert.Equal(0, authorize.RefreshCalls);
+    }
+
+    [Fact]
+    public async Task CachedTokenRequest_AfterDisconnect_IsRejected()
+    {
+        using var rsa = RSA.Create(2048);
+        var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+        var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddHours(1)));
+        var secrets = new RecordingSecretStore();
+        var authorize = new FakeAuthorize(_ => Task.FromException<AccessToken>(new Xunit.Sdk.XunitException("Refresh should not be called.")));
+        var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
+
+        await maintainer.DisconnectAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => maintainer.GetAccessTokenAsync());
         Assert.Equal(1, secrets.RemoveCalls);
         Assert.Equal(0, authorize.RefreshCalls);
     }
