@@ -9,6 +9,7 @@ namespace Libation.Mobile.UI.Views;
 public partial class MainView : UserControl
 {
     private readonly MainViewModel _viewModel;
+    public static Func<string>? PlatformWidevineDiagnosticFactory { get; set; }
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
 
     public MainView()
@@ -18,7 +19,7 @@ public partial class MainView : UserControl
         var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
-        _viewModel = new MainViewModel(repository, queue, syncService);
+        _viewModel = new MainViewModel(repository, queue, syncService, PlatformWidevineDiagnosticFactory);
         InitializeComponent();
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
@@ -74,6 +75,9 @@ public partial class MainView : UserControl
 
     private async void SyncLibraryClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await _viewModel.SyncLibraryAsync();
+
+    private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.ProbeWidevine();
 
     private void SortClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.ToggleSort();
     private void FilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.CycleCatalogueFilter();
