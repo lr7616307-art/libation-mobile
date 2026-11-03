@@ -115,6 +115,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string NewLength { get => _newLength; set => SetField(ref _newLength, value); }
     public bool IsEditing => _editingBookId is not null;
     public string SaveButtonLabel => IsEditing ? "Save changes" : "Save to local catalogue";
+    public string EditorTitle => IsEditing ? "Edit audiobook" : "Add an audiobook";
+    public string CatalogueSummaryLabel => $"{Books.Count} of {_allBooks.Count} audiobooks";
 
     private IReadOnlyList<Audiobook> _allBooks = [];
     public bool IsLoading { get => _isLoading; private set { if (_isLoading == value) return; _isLoading = value; OnPropertyChanged(); } }
@@ -135,8 +137,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
     public bool IsQueueEmpty => QueueItems.Count == 0;
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
-    public string EmptyMessage => HasBooks ? string.Empty :
-        string.IsNullOrWhiteSpace(SearchText) ? "Your local catalogue is empty." : "No matching audiobooks.";
+    public string EmptyMessage => Books.Count > 0 ? string.Empty :
+        _allBooks.Count == 0 ? "Your local catalogue is empty." : "No matching audiobooks. Try another title, author or narrator.";
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
