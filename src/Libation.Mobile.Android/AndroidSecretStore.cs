@@ -132,6 +132,11 @@ public sealed class AndroidSecretStore : ISecretStore
             return (ISecretKey)(keyStore.GetKey(KeyAlias, null)
                 ?? throw new CryptographicException("Android Keystore key is unavailable."));
 
+        // Never create a replacement key while encrypted values still exist.
+        // Doing so would make every other value permanently undecryptable.
+        if (_preferences.All?.Count > 0)
+            throw new CryptographicException("The Android Keystore key is missing while encrypted secrets still exist.");
+
         var generator = KeyGenerator.GetInstance(KeyProperties.KeyAlgorithmAes, "AndroidKeyStore");
         var spec = new KeyGenParameterSpec.Builder(
                 KeyAlias,
