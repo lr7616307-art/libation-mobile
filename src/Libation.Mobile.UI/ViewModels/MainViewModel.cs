@@ -115,6 +115,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string NewLength { get => _newLength; set => SetField(ref _newLength, value); }
     public bool IsEditing => _editingBookId is not null;
     public string SaveButtonLabel => IsEditing ? "Save changes" : "Save to local catalogue";
+    public string EditorTitle => IsEditing ? "Edit audiobook" : "Add an audiobook";
+    public string CatalogueSummaryLabel => $"{Books.Count} of {_allBooks.Count} audiobooks";
 
     private IReadOnlyList<Audiobook> _allBooks = [];
     public bool IsLoading { get => _isLoading; private set { if (_isLoading == value) return; _isLoading = value; OnPropertyChanged(); } }
