@@ -107,6 +107,35 @@ public sealed class AccountConnectionServiceTests
         Assert.Equal(0, authenticator.CompleteCount);
     }
 
+    [Theory]
+    [InlineData("https://user:password@example.invalid/return")]
+    [InlineData("https://@example.invalid/return")]
+    public async Task CompleteSignIn_RejectsResponseUrlWithEmbeddedCredentials(string responseUrl)
+    {
+        var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"));
+        var service = CreateService(authenticator);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
+
+        Assert.Equal(0, authenticator.CompleteCount);
+    }
+
+    [Fact]
+    public async Task CompleteSignIn_RejectsOversizedResponseUrlBeforeProviderCall()
+    {
+        var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"));
+        var service = CreateService(authenticator);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+        var responseUrl = "https://example.invalid/return?data=" + new string('a', 16 * 1024);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
+
+        Assert.Equal(0, authenticator.CompleteCount);
+    }
+
     [Fact]
     public async Task BeginSignIn_NewAttemptInvalidatesPreviousChallenge()
     {
