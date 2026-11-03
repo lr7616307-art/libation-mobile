@@ -14,17 +14,19 @@ public partial class MainView : UserControl
     public MainView()
     {
         var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _viewModel = new MainViewModel(
-            new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json")),
-            new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json")));
+        var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
+        var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
+        var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
+        var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
+        _viewModel = new MainViewModel(repository, queue, syncService);
         InitializeComponent();
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
     }
 
-    public MainView(ILibraryRepository repository, IDownloadQueue downloadQueue)
+    public MainView(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
     {
-        _viewModel = new MainViewModel(repository, downloadQueue);
+        _viewModel = new MainViewModel(repository, downloadQueue, syncService);
         InitializeComponent();
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
