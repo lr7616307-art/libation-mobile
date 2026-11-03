@@ -81,7 +81,9 @@ Before production use:
 
 A clear request invalidates older in-flight creation immediately, then waits for the active operation to leave the gate before clearing. A later login request can run after that clear and establish a new identity. Cancellation of a clear while it waits still invalidates older work; callers should treat the canceled lifecycle transition as requiring an explicit retry or fresh sign-in.
 
-This coordinator is a reusable primitive, not yet the single application-wide owner of all authentication state. The existing `AudibleIdentityMaintainer` still has its own refresh/disconnect gate. Production wiring must route login completion, identity replacement, load, refresh, and sign-out through one shared lifecycle boundary; do not instantiate independent coordinators per screen or operation. Android Keystore behavior remains a separate device-test requirement.
+The `AudibleIdentityMaintainer` now accepts an optional shared coordinator and routes refresh commits and disconnect through it. When the same coordinator instance is supplied to login/replacement and the maintainer, a newer login or clear invalidates an older refresh result before its snapshot can be committed. Disconnect wins a race with an in-flight refresh: the refresh result is discarded, then the snapshot is cleared. If disconnect is cancelled while waiting, the older refresh is still invalidated; the prior persisted identity is not cleared, and the caller must retry or explicitly re-establish the session.
+
+The coordinator remains opt-in at construction. Application composition must create one coordinator per account/session lifecycle and inject that same instance into the login/replacement flow and every maintainer for that session. Separate coordinator instances do not coordinate. The UI/service composition is not yet wired in this prototype, and Android Keystore behavior remains a separate device-test requirement.
 
 ## Explicit non-goals
 
