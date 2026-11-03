@@ -19,8 +19,6 @@ public sealed class AndroidSecretStore : ISecretStore
     private const string PreferencesName = "libation_mobile_secrets";
     private const string KeyAlias = "libation_mobile_secret_key_v1";
     private const string Transformation = "AES/GCM/NoPadding";
-    private const byte CurrentEnvelopeVersion = 2;
-    private const int GcmIvLength = 12;
     private readonly ISharedPreferences _preferences;
 
     public AndroidSecretStore(Context context)
@@ -38,16 +36,12 @@ public sealed class AndroidSecretStore : ISecretStore
         using var cipher = Cipher.GetInstance(Transformation);
         cipher.Init(Javax.Crypto.CipherMode.EncryptMode, GetOrCreateKey());
         var iv = cipher.GetIV();
-        if (iv is null || iv.Length != GcmIvLength)
+        if (iv is null || iv.Length != EncryptedSecretEnvelope.GcmIvLength)
             throw new CryptographicException("Android Keystore returned an invalid AES-GCM IV.");
 
-        cipher.UpdateAAD(Encoding.UTF8.GetBytes(key));
+        cipher.UpdateAAD(EncryptedSecretEnvelope.GetAssociatedData(key));
         var ciphertext = cipher.DoFinal(Encoding.UTF8.GetBytes(value));
-        var payload = new byte[2 + iv.Length + ciphertext.Length];
-        payload[0] = CurrentEnvelopeVersion;
-        payload[1] = checked((byte)iv.Length);
-        Buffer.BlockCopy(iv, 0, payload, 2, iv.Length);
-        Buffer.BlockCopy(ciphertext, 0, payload, 2 + iv.Length, ciphertext.Length);
+        var payload = EncryptedSecretEnvelope.Encode(iv, ciphertext);
 
         var encoded = Base64.EncodeToString(payload, Base64Flags.NoWrap);
         if (!_preferences.Edit()!.PutString(key, encoded)!.Commit())
@@ -74,45 +68,25 @@ public sealed class AndroidSecretStore : ISecretStore
             throw new CryptographicException("Stored secret payload is invalid.", exception);
         }
 
-        if (payload.Length < 1)
-            throw new CryptographicException("Stored secret payload is invalid.");
-
-        var isLegacy = payload[0] == GcmIvLength;
-        int headerLength;
-        int ivLength;
-        if (isLegacy)
+        EncryptedSecretEnvelopeData envelope;
+        try
         {
-            // Version 1 stored [IV length][IV][ciphertext] without AAD.
-            headerLength = 1;
-            ivLength = payload[0];
+            envelope = EncryptedSecretEnvelope.Decode(payload);
         }
-        else
+        catch (InvalidDataException exception)
         {
-            if (payload[0] != CurrentEnvelopeVersion || payload.Length < 2)
-                throw new CryptographicException("Stored secret envelope version is unsupported.");
-            headerLength = 2;
-            ivLength = payload[1];
-            if (ivLength != GcmIvLength)
-                throw new CryptographicException("Stored secret payload is invalid.");
+            throw new CryptographicException("Stored secret payload is invalid.", exception);
         }
-
-        if (payload.Length < headerLength + ivLength + 16)
-            throw new CryptographicException("Stored secret payload is invalid.");
-
-        var iv = new byte[ivLength];
-        var ciphertext = new byte[payload.Length - headerLength - ivLength];
-        Buffer.BlockCopy(payload, headerLength, iv, 0, iv.Length);
-        Buffer.BlockCopy(payload, headerLength + ivLength, ciphertext, 0, ciphertext.Length);
 
         using var cipher = Cipher.GetInstance(Transformation);
-        cipher.Init(Javax.Crypto.CipherMode.DecryptMode, GetExistingKey(), new GCMParameterSpec(128, iv));
-        if (!isLegacy)
-            cipher.UpdateAAD(Encoding.UTF8.GetBytes(key));
+        cipher.Init(Javax.Crypto.CipherMode.DecryptMode, GetExistingKey(), new GCMParameterSpec(128, envelope.Iv));
+        if (!envelope.IsLegacy)
+            cipher.UpdateAAD(EncryptedSecretEnvelope.GetAssociatedData(key));
 
         byte[] plaintext;
         try
         {
-            plaintext = cipher.DoFinal(ciphertext);
+            plaintext = cipher.DoFinal(envelope.CiphertextAndTag);
         }
         catch (Javax.Crypto.AEADBadTagException exception)
         {
@@ -120,7 +94,7 @@ public sealed class AndroidSecretStore : ISecretStore
         }
 
         var value = Encoding.UTF8.GetString(plaintext);
-        if (isLegacy)
+        if (envelope.IsLegacy)
         {
             // Upgrade only after successful legacy authentication. If the write fails,
             // propagate the error rather than silently claiming migration succeeded.
