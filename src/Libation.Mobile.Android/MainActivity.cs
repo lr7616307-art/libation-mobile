@@ -6,7 +6,9 @@ namespace Libation.Mobile.Android;
 
 [Activity(
     Label = "Libation Mobile",
-    Theme = "@android:style/Theme.Material.Light.NoActionBar",
+    // AvaloniaMainActivity derives from AppCompatActivity. A platform Material
+    // theme does not satisfy AppCompatDelegate and crashes during onCreate.
+    Theme = "@style/Theme.AppCompat.Light.NoActionBar",
     MainLauncher = true,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 public class MainActivity : AvaloniaMainActivity
