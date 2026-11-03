@@ -109,7 +109,9 @@ public sealed class ExternalSignInFlowTests
     private static ExternalSignInFlow CreateFlow()
     {
         var now = DateTimeOffset.UtcNow;
-        return CreateFlow(now, now.AddMinutes(5));
+        var challenge = new ExternalSignInChallenge(
+            "challenge", new Uri("https://example.invalid/login?state=opaque-state"),
+            now.AddMinutes(5));
+        return new ExternalSignInFlow(challenge, CallbackUri, () => now);
     }
-
 }
