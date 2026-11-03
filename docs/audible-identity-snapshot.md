@@ -75,6 +75,14 @@ Before production use:
 - Keep browser callback URLs and transient authorization data in process memory only; never place them in an Android intent/deep link or the snapshot.
 - Never log tokens, cookies, ADP tokens, private keys, or serialized identity payloads.
 
+## App-owned lifecycle coordinator
+
+`AudibleIdentityLifecycleCoordinator` provides a platform-neutral serialization boundary for callers that create/replace an identity and persist it, or clear the persisted identity. Each new operation receives a generation. Starting a newer login/replacement or clear invalidates an older operation before its result can be saved. The coordinator checks cancellation and generation after the asynchronous identity-creation step, then awaits persistence before returning the new identity. Save/clear failures propagate.
+
+A clear request invalidates older in-flight creation immediately, then waits for the active operation to leave the gate before clearing. A later login request can run after that clear and establish a new identity. Cancellation of a clear while it waits still invalidates older work; callers should treat the canceled lifecycle transition as requiring an explicit retry or fresh sign-in.
+
+This coordinator is a reusable primitive, not yet the single application-wide owner of all authentication state. The existing `AudibleIdentityMaintainer` still has its own refresh/disconnect gate. Production wiring must route login completion, identity replacement, load, refresh, and sign-out through one shared lifecycle boundary; do not instantiate independent coordinators per screen or operation. Android Keystore behavior remains a separate device-test requirement.
+
 ## Explicit non-goals
 
 This format does not implement browser login, device registration, library synchronization, audiobook downloads, or DRM handling. Format tests must use synthetic credentials only.
