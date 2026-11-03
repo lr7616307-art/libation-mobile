@@ -37,6 +37,33 @@ public sealed class ExternalSignInFlowTests
     }
 
     [Fact]
+    public void WrongPath_InvalidatesFlow()
+    {
+        var flow = CreateFlow();
+
+        Assert.Equal(ExternalSignInFlowStatus.Invalid,
+            flow.AcceptCallback("libation://signin/other?state=opaque-state"));
+    }
+
+    [Fact]
+    public void WrongPort_InvalidatesFlow()
+    {
+        var flow = CreateFlow();
+
+        Assert.Equal(ExternalSignInFlowStatus.Invalid,
+            flow.AcceptCallback("libation://signin:1234/return?state=opaque-state"));
+    }
+
+    [Fact]
+    public void CallbackWithUserInfo_IsRejected()
+    {
+        var flow = CreateFlow();
+
+        Assert.Equal(ExternalSignInFlowStatus.Invalid,
+            flow.AcceptCallback("libation://attacker@signin/return?state=opaque-state"));
+    }
+
+    [Fact]
     public void WrongScheme_InvalidatesFlow()
     {
         var flow = CreateFlow();
@@ -55,6 +82,15 @@ public sealed class ExternalSignInFlowTests
         var flow = CreateFlow();
 
         Assert.Equal(ExternalSignInFlowStatus.Invalid, flow.AcceptCallback(callback));
+    }
+
+    [Fact]
+    public void DuplicateState_InvalidatesFlow()
+    {
+        var flow = CreateFlow();
+
+        Assert.Equal(ExternalSignInFlowStatus.Invalid,
+            flow.AcceptCallback("libation://signin/return?state=opaque-state&state=opaque-state"));
     }
 
     [Fact]
