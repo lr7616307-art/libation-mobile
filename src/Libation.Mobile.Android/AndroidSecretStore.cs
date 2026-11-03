@@ -96,7 +96,7 @@ public sealed class AndroidSecretStore : ISecretStore
                 throw new CryptographicException("Stored secret payload is invalid.");
         }
 
-        if (payload.Length <= headerLength + ivLength + 16)
+        if (payload.Length < headerLength + ivLength + 16)
             throw new CryptographicException("Stored secret payload is invalid.");
 
         var iv = new byte[ivLength];
@@ -105,7 +105,7 @@ public sealed class AndroidSecretStore : ISecretStore
         Buffer.BlockCopy(payload, headerLength + ivLength, ciphertext, 0, ciphertext.Length);
 
         using var cipher = Cipher.GetInstance(Transformation);
-        cipher.Init(Javax.Crypto.CipherMode.DecryptMode, GetOrCreateKey(), new GCMParameterSpec(128, iv));
+        cipher.Init(Javax.Crypto.CipherMode.DecryptMode, GetExistingKey(), new GCMParameterSpec(128, iv));
         if (!isLegacy)
             cipher.UpdateAAD(Encoding.UTF8.GetBytes(key));
 
@@ -137,6 +137,16 @@ public sealed class AndroidSecretStore : ISecretStore
         if (!_preferences.Edit()!.Remove(key)!.Commit())
             throw new IOException("Unable to remove stored secret.");
         return Task.CompletedTask;
+    }
+
+    private static ISecretKey GetExistingKey()
+    {
+        var keyStore = KeyStore.GetInstance("AndroidKeyStore");
+        keyStore.Load(null);
+        if (!keyStore.ContainsAlias(KeyAlias))
+            throw new CryptographicException("The Android Keystore key for stored secrets is missing.");
+        return (ISecretKey)(keyStore.GetKey(KeyAlias, null)
+            ?? throw new CryptographicException("Android Keystore key is unavailable."));
     }
 
     private static ISecretKey GetOrCreateKey()
