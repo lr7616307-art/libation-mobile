@@ -1,15 +1,19 @@
 using Avalonia.Controls;
+using Libation.Mobile.Core;
 using Libation.Mobile.UI.ViewModels;
 
 namespace Libation.Mobile.UI.Views;
 
 public partial class MainView
 {
-    /// <summary>
-    /// Set by the Android host before Avalonia creates the main view.
-    /// The shared UI remains usable without Android-specific services.
-    /// </summary>
+    /// <summary>Set by the platform host before Avalonia creates the main view.</summary>
     public static Func<AudibleSignInViewModel>? PlatformSignInViewModelFactory { get; set; }
+
+    /// <summary>
+    /// Supplies a provider that restores the already-saved identity on demand.
+    /// The shared UI remains usable without platform-specific account services.
+    /// </summary>
+    public static Func<ILibraryCatalogProvider>? PlatformLibraryCatalogProviderFactory { get; set; }
 
     public static MainView CreatePlatformView()
     {
