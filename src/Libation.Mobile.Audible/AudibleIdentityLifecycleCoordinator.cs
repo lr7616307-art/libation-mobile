@@ -3,7 +3,7 @@ namespace Libation.Mobile.Audible;
 /// <summary>
 /// Serializes asynchronous identity creation, persistence, and clearing.
 /// A newer operation invalidates older work even while that work is awaiting
-/// a remote response, so stale results are never persisted.
+/// a remote response or committing its result.
 /// </summary>
 public sealed class AudibleIdentityLifecycleCoordinator
 {
@@ -29,14 +29,10 @@ public sealed class AudibleIdentityLifecycleCoordinator
             cancellationToken.ThrowIfCancellationRequested();
             var identity = await createIdentityAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (operationGeneration != Volatile.Read(ref generation))
-                throw new OperationCanceledException("A newer Audible identity operation superseded this result.");
+            EnsureCurrent(operationGeneration);
 
             await saveIdentityAsync(identity, cancellationToken).ConfigureAwait(false);
-
-            if (operationGeneration != Volatile.Read(ref generation))
-                throw new OperationCanceledException("A newer Audible identity operation superseded this result.");
+            EnsureCurrent(operationGeneration);
 
             return identity;
         }
@@ -48,7 +44,8 @@ public sealed class AudibleIdentityLifecycleCoordinator
 
     /// <summary>
     /// Runs a refresh or other update against the current lifecycle generation.
-    /// A newer login/replacement or clear invalidates the operation before commit.
+    /// A newer login/replacement or clear invalidates the operation before it
+    /// can commit, or causes it to report cancellation if superseded during commit.
     /// </summary>
     public async Task<T> ExecuteCurrentAsync<T>(
         Func<CancellationToken, Task<T>> operationAsync,
@@ -63,16 +60,15 @@ public sealed class AudibleIdentityLifecycleCoordinator
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (operationGeneration != Volatile.Read(ref generation))
-                throw new OperationCanceledException("A newer Audible identity operation superseded this result.");
+            EnsureCurrent(operationGeneration);
 
             var result = await operationAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-
-            if (operationGeneration != Volatile.Read(ref generation))
-                throw new OperationCanceledException("A newer Audible identity operation superseded this result.");
+            EnsureCurrent(operationGeneration);
 
             await commitAsync(result, cancellationToken).ConfigureAwait(false);
+            EnsureCurrent(operationGeneration);
+
             return result;
         }
         finally
@@ -102,5 +98,11 @@ public sealed class AudibleIdentityLifecycleCoordinator
         {
             gate.Release();
         }
+    }
+
+    private void EnsureCurrent(long operationGeneration)
+    {
+        if (operationGeneration != Volatile.Read(ref generation))
+            throw new OperationCanceledException("A newer Audible identity operation superseded this result.");
     }
 }
