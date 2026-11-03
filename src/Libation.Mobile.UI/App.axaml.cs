@@ -12,9 +12,9 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IActivityApplicationLifetime activityLifetime)
-            activityLifetime.MainViewFactory = () => new MainView();
+            activityLifetime.MainViewFactory = MainView.CreatePlatformView;
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewLifetime)
-            singleViewLifetime.MainView = new MainView();
+            singleViewLifetime.MainView = MainView.CreatePlatformView();
 
         base.OnFrameworkInitializationCompleted();
     }
