@@ -72,7 +72,10 @@ public sealed class ExternalSignInFlowTests
     public void ExpiredPendingFlow_RejectsCallback()
     {
         var now = DateTimeOffset.UtcNow;
-        var flow = CreateFlow(now, now.AddMinutes(5));
+        var challenge = new ExternalSignInChallenge(
+            "challenge", new Uri("https://example.invalid/login?state=opaque-state"),
+            now.AddMinutes(5));
+        var flow = new ExternalSignInFlow(challenge, CallbackUri, () => now);
 
         now = now.AddMinutes(6);
 
@@ -109,11 +112,4 @@ public sealed class ExternalSignInFlowTests
         return CreateFlow(now, now.AddMinutes(5));
     }
 
-    private static ExternalSignInFlow CreateFlow(DateTimeOffset initialNow, DateTimeOffset expiry)
-    {
-        var now = initialNow;
-        var challenge = new ExternalSignInChallenge(
-            "challenge", new Uri("https://example.invalid/login?state=opaque-state"), expiry);
-        return new ExternalSignInFlow(challenge, CallbackUri, () => now);
-    }
 }
