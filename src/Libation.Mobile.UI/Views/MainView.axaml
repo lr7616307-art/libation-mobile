@@ -46,6 +46,13 @@
       </Border>
       <Border CornerRadius="12" Padding="14" BorderBrush="#555555" BorderThickness="1">
         <StackPanel Spacing="8">
+          <TextBlock Text="Widevine capability" FontSize="18" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding WidevineDiagnostic}" TextWrapping="Wrap" FontSize="13" />
+          <Button Content="Check Widevine support" IsEnabled="{Binding CanProbeWidevine}" Click="ProbeWidevineClicked" />
+        </StackPanel>
+      </Border>
+      <Border CornerRadius="12" Padding="14" BorderBrush="#555555" BorderThickness="1">
+        <StackPanel Spacing="8">
           <TextBlock Text="Library sync" FontSize="18" FontWeight="SemiBold" />
           <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap" FontSize="13" />
           <TextBlock Text="{Binding LastSuccessfulSyncLabel}" TextWrapping="Wrap" FontSize="12" Opacity="0.7" />
