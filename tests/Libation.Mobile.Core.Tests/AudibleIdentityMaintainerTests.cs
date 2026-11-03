@@ -18,7 +18,7 @@ public sealed class AudibleIdentityMaintainerTests
         using var rsa = RSA.Create(2048);
         var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
         var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddHours(1)));
-        var authorize = new FakeAuthorize(_ => throw new Xunit.Sdk.XunitException("Refresh should not be called."));
+        var authorize = new FakeAuthorize(_ => Task.FromException<AccessToken>(new Xunit.Sdk.XunitException("Refresh should not be called.")));
         var secrets = new RecordingSecretStore();
         var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
 
@@ -37,7 +37,7 @@ public sealed class AudibleIdentityMaintainerTests
         var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
         var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddMinutes(-1)));
         var secrets = new RecordingSecretStore();
-        var authorize = new FakeAuthorize(_ => new AccessToken(new SecretString("Atna|refreshed"), now.AddHours(2)));
+        var authorize = new FakeAuthorize(_ => Task.FromResult(new AccessToken(new SecretString("Atna|refreshed"), now.AddHours(2))));
         var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
 
         var token = await maintainer.GetAccessTokenAsync();
@@ -67,6 +67,54 @@ public sealed class AudibleIdentityMaintainerTests
         Assert.Equal("Atna|test-access", identity.ExistingAccessToken.Reveal());
         Assert.Equal(1, authorize.RefreshCalls);
         Assert.Equal(1, secrets.SetCalls);
+    }
+
+
+    [Fact]
+    public async Task ConcurrentExpiredTokenRequests_RefreshOnlyOnce()
+    {
+        using var rsa = RSA.Create(2048);
+        var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+        var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddMinutes(-1)));
+        var secrets = new RecordingSecretStore();
+        var refreshStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRefresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var authorize = new FakeAuthorize(async _ =>
+        {
+            refreshStarted.TrySetResult();
+            await allowRefresh.Task;
+            return new AccessToken(new SecretString("Atna|refreshed"), now.AddHours(2));
+        });
+        var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
+
+        var first = maintainer.GetAccessTokenAsync();
+        await refreshStarted.Task;
+        var second = maintainer.GetAccessTokenAsync();
+        var third = maintainer.GetAccessTokenAsync();
+        allowRefresh.TrySetResult();
+
+        var tokens = await Task.WhenAll(first, second, third);
+
+        Assert.All(tokens, token => Assert.Equal("Atna|refreshed", token!.Reveal()));
+        Assert.Equal(1, authorize.RefreshCalls);
+        Assert.Equal(1, secrets.SetCalls);
+    }
+
+    [Fact]
+    public async Task RefreshFailure_LeavesExistingIdentityAndDoesNotRegisterOrDeregister()
+    {
+        using var rsa = RSA.Create(2048);
+        var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+        var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddMinutes(-1)));
+        var authorize = new FakeAuthorize(_ => Task.FromException<AccessToken>(new HttpRequestException("simulated refresh failure")));
+        var secrets = new RecordingSecretStore();
+        var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => maintainer.GetAccessTokenAsync());
+
+        Assert.Equal("Atna|test-access", identity.ExistingAccessToken.Reveal());
+        Assert.Equal(1, authorize.RefreshCalls);
+        Assert.Equal(0, secrets.SetCalls);
     }
 
     private static AudibleIdentitySnapshot CreateSnapshot(string privateKey, DateTime expiry) => new()
@@ -115,14 +163,14 @@ public sealed class AudibleIdentityMaintainerTests
         }
     }
 
-    private sealed class FakeAuthorize(Func<RefreshToken, AccessToken> refresh) : IAuthorize
+    private sealed class FakeAuthorize(Func<RefreshToken, Task<AccessToken>> refresh) : IAuthorize
     {
         public int RefreshCalls { get; private set; }
 
         public Task<AccessToken> RefreshAccessTokenAsync(RefreshToken refreshToken)
         {
             RefreshCalls++;
-            return Task.FromResult(refresh(refreshToken));
+            return refresh(refreshToken);
         }
 
         public Task<JObject> RegisterAsync(OAuth2 authorization) =>
