@@ -19,6 +19,8 @@ public sealed class AndroidSecretStore : ISecretStore
     private const string PreferencesName = "libation_mobile_secrets";
     private const string KeyAlias = "libation_mobile_secret_key_v1";
     private const string Transformation = "AES/GCM/NoPadding";
+    private const byte CurrentEnvelopeVersion = 2;
+    private const int GcmIvLength = 12;
     private readonly ISharedPreferences _preferences;
 
     public AndroidSecretStore(Context context)
@@ -35,12 +37,17 @@ public sealed class AndroidSecretStore : ISecretStore
 
         using var cipher = Cipher.GetInstance(Transformation);
         cipher.Init(Javax.Crypto.CipherMode.EncryptMode, GetOrCreateKey());
-        var ciphertext = cipher.DoFinal(Encoding.UTF8.GetBytes(value));
         var iv = cipher.GetIV();
-        var payload = new byte[1 + iv.Length + ciphertext.Length];
-        payload[0] = checked((byte)iv.Length);
-        Buffer.BlockCopy(iv, 0, payload, 1, iv.Length);
-        Buffer.BlockCopy(ciphertext, 0, payload, 1 + iv.Length, ciphertext.Length);
+        if (iv is null || iv.Length != GcmIvLength)
+            throw new CryptographicException("Android Keystore returned an invalid AES-GCM IV.");
+
+        cipher.UpdateAAD(Encoding.UTF8.GetBytes(key));
+        var ciphertext = cipher.DoFinal(Encoding.UTF8.GetBytes(value));
+        var payload = new byte[2 + iv.Length + ciphertext.Length];
+        payload[0] = CurrentEnvelopeVersion;
+        payload[1] = checked((byte)iv.Length);
+        Buffer.BlockCopy(iv, 0, payload, 2, iv.Length);
+        Buffer.BlockCopy(ciphertext, 0, payload, 2 + iv.Length, ciphertext.Length);
 
         var encoded = Base64.EncodeToString(payload, Base64Flags.NoWrap);
         if (!_preferences.Edit()!.PutString(key, encoded)!.Commit())
@@ -49,31 +56,78 @@ public sealed class AndroidSecretStore : ISecretStore
         return Task.CompletedTask;
     }
 
-    public Task<string?> GetAsync(string key, CancellationToken cancellationToken = default)
+    public async Task<string?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         cancellationToken.ThrowIfCancellationRequested();
 
         var encoded = _preferences.GetString(key, null);
-        if (encoded is null) return Task.FromResult<string?>(null);
+        if (encoded is null) return null;
 
-        var payload = Base64.Decode(encoded, Base64Flags.NoWrap);
+        byte[] payload;
+        try
+        {
+            payload = Base64.Decode(encoded, Base64Flags.NoWrap);
+        }
+        catch (Java.Lang.IllegalArgumentException exception)
+        {
+            throw new CryptographicException("Stored secret payload is invalid.", exception);
+        }
+
         if (payload.Length < 1)
             throw new CryptographicException("Stored secret payload is invalid.");
 
-        var ivLength = payload[0];
-        if (ivLength == 0 || payload.Length <= 1 + ivLength)
+        var isLegacy = payload[0] == GcmIvLength;
+        int headerLength;
+        int ivLength;
+        if (isLegacy)
+        {
+            // Version 1 stored [IV length][IV][ciphertext] without AAD.
+            headerLength = 1;
+            ivLength = payload[0];
+        }
+        else
+        {
+            if (payload[0] != CurrentEnvelopeVersion || payload.Length < 2)
+                throw new CryptographicException("Stored secret envelope version is unsupported.");
+            headerLength = 2;
+            ivLength = payload[1];
+            if (ivLength != GcmIvLength)
+                throw new CryptographicException("Stored secret payload is invalid.");
+        }
+
+        if (payload.Length <= headerLength + ivLength + 16)
             throw new CryptographicException("Stored secret payload is invalid.");
 
         var iv = new byte[ivLength];
-        var ciphertext = new byte[payload.Length - 1 - ivLength];
-        Buffer.BlockCopy(payload, 1, iv, 0, ivLength);
-        Buffer.BlockCopy(payload, 1 + ivLength, ciphertext, 0, ciphertext.Length);
+        var ciphertext = new byte[payload.Length - headerLength - ivLength];
+        Buffer.BlockCopy(payload, headerLength, iv, 0, iv.Length);
+        Buffer.BlockCopy(payload, headerLength + ivLength, ciphertext, 0, ciphertext.Length);
 
         using var cipher = Cipher.GetInstance(Transformation);
         cipher.Init(Javax.Crypto.CipherMode.DecryptMode, GetOrCreateKey(), new GCMParameterSpec(128, iv));
-        var plaintext = cipher.DoFinal(ciphertext);
-        return Task.FromResult<string?>(Encoding.UTF8.GetString(plaintext));
+        if (!isLegacy)
+            cipher.UpdateAAD(Encoding.UTF8.GetBytes(key));
+
+        byte[] plaintext;
+        try
+        {
+            plaintext = cipher.DoFinal(ciphertext);
+        }
+        catch (Javax.Crypto.AEADBadTagException exception)
+        {
+            throw new CryptographicException("Stored secret authentication failed.", exception);
+        }
+
+        var value = Encoding.UTF8.GetString(plaintext);
+        if (isLegacy)
+        {
+            // Upgrade only after successful legacy authentication. If the write fails,
+            // propagate the error rather than silently claiming migration succeeded.
+            await SetAsync(key, value, cancellationToken).ConfigureAwait(false);
+        }
+
+        return value;
     }
 
     public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
