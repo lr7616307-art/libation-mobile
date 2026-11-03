@@ -20,8 +20,11 @@ public sealed class ExternalSignInFlow
         ExternalSignInChallengeValidator.Validate(challenge);
         ArgumentNullException.ThrowIfNull(callbackUri);
         if (!callbackUri.IsAbsoluteUri || string.IsNullOrWhiteSpace(callbackUri.Scheme)
-            || string.IsNullOrWhiteSpace(callbackUri.Host))
-            throw new ArgumentException("Callback URI must be absolute and include a host.", nameof(callbackUri));
+            || string.IsNullOrWhiteSpace(callbackUri.Host)
+            || !string.IsNullOrEmpty(callbackUri.UserInfo)
+            || !string.IsNullOrEmpty(callbackUri.Query)
+            || !string.IsNullOrEmpty(callbackUri.Fragment))
+            throw new ArgumentException("Callback URI must be an absolute origin/path without user info, query, or fragment.", nameof(callbackUri));
 
         _expectedState = ReadSingleState(challenge.AuthorizationUri)
             ?? throw new ArgumentException("Authorization URI must contain exactly one state value.", nameof(challenge));
@@ -51,6 +54,10 @@ public sealed class ExternalSignInFlow
         if (!Uri.TryCreate(callbackUrl, UriKind.Absolute, out var callback)
             || !string.Equals(callback.Scheme, _callbackUri.Scheme, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(callback.Host, _callbackUri.Host, StringComparison.OrdinalIgnoreCase)
+            || callback.Port != _callbackUri.Port
+            || !string.Equals(callback.AbsolutePath, _callbackUri.AbsolutePath, StringComparison.Ordinal)
+            || !string.IsNullOrEmpty(callback.UserInfo)
+            || !string.IsNullOrEmpty(callback.Fragment)
             || !string.Equals(ReadSingleState(callback), _expectedState, StringComparison.Ordinal))
         {
             _status = ExternalSignInFlowStatus.Invalid;
@@ -79,16 +86,23 @@ public sealed class ExternalSignInFlow
     private static string? ReadSingleState(Uri uri)
     {
         string? state = null;
-        foreach (var part in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        try
         {
-            var pair = part.Split('=', 2);
-            if (!string.Equals(Uri.UnescapeDataString(pair[0].Replace("+", " ")), "state", StringComparison.Ordinal))
-                continue;
-            if (state is not null || pair.Length != 2)
-                return null;
-            state = Uri.UnescapeDataString(pair[1].Replace("+", " "));
-            if (string.IsNullOrWhiteSpace(state))
-                return null;
+            foreach (var part in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var pair = part.Split('=', 2);
+                if (!string.Equals(Uri.UnescapeDataString(pair[0].Replace("+", " ")), "state", StringComparison.Ordinal))
+                    continue;
+                if (state is not null || pair.Length != 2)
+                    return null;
+                state = Uri.UnescapeDataString(pair[1].Replace("+", " "));
+                if (string.IsNullOrWhiteSpace(state))
+                    return null;
+            }
+        }
+        catch (UriFormatException)
+        {
+            return null;
         }
         return state;
     }
