@@ -84,3 +84,18 @@ These checks require a physical Android device and are not proven by CI compilat
 5. Verify the same ciphertext copied to a different logical secret key fails AES-GCM authentication.
 
 Never use a real Audible credential for these checks, and never capture secret values or ciphertext in logs or screenshots.
+
+## Account session lifecycle serialization
+
+`AccountSessionLifecycleCoordinator` serializes sign-in completion, refresh, and
+disconnect commits. Starting a replacement sign-in or requesting disconnect increments
+a lifecycle generation immediately. Any older in-flight sign-in or refresh checks that
+generation before persistence and is rejected if superseded. Refresh loads the current
+session only after entering the serialized gate, preventing two concurrent refreshes
+from both rotating the same old token. Disconnect invalidates in-flight work before it
+waits for the gate and then clears the encrypted session.
+
+Cancellation while waiting for the gate does not execute the queued operation. Storage
+errors are propagated; the service does not report a connected state until persistence
+has completed. A cancelled disconnect still invalidates earlier operations, but does
+not clear the stored session unless the clear operation itself runs successfully.
