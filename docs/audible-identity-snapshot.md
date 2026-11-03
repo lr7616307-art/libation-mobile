@@ -55,14 +55,25 @@ Core tests use an AES-GCM test double to verify a complete encrypted round-trip,
 
 These tests verify the snapshot-store contract; they do **not** execute Android Keystore APIs. Before production use, perform physical Android tests for key creation/reuse, decrypt after process restart, key invalidation, app-data restore behavior, and recovery from corrupted preferences. The Android Keystore implementation and backup exclusion also need device-level verification.
 
-## Lifecycle rules still required
+## Lifecycle coordination: current guarantees and remaining work
 
-1. A lifecycle coordinator must await snapshot persistence for every identity update; do not use async-void persistence from a synchronous event handler.
-2. Serialize refresh, login, and disconnect. Disconnect must prevent a late refresh from recreating a deleted identity.
-3. A persistence failure must fail the login/refresh operation and surface only a safe, non-secret error.
-4. Exclude the identity record from Android backup and all user-visible library backup/export operations.
-5. Keep browser callback URLs, response parameters, and sign-in cookies in process memory only; never place them in an Android intent/deep link or the snapshot.
-6. Never log tokens, cookies, ADP tokens, private keys, or serialized identity payloads.
+The current `AudibleIdentityMaintainer` serializes token refresh and its app-owned `DisconnectAsync` operation with one semaphore:
+
+1. Concurrent token requests share the same refresh; only one refresh and snapshot save occur.
+2. A refreshed token is not returned until its snapshot save succeeds. If saving fails, the previous in-memory access token is restored and the operation fails.
+3. Disconnect waits for an in-flight refresh, then clears the persisted snapshot. Once clearing succeeds, that maintainer instance becomes terminal and rejects later credential requests.
+4. If clearing fails, disconnect fails and the instance remains usable; it is not marked disconnected.
+5. Cancellation while waiting to enter disconnect's gate cancels that disconnect request without clearing the snapshot. The AudibleApi refresh call itself has no cancellation-token overload in the pinned API, so an already-running remote refresh cannot currently be cancelled through this adapter.
+
+This is deliberately not yet a complete authentication lifecycle coordinator. Login completion, identity replacement, identity loading, and sign-out across multiple maintainer instances are not coordinated by this class. A future coordinator must own those transitions and prevent late results from older login attempts replacing newer state.
+
+Before production use:
+
+- Await persistence for every identity update; never use async-void persistence from a synchronous event handler.
+- Coordinate refresh, login, identity replacement, load, and disconnect at one account/session boundary, including generation checks for late completions.
+- Exclude the identity record from Android backup and all user-visible library backup/export operations.
+- Keep browser callback URLs and transient authorization data in process memory only; never place them in an Android intent/deep link or the snapshot.
+- Never log tokens, cookies, ADP tokens, private keys, or serialized identity payloads.
 
 ## Explicit non-goals
 
