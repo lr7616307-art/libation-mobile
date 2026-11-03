@@ -68,6 +68,18 @@ public sealed class AudibleIdentitySnapshotStoreTests
     }
 
     [Fact]
+    public async Task Load_WhenCancelled_PropagatesCancellation()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AudibleIdentitySnapshotStore(secrets);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => store.LoadAsync(cancellation.Token));
+    }
+
+    [Fact]
     public async Task Load_WhenStorageIsUnavailable_PropagatesFailure()
     {
         var secrets = new InMemorySecretStore { GetException = new IOException("storage unavailable") };
