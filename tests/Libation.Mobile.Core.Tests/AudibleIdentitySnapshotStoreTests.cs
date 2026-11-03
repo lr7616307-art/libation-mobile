@@ -53,6 +53,15 @@ public sealed class AudibleIdentitySnapshotStoreTests
     }
 
     [Fact]
+    public async Task MalformedCiphertextEncoding_FailsClosedAsMissingIdentity()
+    {
+        var secrets = new AesGcmSecretStore { GetException = new FormatException("invalid Base64") };
+        var store = new AudibleIdentitySnapshotStore(secrets);
+
+        Assert.Null(await store.LoadAsync());
+    }
+
+    [Fact]
     public async Task StorageFailure_PropagatesAndDoesNotPretendToSave()
     {
         var secrets = new AesGcmSecretStore { SetException = new IOException("simulated write failure") };
@@ -108,6 +117,7 @@ public sealed class AudibleIdentitySnapshotStoreTests
         public string? StoredCiphertext { get; private set; }
         public int SetCalls { get; private set; }
         public Exception? SetException { get; init; }
+        public Exception? GetException { get; init; }
 
         public Task SetAsync(string keyName, string value, CancellationToken cancellationToken = default)
         {
@@ -135,6 +145,8 @@ public sealed class AudibleIdentitySnapshotStoreTests
         public Task<string?> GetAsync(string keyName, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (GetException is not null)
+                throw GetException;
             if (StoredCiphertext is null)
                 return Task.FromResult<string?>(null);
 
