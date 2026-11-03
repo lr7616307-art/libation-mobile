@@ -2,12 +2,25 @@ namespace Libation.Mobile.Core;
 
 /// <summary>
 /// Coordinates external-browser sign-in with encrypted session persistence.
-/// No provider-specific network or authentication implementation is included.
+/// Lifecycle operations share one coordinator so stale results cannot resurrect
+/// a disconnected or replaced account session.
 /// </summary>
-public sealed class AccountConnectionService(
-    IAccountAuthenticator authenticator,
-    AccountSessionStore sessions)
+public sealed class AccountConnectionService
 {
+    private readonly IAccountAuthenticator authenticator;
+    private readonly AccountSessionStore sessions;
+    private readonly AccountSessionLifecycleCoordinator lifecycle;
+
+    public AccountConnectionService(
+        IAccountAuthenticator authenticator,
+        AccountSessionStore sessions,
+        AccountSessionLifecycleCoordinator? lifecycle = null)
+    {
+        this.authenticator = authenticator ?? throw new ArgumentNullException(nameof(authenticator));
+        this.sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
+        this.lifecycle = lifecycle ?? new AccountSessionLifecycleCoordinator();
+    }
+
     public async Task<ExternalSignInChallenge> BeginSignInAsync(
         AccountSignInRequest request, CancellationToken cancellationToken = default)
     {
@@ -31,9 +44,14 @@ public sealed class AccountConnectionService(
         ArgumentException.ThrowIfNullOrWhiteSpace(challengeId);
         ArgumentException.ThrowIfNullOrWhiteSpace(responseUrl);
 
-        var session = await authenticator.CompleteSignInAsync(challengeId, responseUrl, cancellationToken);
-        ValidateSession(session);
-        await sessions.SaveAsync(session, cancellationToken);
+        var session = await lifecycle.CreateAndSaveAsync(
+            token => authenticator.CompleteSignInAsync(challengeId, responseUrl, token),
+            async (created, token) =>
+            {
+                ValidateSession(created);
+                await sessions.SaveAsync(created, token);
+            },
+            cancellationToken);
         return ToState(session);
     }
 
@@ -47,18 +65,29 @@ public sealed class AccountConnectionService(
 
     public async Task<AccountConnectionState> RefreshAsync(CancellationToken cancellationToken = default)
     {
-        var current = await sessions.LoadAsync(cancellationToken);
-        if (current is null)
-            return new(AccountConnectionStatus.Disconnected, null, null);
+        var session = await lifecycle.ExecuteCurrentAsync(
+            async token =>
+            {
+                var current = await sessions.LoadAsync(token);
+                if (current is null) return null;
+                var refreshed = await authenticator.RefreshAsync(current, token);
+                ValidateSession(refreshed);
+                return refreshed;
+            },
+            async (refreshed, token) =>
+            {
+                if (refreshed is not null)
+                    await sessions.SaveAsync(refreshed, token);
+            },
+            cancellationToken);
 
-        var refreshed = await authenticator.RefreshAsync(current, cancellationToken);
-        ValidateSession(refreshed);
-        await sessions.SaveAsync(refreshed, cancellationToken);
-        return ToState(refreshed);
+        return session is null
+            ? new(AccountConnectionStatus.Disconnected, null, null)
+            : ToState(session);
     }
 
     public Task DisconnectAsync(CancellationToken cancellationToken = default)
-        => sessions.ClearAsync(cancellationToken);
+        => lifecycle.ClearAsync(sessions.ClearAsync, cancellationToken);
 
     private static AccountConnectionState ToState(AccountSession session)
     {
