@@ -58,7 +58,7 @@ public sealed class AudibleIdentityMaintainerTests
         var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
         var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddMinutes(-1)));
         var secrets = new RecordingSecretStore { SetException = new IOException("simulated storage failure") };
-        var authorize = new FakeAuthorize(_ => new AccessToken(new SecretString("Atna|refreshed"), now.AddHours(2)));
+        var authorize = new FakeAuthorize(_ => Task.FromResult(new AccessToken(new SecretString("Atna|refreshed"), now.AddHours(2))));
         var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => maintainer.GetAccessTokenAsync());
