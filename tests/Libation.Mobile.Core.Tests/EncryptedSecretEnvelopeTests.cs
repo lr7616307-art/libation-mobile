@@ -73,7 +73,7 @@ public sealed class EncryptedSecretEnvelopeTests
         var restored = new byte[plaintext.Length];
 
         using var decryptor = new AesGcm(key, tag.Length);
-        Assert.Throws<CryptographicException>(() =>
+        Assert.ThrowsAny<CryptographicException>(() =>
             decryptor.Decrypt(envelope.Iv,
                 envelope.CiphertextAndTag.AsSpan(0, plaintext.Length),
                 envelope.CiphertextAndTag.AsSpan(plaintext.Length, tag.Length),
@@ -97,7 +97,7 @@ public sealed class EncryptedSecretEnvelopeTests
         var restored = new byte[plaintext.Length];
 
         using var decryptor = new AesGcm(key, tag.Length);
-        Assert.Throws<CryptographicException>(() =>
+        Assert.ThrowsAny<CryptographicException>(() =>
             decryptor.Decrypt(alteredIv, ciphertext, tag, restored,
                 EncryptedSecretEnvelope.GetAssociatedData("test_key")));
     }
@@ -117,7 +117,7 @@ public sealed class EncryptedSecretEnvelopeTests
         var restored = new byte[plaintext.Length];
 
         using var decryptor = new AesGcm(key, tag.Length);
-        Assert.Throws<CryptographicException>(() =>
+        Assert.ThrowsAny<CryptographicException>(() =>
             decryptor.Decrypt(iv, ciphertext, tag, restored,
                 EncryptedSecretEnvelope.GetAssociatedData("test_key")));
     }
