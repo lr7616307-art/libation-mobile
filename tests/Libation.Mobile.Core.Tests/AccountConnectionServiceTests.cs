@@ -59,6 +59,23 @@ public sealed class AccountConnectionServiceTests
     }
 
     [Fact]
+    public async Task CompleteSignIn_InvalidResponseDoesNotConsumeChallenge()
+    {
+        var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"));
+        var service = CreateService(authenticator);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CompleteSignInAsync(challenge.ChallengeId, "http://example.invalid/return"));
+
+        var state = await service.CompleteSignInAsync(
+            challenge.ChallengeId, "https://example.invalid/return");
+
+        Assert.Equal(AccountConnectionStatus.Connected, state.Status);
+        Assert.Equal(1, authenticator.CompleteCount);
+    }
+
+    [Fact]
     public async Task CompleteSignIn_RejectsReplayAfterSuccessfulCompletion()
     {
         var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"));
