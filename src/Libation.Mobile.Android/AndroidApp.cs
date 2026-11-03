@@ -32,5 +32,10 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
 
         MainView.PlatformSignInViewModelFactory =
             () => new AudibleSignInViewModel(connection, browser);
+
+        // The provider restores only the identity already stored on this device.
+        // If the user has not signed in, sync reports that sign-in is required.
+        MainView.PlatformLibraryCatalogProviderFactory =
+            () => new SavedIdentityAudibleCatalogProvider(snapshots);
     }
 }
