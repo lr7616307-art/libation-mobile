@@ -13,6 +13,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
+    private readonly Func<string>? _widevineDiagnosticFactory;
+    private string _widevineDiagnostic = "Widevine diagnostic is available on the Android app.";
     private bool _isSyncing;
     private string _syncStatus = "Provider not connected. Audible library sync is not available yet.";
     private DateTimeOffset? _lastSuccessfulSync;
@@ -40,11 +42,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ObservableCollection<Audiobook> Books { get; } = [];
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
 
-    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, Func<string>? widevineDiagnosticFactory = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
         _syncService = syncService;
+        _widevineDiagnosticFactory = widevineDiagnosticFactory;
+        if (_widevineDiagnosticFactory is null)
+            _widevineDiagnostic = "Widevine check is available only in the Android app.";
+    }
+
+    public string WidevineDiagnostic { get => _widevineDiagnostic; private set { if (_widevineDiagnostic == value) return; _widevineDiagnostic = value; OnPropertyChanged(); } }
+    public bool CanProbeWidevine => _widevineDiagnosticFactory is not null;
+    public void ProbeWidevine()
+    {
+        if (_widevineDiagnosticFactory is null) { WidevineDiagnostic = "Widevine check is available only in the Android app."; return; }
+        try { WidevineDiagnostic = _widevineDiagnosticFactory(); }
+        catch (Exception ex) { WidevineDiagnostic = $"Widevine check failed ({ex.GetType().Name})."; }
     }
 
     public bool IsSyncing { get => _isSyncing; private set { if (_isSyncing == value) return; _isSyncing = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanSync)); } }
