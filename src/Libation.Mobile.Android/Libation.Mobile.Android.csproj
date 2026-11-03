@@ -18,5 +18,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Libation.Mobile.UI\Libation.Mobile.UI.csproj" />
+    <ProjectReference Include="..\Libation.Mobile.Audible\Libation.Mobile.Audible.csproj" />
   </ItemGroup>
 </Project>
