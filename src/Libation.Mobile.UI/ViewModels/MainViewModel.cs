@@ -137,8 +137,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
     public bool IsQueueEmpty => QueueItems.Count == 0;
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
-    public string EmptyMessage => HasBooks ? string.Empty :
-        string.IsNullOrWhiteSpace(SearchText) ? "Your local catalogue is empty." : "No matching audiobooks.";
+    public string EmptyMessage => Books.Count > 0 ? string.Empty :
+        _allBooks.Count == 0 ? "Your local catalogue is empty." : "No matching audiobooks. Try another title, author or narrator.";
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
