@@ -25,8 +25,8 @@ public sealed class AudibleIdentitySnapshotStoreTests
         var restored = await store.LoadAsync();
 
         Assert.NotNull(restored);
-        Assert.Equal(snapshot, restored);
-        Assert.Equal(snapshot.Cookies, restored!.Cookies);
+        Assert.Equal(snapshot with { Cookies = restored!.Cookies }, restored);
+        Assert.Equal(snapshot.Cookies, restored.Cookies);
     }
 
     [Fact]
