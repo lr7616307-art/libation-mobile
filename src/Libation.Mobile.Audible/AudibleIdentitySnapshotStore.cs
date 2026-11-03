@@ -22,9 +22,9 @@ public sealed class AudibleIdentitySnapshotStore(ISecretStore secrets)
     }
 
     /// <summary>
-    /// Returns null when no identity exists or when its authenticated payload
-    /// cannot be decrypted/validated. Other storage failures are allowed to
-    /// propagate so callers do not mistake an unavailable store for sign-out.
+    /// Returns null when no identity exists or when its encrypted payload
+    /// cannot be decoded, decrypted, or validated. Other storage failures are
+    /// allowed to propagate so callers do not mistake an unavailable store for sign-out.
     /// </summary>
     public async Task<AudibleIdentitySnapshot?> LoadAsync(
         CancellationToken cancellationToken = default)
@@ -44,6 +44,11 @@ public sealed class AudibleIdentitySnapshotStore(ISecretStore secrets)
         catch (CryptographicException)
         {
             // An authenticated-encryption failure means the saved identity is unusable.
+            return null;
+        }
+        catch (FormatException)
+        {
+            // Invalid Base64 or another malformed storage encoding is corruption, not sign-out.
             return null;
         }
     }
