@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Libation.Mobile.Audible;
 using Libation.Mobile.Core;
 using Xunit;
@@ -8,85 +9,80 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleIdentitySnapshotStoreTests
 {
     [Fact]
-    public async Task SaveAndLoad_StoresOneCompleteSerializedRecord()
+    public async Task EncryptedPayload_RoundTripsCompleteIdentityWithoutPlaintextAtRest()
     {
-        var secrets = new InMemorySecretStore();
+        var secrets = new AesGcmSecretStore();
         var store = new AudibleIdentitySnapshotStore(secrets);
-        var expected = CreateSnapshot();
+        var snapshot = CreateSnapshot();
 
-        await store.SaveAsync(expected);
-        var actual = await store.LoadAsync();
+        await store.SaveAsync(snapshot);
 
-        Assert.NotNull(actual);
-        Assert.Equal(expected.AccessToken, actual.AccessToken);
-        Assert.Equal(expected.RefreshToken, actual.RefreshToken);
-        Assert.Equal(expected.PrivateKey, actual.PrivateKey);
-        Assert.Equal(expected.AdpToken, actual.AdpToken);
-        Assert.Equal(expected.AccessTokenExpiresAtUtc, actual.AccessTokenExpiresAtUtc);
-        Assert.Equal(expected.Cookies, actual.Cookies);
-        Assert.Equal(1, secrets.Count);
-        Assert.True(secrets.Contains(AudibleIdentitySnapshotStore.StorageKey));
+        Assert.NotNull(secrets.StoredCiphertext);
+        Assert.DoesNotContain(snapshot.AccessToken, secrets.StoredCiphertext);
+        Assert.DoesNotContain(snapshot.RefreshToken, secrets.StoredCiphertext);
+        Assert.DoesNotContain(snapshot.PrivateKey, secrets.StoredCiphertext);
+
+        var restored = await store.LoadAsync();
+
+        Assert.NotNull(restored);
+        Assert.Equal(snapshot with { Cookies = restored!.Cookies }, restored);
+        Assert.Equal(snapshot.Cookies, restored.Cookies);
     }
 
     [Fact]
-    public async Task Load_WhenMissing_ReturnsNull()
+    public void UnsupportedSchemaVersion_IsRejected()
     {
-        var store = new AudibleIdentitySnapshotStore(new InMemorySecretStore());
+        var json = AudibleIdentitySnapshotSerializer.Serialize(CreateSnapshot());
+        var unsupported = json.Replace("\"schemaVersion\":1", "\"schemaVersion\":999", StringComparison.Ordinal);
 
-        Assert.Null(await store.LoadAsync());
-    }
+        var error = Assert.Throws<InvalidDataException>(
+            () => AudibleIdentitySnapshotSerializer.Deserialize(unsupported));
 
-    [Theory]
-    [InlineData("{not-json")]
-    [InlineData("{\"schemaVersion\":99}")]
-    public async Task Load_WhenPayloadIsInvalid_ReturnsNull(string payload)
-    {
-        var secrets = new InMemorySecretStore();
-        secrets.Seed(AudibleIdentitySnapshotStore.StorageKey, payload);
-        var store = new AudibleIdentitySnapshotStore(secrets);
-
-        Assert.Null(await store.LoadAsync());
+        Assert.Contains("version", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task Load_WhenAuthenticatedDecryptionFails_ReturnsNull()
+    public async Task CorruptedEncryptedPayload_FailsClosedAsMissingIdentity()
     {
-        var secrets = new InMemorySecretStore { GetException = new CryptographicException("bad tag") };
+        var secrets = new AesGcmSecretStore();
         var store = new AudibleIdentitySnapshotStore(secrets);
+        await store.SaveAsync(CreateSnapshot());
+        secrets.CorruptStoredCiphertext();
 
         Assert.Null(await store.LoadAsync());
     }
 
     [Fact]
-    public async Task Save_WhenSecretStoreFails_PropagatesAndDoesNotReportSuccess()
+    public async Task MalformedCiphertextEncoding_FailsClosedAsMissingIdentity()
     {
-        var secrets = new InMemorySecretStore { SetException = new IOException("storage unavailable") };
+        var secrets = new AesGcmSecretStore { GetException = new FormatException("invalid Base64") };
+        var store = new AudibleIdentitySnapshotStore(secrets);
+
+        Assert.Null(await store.LoadAsync());
+    }
+
+    [Fact]
+    public async Task StorageFailure_PropagatesAndDoesNotPretendToSave()
+    {
+        var secrets = new AesGcmSecretStore { SetException = new IOException("simulated write failure") };
         var store = new AudibleIdentitySnapshotStore(secrets);
 
         await Assert.ThrowsAsync<IOException>(() => store.SaveAsync(CreateSnapshot()));
-        Assert.Equal(0, secrets.Count);
+
+        Assert.Null(secrets.StoredCiphertext);
     }
 
     [Fact]
-    public async Task Load_WhenStorageIsUnavailable_PropagatesFailure()
+    public async Task UnsupportedSnapshot_IsNotWrittenToSecretStore()
     {
-        var secrets = new InMemorySecretStore { GetException = new IOException("storage unavailable") };
+        var secrets = new AesGcmSecretStore();
         var store = new AudibleIdentitySnapshotStore(secrets);
+        var unsupported = CreateSnapshot() with { SchemaVersion = 2 };
 
-        await Assert.ThrowsAsync<IOException>(() => store.LoadAsync());
-    }
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.SaveAsync(unsupported));
 
-    [Fact]
-    public async Task Clear_RemovesTheSingleIdentityRecord()
-    {
-        var secrets = new InMemorySecretStore();
-        var store = new AudibleIdentitySnapshotStore(secrets);
-        await store.SaveAsync(CreateSnapshot());
-
-        await store.ClearAsync();
-
-        Assert.Null(await store.LoadAsync());
-        Assert.Equal(0, secrets.Count);
+        Assert.Null(secrets.StoredCiphertext);
+        Assert.Equal(0, secrets.SetCalls);
     }
 
     private static AudibleIdentitySnapshot CreateSnapshot() => new()
@@ -95,46 +91,93 @@ public sealed class AudibleIdentitySnapshotStoreTests
         Provider = AudibleIdentitySnapshot.ProviderName,
         AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
         LocaleName = "us",
-        AccessToken = "Atna|access",
-        AccessTokenExpiresAtUtc = new DateTimeOffset(2027, 4, 5, 6, 7, 8, TimeSpan.Zero),
-        RefreshToken = "Atnr|refresh",
-        PrivateKey = "private-key",
-        AdpToken = "{enc:YWJj,key:ZGVm,iv:Z2hp,name:QURQVG9rZW5FbmNyeXB0aW9uS2V5,serial:Mg==}",
-        Cookies = [new AudibleCookieSnapshot { Name = "session", Value = "cookie" }],
+        AccessToken = "Atna|unit-test-access",
+        AccessTokenExpiresAtUtc = new DateTimeOffset(2026, 11, 3, 12, 0, 0, TimeSpan.Zero),
+        RefreshToken = "Atnr|unit-test-refresh",
+        PrivateKey = "unit-test-private-key",
+        AdpToken = "{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}",
+        Cookies =
+        [
+            new AudibleCookieSnapshot { Name = "session-id", Value = "cookie-one" },
+            new AudibleCookieSnapshot { Name = "session-id", Value = "cookie-two" }
+        ],
+        DeviceSerialNumber = "test-device-serial",
+        DeviceType = "test-device-type",
+        AmazonAccountId = "test-account-id",
+        DeviceName = "test-device",
         StoreAuthenticationCookie = "store-cookie"
     };
 
-    private sealed class InMemorySecretStore : ISecretStore
+    // This test double models the ISecretStore encryption boundary with AES-GCM.
+    // Android production encryption is implemented separately by AndroidSecretStore.
+    private sealed class AesGcmSecretStore : ISecretStore
     {
-        private readonly Dictionary<string, string> values = new();
-        public int Count => values.Count;
+        private readonly byte[] key = RandomNumberGenerator.GetBytes(32);
+
+        public string? StoredCiphertext { get; private set; }
+        public int SetCalls { get; private set; }
         public Exception? SetException { get; init; }
         public Exception? GetException { get; init; }
 
-        public bool Contains(string key) => values.ContainsKey(key);
-        public void Seed(string key, string value) => values[key] = value;
-
-        public Task SetAsync(string key, string value, CancellationToken cancellationToken = default)
+        public Task SetAsync(string keyName, string value, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (SetException is not null) throw SetException;
-            values[key] = value;
+            SetCalls++;
+            if (SetException is not null)
+                throw SetException;
+
+            var nonce = RandomNumberGenerator.GetBytes(12);
+            var plaintext = Encoding.UTF8.GetBytes(value);
+            var ciphertext = new byte[plaintext.Length];
+            var tag = new byte[16];
+            using (var aes = new AesGcm(key, tag.Length))
+                aes.Encrypt(nonce, plaintext, ciphertext, tag);
+
+            var payload = new byte[nonce.Length + tag.Length + ciphertext.Length];
+            Buffer.BlockCopy(nonce, 0, payload, 0, nonce.Length);
+            Buffer.BlockCopy(tag, 0, payload, nonce.Length, tag.Length);
+            Buffer.BlockCopy(ciphertext, 0, payload, nonce.Length + tag.Length, ciphertext.Length);
+            StoredCiphertext = Convert.ToBase64String(payload);
+            CryptographicOperations.ZeroMemory(plaintext);
             return Task.CompletedTask;
         }
 
-        public Task<string?> GetAsync(string key, CancellationToken cancellationToken = default)
+        public Task<string?> GetAsync(string keyName, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (GetException is not null) throw GetException;
-            values.TryGetValue(key, out var value);
+            if (GetException is not null)
+                throw GetException;
+            if (StoredCiphertext is null)
+                return Task.FromResult<string?>(null);
+
+            var payload = Convert.FromBase64String(StoredCiphertext);
+            if (payload.Length < 28)
+                throw new CryptographicException("Encrypted payload is truncated.");
+
+            var nonce = payload.AsSpan(0, 12);
+            var tag = payload.AsSpan(12, 16);
+            var ciphertext = payload.AsSpan(28);
+            var plaintext = new byte[ciphertext.Length];
+            using (var aes = new AesGcm(key, tag.Length))
+                aes.Decrypt(nonce, ciphertext, tag, plaintext);
+
+            var value = Encoding.UTF8.GetString(plaintext);
+            CryptographicOperations.ZeroMemory(plaintext);
             return Task.FromResult<string?>(value);
         }
 
-        public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
+        public Task RemoveAsync(string keyName, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            values.Remove(key);
+            StoredCiphertext = null;
             return Task.CompletedTask;
+        }
+
+        public void CorruptStoredCiphertext()
+        {
+            var bytes = Convert.FromBase64String(StoredCiphertext!);
+            bytes[^1] ^= 0x01;
+            StoredCiphertext = Convert.ToBase64String(bytes);
         }
     }
 }
