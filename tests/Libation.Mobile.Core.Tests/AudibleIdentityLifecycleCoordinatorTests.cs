@@ -80,6 +80,31 @@ public sealed class AudibleIdentityLifecycleCoordinatorTests
     }
 
     [Fact]
+    public async Task SupersededDuringCommit_DoesNotReportSuccess()
+    {
+        var coordinator = new AudibleIdentityLifecycleCoordinator();
+        var commitStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var older = coordinator.ExecuteCurrentAsync(
+            _ => Task.FromResult("stale-refresh"),
+            async (_, _) =>
+            {
+                commitStarted.TrySetResult();
+                await releaseCommit.Task;
+            });
+
+        await commitStarted.Task;
+        var newer = coordinator.CreateAndSaveAsync(
+            _ => Task.FromResult("new-login"),
+            (_, _) => Task.CompletedTask);
+
+        releaseCommit.TrySetResult();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => older);
+        Assert.Equal("new-login", await newer);
+    }
+
+    [Fact]
     public async Task CancelledOperationDoesNotPersistIdentity()
     {
         var coordinator = new AudibleIdentityLifecycleCoordinator();
