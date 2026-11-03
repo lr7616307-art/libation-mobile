@@ -2,26 +2,44 @@ namespace Libation.Mobile.Core;
 
 /// <summary>
 /// Coordinates external-browser sign-in with encrypted session persistence.
+/// Only one in-memory challenge may be active; completion is one-time and serialized.
 /// No provider-specific network or authentication implementation is included.
 /// </summary>
 public sealed class AccountConnectionService(
     IAccountAuthenticator authenticator,
     AccountSessionStore sessions)
 {
+    private readonly SemaphoreSlim _signInGate = new(1, 1);
+    private ExternalSignInChallenge? _pendingChallenge;
+
     public async Task<ExternalSignInChallenge> BeginSignInAsync(
         AccountSignInRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         request.Validate();
-        var challenge = await authenticator.BeginSignInAsync(request, cancellationToken);
+
+        await _signInGate.WaitAsync(cancellationToken);
         try
         {
-            ExternalSignInChallengeValidator.Validate(challenge);
+            // Starting a new attempt invalidates any earlier unfinished browser handoff.
+            _pendingChallenge = null;
+
+            var challenge = await authenticator.BeginSignInAsync(request, cancellationToken);
+            try
+            {
+                ExternalSignInChallengeValidator.Validate(challenge);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidOperationException("The provider returned an invalid sign-in challenge.", ex);
+            }
+
+            _pendingChallenge = challenge;
             return challenge;
         }
-        catch (ArgumentException ex)
+        finally
         {
-            throw new InvalidOperationException("The provider returned an invalid sign-in challenge.", ex);
+            _signInGate.Release();
         }
     }
 
@@ -29,12 +47,35 @@ public sealed class AccountConnectionService(
         string challengeId, string responseUrl, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(challengeId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(responseUrl);
+        ValidateResponseUrl(responseUrl);
 
-        var session = await authenticator.CompleteSignInAsync(challengeId, responseUrl, cancellationToken);
-        ValidateSession(session);
-        await sessions.SaveAsync(session, cancellationToken);
-        return ToState(session);
+        await _signInGate.WaitAsync(cancellationToken);
+        try
+        {
+            var pending = _pendingChallenge;
+            if (pending is null
+                || !string.Equals(pending.ChallengeId, challengeId, StringComparison.Ordinal))
+                throw new InvalidOperationException("There is no matching active sign-in attempt.");
+
+            if (pending.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+            {
+                _pendingChallenge = null;
+                throw new InvalidOperationException("The sign-in attempt has expired. Start again.");
+            }
+
+            // Consume before calling provider code. Failed or cancelled submissions cannot be replayed.
+            _pendingChallenge = null;
+
+            var session = await authenticator.CompleteSignInAsync(
+                challengeId, responseUrl, cancellationToken);
+            ValidateSession(session);
+            await sessions.SaveAsync(session, cancellationToken);
+            return ToState(session);
+        }
+        finally
+        {
+            _signInGate.Release();
+        }
     }
 
     public async Task<AccountConnectionState> GetStateAsync(CancellationToken cancellationToken = default)
@@ -47,18 +88,46 @@ public sealed class AccountConnectionService(
 
     public async Task<AccountConnectionState> RefreshAsync(CancellationToken cancellationToken = default)
     {
-        var current = await sessions.LoadAsync(cancellationToken);
-        if (current is null)
-            return new(AccountConnectionStatus.Disconnected, null, null);
+        await _signInGate.WaitAsync(cancellationToken);
+        try
+        {
+            var current = await sessions.LoadAsync(cancellationToken);
+            if (current is null)
+                return new(AccountConnectionStatus.Disconnected, null, null);
 
-        var refreshed = await authenticator.RefreshAsync(current, cancellationToken);
-        ValidateSession(refreshed);
-        await sessions.SaveAsync(refreshed, cancellationToken);
-        return ToState(refreshed);
+            var refreshed = await authenticator.RefreshAsync(current, cancellationToken);
+            ValidateSession(refreshed);
+            await sessions.SaveAsync(refreshed, cancellationToken);
+            return ToState(refreshed);
+        }
+        finally
+        {
+            _signInGate.Release();
+        }
     }
 
-    public Task DisconnectAsync(CancellationToken cancellationToken = default)
-        => sessions.ClearAsync(cancellationToken);
+    public async Task DisconnectAsync(CancellationToken cancellationToken = default)
+    {
+        await _signInGate.WaitAsync(cancellationToken);
+        try
+        {
+            _pendingChallenge = null;
+            await sessions.ClearAsync(cancellationToken);
+        }
+        finally
+        {
+            _signInGate.Release();
+        }
+    }
+
+    private static void ValidateResponseUrl(string responseUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(responseUrl);
+        if (!Uri.TryCreate(responseUrl, UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(uri.Host))
+            throw new ArgumentException("The sign-in response must be an absolute HTTPS URL.", nameof(responseUrl));
+    }
 
     private static AccountConnectionState ToState(AccountSession session)
     {
