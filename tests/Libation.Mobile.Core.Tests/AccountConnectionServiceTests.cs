@@ -181,6 +181,34 @@ public sealed class AccountConnectionServiceTests
         Assert.Equal(0, authenticator.CompleteCount);
     }
 
+    [Fact]
+    public async Task CompleteSignIn_ConcurrentReplayOnlyCompletesOnce()
+    {
+        var authenticator = new FakeAuthenticator(NewSession("acct-5", "a", "r"));
+        var service = CreateService(authenticator);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        async Task<bool> TryCompleteAsync()
+        {
+            try
+            {
+                await service.CompleteSignInAsync(
+                    challenge.ChallengeId, "https://example.invalid/return");
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+
+        var results = await Task.WhenAll(TryCompleteAsync(), TryCompleteAsync());
+
+        Assert.Single(results, completed => completed);
+        Assert.Single(results, completed => !completed);
+        Assert.Equal(1, authenticator.CompleteCount);
+    }
+
     private static AccountConnectionService CreateService(FakeAuthenticator authenticator)
         => new(authenticator, new AccountSessionStore(new InMemorySecretStore()));
 
