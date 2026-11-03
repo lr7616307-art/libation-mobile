@@ -48,7 +48,7 @@ public sealed class AudibleLibraryCatalogProvider : ILibraryCatalogProvider
         };
 
         var results = new List<RemoteAudiobook>();
-        await foreach (var page in getPages(options))
+        await foreach (var page in getPages(options).WithCancellation(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (page is null)
