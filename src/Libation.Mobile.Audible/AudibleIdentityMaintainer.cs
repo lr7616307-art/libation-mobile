@@ -17,6 +17,7 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
     private readonly ISystemDateTime systemDateTime;
     private readonly AudibleIdentitySnapshotStore snapshotStore;
     private readonly SemaphoreSlim gate = new(1, 1);
+    private bool disconnected;
 
     public AudibleIdentityMaintainer(
         Identity identity,
@@ -57,11 +58,34 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
         return identity.PrivateKey;
     }
 
+    /// <summary>
+    /// Clears the persisted identity behind the same gate used by refresh. Once this
+    /// completes, this maintainer instance is terminal and cannot refresh or serve credentials.
+    /// </summary>
+    public async Task DisconnectAsync(CancellationToken cancellationToken = default)
+    {
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (disconnected)
+                return;
+
+            await snapshotStore.ClearAsync(cancellationToken).ConfigureAwait(false);
+            disconnected = true;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     private async Task EnsureFreshAsync()
     {
         await gate.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (disconnected)
+                throw new InvalidOperationException("The Audible session has been disconnected.");
             if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
                 return;
 
