@@ -13,7 +13,8 @@
           <TextBlock Text="Local catalogue and download queue are saved on this device. Queue entries track status only; Audible sign-in, library sync and audio downloads are not connected."
                      TextWrapping="Wrap" Foreground="White" />
         </StackPanel>
-      </Border>\n      <Grid ColumnDefinitions="*,Auto">
+      </Border>
+      <Grid ColumnDefinitions="*,Auto">
         <TextBlock Text="Your catalogue" FontSize="20" FontWeight="SemiBold" />
         <TextBlock Grid.Column="1" Text="{Binding CatalogueSummaryLabel}" FontSize="12" Opacity="0.7" VerticalAlignment="Center" />
       </Grid>
