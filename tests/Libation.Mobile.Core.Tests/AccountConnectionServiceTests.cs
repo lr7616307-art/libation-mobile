@@ -36,14 +36,75 @@ public sealed class AccountConnectionServiceTests
         var secrets = new InMemorySecretStore();
         var authenticator = new FakeAuthenticator(session);
         var service = new AccountConnectionService(authenticator, new AccountSessionStore(secrets));
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
 
-        var state = await service.CompleteSignInAsync("challenge-1", "https://example.invalid/return?code=redacted");
+        var state = await service.CompleteSignInAsync(challenge.ChallengeId, "https://example.invalid/return?code=redacted");
 
         Assert.Equal(AccountConnectionStatus.Connected, state.Status);
         Assert.Equal("acct-1", state.AccountId);
         Assert.DoesNotContain("access-secret", System.Text.Json.JsonSerializer.Serialize(state));
         Assert.DoesNotContain("refresh-secret", System.Text.Json.JsonSerializer.Serialize(state));
         Assert.Equal("acct-1", (await new AccountSessionStore(secrets).LoadAsync())?.AccountId);
+        Assert.Equal(1, authenticator.CompleteCount);
+    }
+
+    [Fact]
+    public async Task CompleteSignIn_RejectsUnknownChallengeWithoutCallingAuthenticator()
+    {
+        var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"));
+        var service = CreateService(authenticator);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CompleteSignInAsync("unknown", "https://example.invalid/return"));
+
+        Assert.Equal(0, authenticator.CompleteCount);
+    }
+
+    [Fact]
+    public async Task CompleteSignIn_RejectsReplayAfterSuccessfulCompletion()
+    {
+        var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"));
+        var service = CreateService(authenticator);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        await service.CompleteSignInAsync(challenge.ChallengeId, "https://example.invalid/return");
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CompleteSignInAsync(challenge.ChallengeId, "https://example.invalid/return"));
+
+        Assert.Equal(1, authenticator.CompleteCount);
+    }
+
+    [Theory]
+    [InlineData("http://example.invalid/return")]
+    [InlineData("file:///tmp/return")]
+    [InlineData("not-a-url")]
+    public async Task CompleteSignIn_RejectsNonHttpsOrMalformedResponse(string responseUrl)
+    {
+        var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"));
+        var service = CreateService(authenticator);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
+
+        Assert.Equal(0, authenticator.CompleteCount);
+    }
+
+    [Fact]
+    public async Task BeginSignIn_NewAttemptInvalidatesPreviousChallenge()
+    {
+        var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"));
+        authenticator.NextChallengeId = "challenge-1";
+        var service = CreateService(authenticator);
+        var first = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        authenticator.NextChallengeId = "challenge-2";
+        var second = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        Assert.NotEqual(first.ChallengeId, second.ChallengeId);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CompleteSignInAsync(first.ChallengeId, "https://example.invalid/return"));
+        Assert.Equal(0, authenticator.CompleteCount);
     }
 
     [Fact]
@@ -86,16 +147,21 @@ public sealed class AccountConnectionServiceTests
     }
 
     [Fact]
-    public async Task Disconnect_ClearsSavedSession()
+    public async Task Disconnect_ClearsSavedSessionAndPendingChallenge()
     {
         var secrets = new InMemorySecretStore();
         var store = new AccountSessionStore(secrets);
         await store.SaveAsync(NewSession("acct-4", "a", "r"));
-        var service = new AccountConnectionService(new FakeAuthenticator(), store);
+        var authenticator = new FakeAuthenticator();
+        var service = new AccountConnectionService(authenticator, store);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
 
         await service.DisconnectAsync();
 
         Assert.Equal(AccountConnectionStatus.Disconnected, (await service.GetStateAsync()).Status);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CompleteSignInAsync(challenge.ChallengeId, "https://example.invalid/return"));
+        Assert.Equal(0, authenticator.CompleteCount);
     }
 
     private static AccountConnectionService CreateService(FakeAuthenticator authenticator)
@@ -108,6 +174,8 @@ public sealed class AccountConnectionServiceTests
     private sealed class FakeAuthenticator(AccountSession? completion = null) : IAccountAuthenticator
     {
         public int BeginCount { get; private set; }
+        public int CompleteCount { get; private set; }
+        public string NextChallengeId { get; set; } = "challenge-1";
 
         public Task<ExternalSignInChallenge> BeginSignInAsync(
             AccountSignInRequest request, CancellationToken cancellationToken = default)
@@ -115,13 +183,14 @@ public sealed class AccountConnectionServiceTests
             cancellationToken.ThrowIfCancellationRequested();
             BeginCount++;
             return Task.FromResult(new ExternalSignInChallenge(
-                "challenge-1", new Uri("https://example.invalid/login"), DateTimeOffset.UtcNow.AddMinutes(5)));
+                NextChallengeId, new Uri("https://example.invalid/login"), DateTimeOffset.UtcNow.AddMinutes(5)));
         }
 
         public Task<AccountSession> CompleteSignInAsync(
             string challengeId, string responseUrl, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            CompleteCount++;
             return Task.FromResult(completion ?? throw new InvalidOperationException("No fake completion result configured."));
         }
 
