@@ -120,13 +120,19 @@ public sealed class AccountConnectionService(
         }
     }
 
+    private const int MaximumResponseUrlBytes = 16 * 1024;
+
     private static void ValidateResponseUrl(string responseUrl)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(responseUrl);
+        if (System.Text.Encoding.UTF8.GetByteCount(responseUrl) > MaximumResponseUrlBytes)
+            throw new ArgumentException("The sign-in response URL exceeds the supported size limit.", nameof(responseUrl));
+
         if (!Uri.TryCreate(responseUrl, UriKind.Absolute, out var uri)
             || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || string.IsNullOrWhiteSpace(uri.Host))
-            throw new ArgumentException("The sign-in response must be an absolute HTTPS URL.", nameof(responseUrl));
+            || string.IsNullOrWhiteSpace(uri.Host)
+            || !string.IsNullOrEmpty(uri.UserInfo))
+            throw new ArgumentException("The sign-in response must be an absolute HTTPS URL without embedded credentials.", nameof(responseUrl));
     }
 
     private static AccountConnectionState ToState(AccountSession session)
