@@ -83,18 +83,28 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
         if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
             return;
 
-        var refreshToken = identity.RefreshToken
-            ?? throw new InvalidOperationException("The Audible refresh credential is unavailable.");
-        var previousToken = identity.ExistingAccessToken;
-
         await lifecycleCoordinator.ExecuteCurrentAsync(
-            _ => authorize.RefreshAccessTokenAsync(refreshToken),
-            async (refreshedToken, _) =>
+            async _ =>
+            {
+                // Recheck after acquiring the shared lifecycle gate: another waiter may
+                // already have refreshed and persisted this identity.
+                if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
+                    return (Token: identity.ExistingAccessToken, Refreshed: false);
+
+                var refreshToken = identity.RefreshToken
+                    ?? throw new InvalidOperationException("The Audible refresh credential is unavailable.");
+                var refreshedToken = await authorize.RefreshAccessTokenAsync(refreshToken).ConfigureAwait(false);
+                return (Token: refreshedToken, Refreshed: true);
+            },
+            async (result, _) =>
             {
                 if (disconnected)
                     throw new InvalidOperationException("The Audible session has been disconnected.");
+                if (!result.Refreshed)
+                    return;
 
-                identity.Update(refreshedToken);
+                var previousToken = identity.ExistingAccessToken;
+                identity.Update(result.Token);
                 try
                 {
                     await snapshotStore.SaveAsync(Capture(identity)).ConfigureAwait(false);
