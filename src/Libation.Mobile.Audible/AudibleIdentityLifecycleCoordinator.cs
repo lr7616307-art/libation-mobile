@@ -47,6 +47,41 @@ public sealed class AudibleIdentityLifecycleCoordinator
     }
 
     /// <summary>
+    /// Runs a refresh or other update against the current lifecycle generation.
+    /// A newer login/replacement or clear invalidates the operation before commit.
+    /// </summary>
+    public async Task<T> ExecuteCurrentAsync<T>(
+        Func<CancellationToken, Task<T>> operationAsync,
+        Func<T, CancellationToken, Task> commitAsync,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operationAsync);
+        ArgumentNullException.ThrowIfNull(commitAsync);
+
+        var operationGeneration = Volatile.Read(ref generation);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (operationGeneration != Volatile.Read(ref generation))
+                throw new OperationCanceledException("A newer Audible identity operation superseded this result.");
+
+            var result = await operationAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (operationGeneration != Volatile.Read(ref generation))
+                throw new OperationCanceledException("A newer Audible identity operation superseded this result.");
+
+            await commitAsync(result, cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
     /// Invalidates pending identity creation immediately, then clears persisted
     /// identity after any currently-held lifecycle operation leaves the gate.
     /// </summary>
