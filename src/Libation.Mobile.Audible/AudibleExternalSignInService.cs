@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using AudibleApi;
 using AudibleApi.Authorization;
+using Libation.Mobile.Core;
 using Dinah.Core;
 
 namespace Libation.Mobile.Audible;
