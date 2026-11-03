@@ -78,16 +78,15 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
 
     private async Task EnsureFreshAsync()
     {
-        if (disconnected)
-            throw new InvalidOperationException("The Audible session has been disconnected.");
-        if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
-            return;
-
+        // Even an unexpired token must pass through the lifecycle gate. Otherwise a
+        // cached-token fast path could race with sign-out and return credentials after
+        // the disconnect transition has acquired the lifecycle boundary.
         await lifecycleCoordinator.ExecuteCurrentAsync(
             async _ =>
             {
-                // Recheck after acquiring the shared lifecycle gate: another waiter may
-                // already have refreshed and persisted this identity.
+                if (disconnected)
+                    throw new InvalidOperationException("The Audible session has been disconnected.");
+
                 if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
                     return (Token: identity.ExistingAccessToken, Refreshed: false);
 
@@ -154,5 +153,4 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
             StoreAuthenticationCookie = source.StoreAuthenticationCookie.Reveal() ?? string.Empty
         };
     }
-
 }
