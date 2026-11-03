@@ -77,10 +77,13 @@ public sealed class AccountConnectionServiceTests
     {
         var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"))
         {
-            ChallengeExpiry = DateTimeOffset.UtcNow.AddMinutes(-1)
+            ChallengeExpiry = DateTimeOffset.UtcNow.AddMilliseconds(250)
         };
         var service = CreateService(authenticator);
         var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        // The challenge must be valid when issued, then expire before completion.
+        await Task.Delay(500);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.CompleteSignInAsync(challenge.ChallengeId, "https://example.invalid/return"));
