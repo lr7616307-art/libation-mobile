@@ -122,11 +122,10 @@ public sealed class AudibleIdentityMaintainerTests
         var disconnect = maintainer.DisconnectAsync();
         allowRefresh.TrySetResult();
 
-        var token = await refresh;
+        await Assert.ThrowsAsync<OperationCanceledException>(() => refresh);
         await disconnect;
 
-        Assert.Equal("Atna|refreshed", token!.Reveal());
-        Assert.Equal(1, secrets.SetCalls);
+        Assert.Equal(0, secrets.SetCalls);
         Assert.Equal(1, secrets.RemoveCalls);
         Assert.Null(secrets.LastValue);
         await Assert.ThrowsAsync<InvalidOperationException>(() => maintainer.GetAccessTokenAsync());
