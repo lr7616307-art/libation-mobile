@@ -23,10 +23,8 @@ public sealed class AccountConnectionServiceTests
     {
         var service = CreateService(new FakeAuthenticator());
 
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.BeginSignInAsync(new("", "in")));
-        await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.BeginSignInAsync(new("user@example.com", "")));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.BeginSignInAsync(new("", "in")));
+        await Assert.ThrowsAsync<ArgumentException>(() => service.BeginSignInAsync(new("user@example.com", "")));
     }
 
     [Fact]
@@ -72,6 +70,22 @@ public sealed class AccountConnectionServiceTests
             service.CompleteSignInAsync(challenge.ChallengeId, "https://example.invalid/return"));
 
         Assert.Equal(1, authenticator.CompleteCount);
+    }
+
+    [Fact]
+    public async Task CompleteSignIn_RejectsExpiredChallenge()
+    {
+        var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"))
+        {
+            ChallengeExpiry = DateTimeOffset.UtcNow.AddMinutes(-1)
+        };
+        var service = CreateService(authenticator);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CompleteSignInAsync(challenge.ChallengeId, "https://example.invalid/return"));
+
+        Assert.Equal(0, authenticator.CompleteCount);
     }
 
     [Theory]
@@ -176,6 +190,7 @@ public sealed class AccountConnectionServiceTests
         public int BeginCount { get; private set; }
         public int CompleteCount { get; private set; }
         public string NextChallengeId { get; set; } = "challenge-1";
+        public DateTimeOffset ChallengeExpiry { get; set; } = DateTimeOffset.UtcNow.AddMinutes(5);
 
         public Task<ExternalSignInChallenge> BeginSignInAsync(
             AccountSignInRequest request, CancellationToken cancellationToken = default)
@@ -183,7 +198,7 @@ public sealed class AccountConnectionServiceTests
             cancellationToken.ThrowIfCancellationRequested();
             BeginCount++;
             return Task.FromResult(new ExternalSignInChallenge(
-                NextChallengeId, new Uri("https://example.invalid/login"), DateTimeOffset.UtcNow.AddMinutes(5)));
+                NextChallengeId, new Uri("https://example.invalid/login"), ChallengeExpiry));
         }
 
         public Task<AccountSession> CompleteSignInAsync(
