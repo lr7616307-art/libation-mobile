@@ -1,13 +1,14 @@
 using AudibleApi;
+using AudibleApi.Authorization;
 using AudibleApi.Common;
+using Dinah.Core;
 using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Audible;
 
 /// <summary>
-/// Reads library pages from an already-authorized AudibleApi instance and maps catalogue
-/// metadata into the mobile provider contract. Authentication and identity persistence are
-/// intentionally owned by the caller.
+/// Reads library pages from an authorized AudibleApi instance and maps catalogue
+/// metadata into the mobile provider contract.
 /// </summary>
 public sealed class AudibleLibraryCatalogProvider : ILibraryCatalogProvider
 {
@@ -20,6 +21,34 @@ public sealed class AudibleLibraryCatalogProvider : ILibraryCatalogProvider
     public AudibleLibraryCatalogProvider(Api api)
         : this(CreatePageReader(api))
     {
+    }
+
+    /// <summary>
+    /// Restores an existing encrypted Audible identity and creates a live library
+    /// provider. Returns null when the user has not signed in on this installation.
+    /// This method never starts a browser login or creates a new device registration.
+    /// </summary>
+    public static async Task<AudibleLibraryCatalogProvider?> FromSavedIdentityAsync(
+        AudibleIdentitySnapshotStore snapshotStore,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshotStore);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var snapshot = await snapshotStore.LoadAsync(cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
+            return null;
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var identity = AudibleIdentitySnapshotMapper.Restore(snapshot);
+        var authorize = new Authorize(identity.Locale);
+        var maintainer = new AudibleIdentityMaintainer(
+            identity,
+            authorize,
+            new SystemDateTime(),
+            snapshotStore);
+        var api = new Api(maintainer);
+        return new AudibleLibraryCatalogProvider(api);
     }
 
     /// <summary>Creates a provider around a page reader; useful for deterministic tests and alternate hosts.</summary>
