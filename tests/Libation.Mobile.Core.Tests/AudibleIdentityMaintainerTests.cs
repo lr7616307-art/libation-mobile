@@ -69,7 +69,6 @@ public sealed class AudibleIdentityMaintainerTests
         Assert.Equal(1, secrets.SetCalls);
     }
 
-
     [Fact]
     public async Task ConcurrentExpiredTokenRequests_RefreshOnlyOnce()
     {
@@ -98,6 +97,107 @@ public sealed class AudibleIdentityMaintainerTests
         Assert.All(tokens, token => Assert.Equal("Atna|refreshed", token!.Reveal()));
         Assert.Equal(1, authorize.RefreshCalls);
         Assert.Equal(1, secrets.SetCalls);
+    }
+
+    [Fact]
+    public async Task Disconnect_WaitsForRefreshThenClearsIdentityAndRejectsFurtherAccess()
+    {
+        using var rsa = RSA.Create(2048);
+        var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+        var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddMinutes(-1)));
+        var secrets = new RecordingSecretStore();
+        var refreshStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRefresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var authorize = new FakeAuthorize(async _ =>
+        {
+            refreshStarted.TrySetResult();
+            await allowRefresh.Task;
+            return new AccessToken(new SecretString("Atna|refreshed"), now.AddHours(2));
+        });
+        var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
+
+        var refresh = maintainer.GetAccessTokenAsync();
+        await refreshStarted.Task;
+        var disconnect = maintainer.DisconnectAsync();
+        allowRefresh.TrySetResult();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => refresh);
+        await disconnect;
+
+        Assert.Equal(0, secrets.SetCalls);
+        Assert.Equal(1, secrets.RemoveCalls);
+        Assert.Null(secrets.LastValue);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => maintainer.GetAccessTokenAsync());
+        Assert.Equal(1, authorize.RefreshCalls);
+    }
+
+    [Fact]
+    public async Task DisconnectPersistenceFailure_DoesNotMarkSessionDisconnected()
+    {
+        using var rsa = RSA.Create(2048);
+        var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+        var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddHours(1)));
+        var secrets = new RecordingSecretStore { RemoveException = new IOException("simulated storage failure") };
+        var authorize = new FakeAuthorize(_ => Task.FromException<AccessToken>(new Xunit.Sdk.XunitException("Refresh should not be called.")));
+        var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
+
+        await Assert.ThrowsAsync<IOException>(() => maintainer.DisconnectAsync());
+
+        var token = await maintainer.GetAccessTokenAsync();
+        Assert.Equal("Atna|test-access", token!.Reveal());
+        Assert.Equal(1, secrets.RemoveCalls);
+        Assert.Equal(0, authorize.RefreshCalls);
+    }
+
+    [Fact]
+    public async Task CachedTokenRequest_AfterDisconnect_IsRejected()
+    {
+        using var rsa = RSA.Create(2048);
+        var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+        var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddHours(1)));
+        var secrets = new RecordingSecretStore();
+        var authorize = new FakeAuthorize(_ => Task.FromException<AccessToken>(new Xunit.Sdk.XunitException("Refresh should not be called.")));
+        var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
+
+        await maintainer.DisconnectAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => maintainer.GetAccessTokenAsync());
+        Assert.Equal(1, secrets.RemoveCalls);
+        Assert.Equal(0, authorize.RefreshCalls);
+    }
+
+    [Fact]
+    public async Task CancelledDisconnectWhileWaitingForRefresh_DoesNotClearIdentity()
+    {
+        using var rsa = RSA.Create(2048);
+        var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+        var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddMinutes(-1)));
+        var secrets = new RecordingSecretStore();
+        var refreshStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRefresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var authorize = new FakeAuthorize(async _ =>
+        {
+            refreshStarted.TrySetResult();
+            await allowRefresh.Task;
+            return new AccessToken(new SecretString("Atna|refreshed"), now.AddHours(2));
+        });
+        var maintainer = new AudibleIdentityMaintainer(identity, authorize, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
+
+        var refresh = maintainer.GetAccessTokenAsync();
+        await refreshStarted.Task;
+        using var cancellation = new CancellationTokenSource();
+        var disconnect = maintainer.DisconnectAsync(cancellation.Token);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => disconnect);
+        allowRefresh.TrySetResult();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => refresh);
+
+        var token = await maintainer.GetAccessTokenAsync();
+        Assert.Equal("Atna|refreshed", token!.Reveal());
+        Assert.Equal(0, secrets.RemoveCalls);
+        Assert.Equal(1, secrets.SetCalls);
+        Assert.Equal(2, authorize.RefreshCalls);
     }
 
     [Fact]
@@ -141,8 +241,10 @@ public sealed class AudibleIdentityMaintainerTests
     private sealed class RecordingSecretStore : ISecretStore
     {
         public int SetCalls { get; private set; }
+        public int RemoveCalls { get; private set; }
         public string? LastValue { get; private set; }
         public Exception? SetException { get; init; }
+        public Exception? RemoveException { get; init; }
 
         public Task SetAsync(string key, string value, CancellationToken cancellationToken = default)
         {
@@ -158,6 +260,9 @@ public sealed class AudibleIdentityMaintainerTests
 
         public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
         {
+            RemoveCalls++;
+            if (RemoveException is not null)
+                throw RemoveException;
             LastValue = null;
             return Task.CompletedTask;
         }
