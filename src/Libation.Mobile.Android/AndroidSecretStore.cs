@@ -19,6 +19,7 @@ public sealed class AndroidSecretStore : ISecretStore
     private const string PreferencesName = "libation_mobile_secrets";
     private const string KeyAlias = "libation_mobile_secret_key_v1";
     private const string Transformation = "AES/GCM/NoPadding";
+    private static readonly object KeyCreationLock = new();
     private readonly ISharedPreferences _preferences;
 
     public AndroidSecretStore(Context context)
@@ -125,30 +126,36 @@ public sealed class AndroidSecretStore : ISecretStore
 
     private ISecretKey GetOrCreateKey()
     {
-        var keyStore = KeyStore.GetInstance("AndroidKeyStore");
-        keyStore.Load(null);
+        // Multiple store instances can write concurrently during first use. Serialize
+        // the alias check and generation so a second key cannot replace the first
+        // between encryption and persistence of the first ciphertext.
+        lock (KeyCreationLock)
+        {
+            var keyStore = KeyStore.GetInstance("AndroidKeyStore");
+            keyStore.Load(null);
 
-        if (keyStore.ContainsAlias(KeyAlias))
-            return (ISecretKey)(keyStore.GetKey(KeyAlias, null)
-                ?? throw new CryptographicException("Android Keystore key is unavailable."));
+            if (keyStore.ContainsAlias(KeyAlias))
+                return (ISecretKey)(keyStore.GetKey(KeyAlias, null)
+                    ?? throw new CryptographicException("Android Keystore key is unavailable."));
 
-        // Never create a replacement key while encrypted values still exist.
-        // Doing so would make every other value permanently undecryptable.
-        if (_preferences.All?.Count > 0)
-            throw new CryptographicException("The Android Keystore key is missing while encrypted secrets still exist.");
+            // Never create a replacement key while encrypted values still exist.
+            // Doing so would make every other value permanently undecryptable.
+            if (_preferences.All?.Count > 0)
+                throw new CryptographicException("The Android Keystore key is missing while encrypted secrets still exist.");
 
-        var generator = KeyGenerator.GetInstance(KeyProperties.KeyAlgorithmAes, "AndroidKeyStore");
-        var spec = new KeyGenParameterSpec.Builder(
-                KeyAlias,
-                KeyStorePurpose.Encrypt | KeyStorePurpose.Decrypt)
-            .SetKeySize(256)
-            .SetBlockModes(KeyProperties.BlockModeGcm)
-            .SetEncryptionPaddings(KeyProperties.EncryptionPaddingNone)
-            .SetRandomizedEncryptionRequired(true)
-            .Build();
+            var generator = KeyGenerator.GetInstance(KeyProperties.KeyAlgorithmAes, "AndroidKeyStore");
+            var spec = new KeyGenParameterSpec.Builder(
+                    KeyAlias,
+                    KeyStorePurpose.Encrypt | KeyStorePurpose.Decrypt)
+                .SetKeySize(256)
+                .SetBlockModes(KeyProperties.BlockModeGcm)
+                .SetEncryptionPaddings(KeyProperties.EncryptionPaddingNone)
+                .SetRandomizedEncryptionRequired(true)
+                .Build();
 
-        generator.Init(spec);
-        return generator.GenerateKey();
+            generator.Init(spec);
+            return generator.GenerateKey();
+        }
     }
 
     private static void Validate(string key, string value)
