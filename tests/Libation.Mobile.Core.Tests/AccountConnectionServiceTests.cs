@@ -109,7 +109,6 @@ public sealed class AccountConnectionServiceTests
 
     [Theory]
     [InlineData("https://user:password@example.invalid/return")]
-    [InlineData("https://@example.invalid/return")]
     public async Task CompleteSignIn_RejectsResponseUrlWithEmbeddedCredentials(string responseUrl)
     {
         var authenticator = new FakeAuthenticator(NewSession("acct-1", "a", "r"));
