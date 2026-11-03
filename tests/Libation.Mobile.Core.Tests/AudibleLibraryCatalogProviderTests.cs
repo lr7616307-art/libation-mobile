@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using AudibleApi;
 using AudibleApi.Common;
 using Libation.Mobile.Audible;
@@ -69,6 +70,20 @@ public sealed class AudibleLibraryCatalogProviderTests
     }
 
     [Fact]
+    public async Task GetLibraryAsync_CancellationInterruptsAnInFlightPageRequest()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var requestStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var provider = new AudibleLibraryCatalogProvider(_ => WaitForCancellation(requestStarted, cancellation.Token));
+
+        var sync = provider.GetLibraryAsync(cancellation.Token);
+        await requestStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sync);
+    }
+
+    [Fact]
     public async Task GetLibraryAsync_SkipsNullItemsWithinPage()
     {
         var provider = new AudibleLibraryCatalogProvider(_ => Pages(
@@ -79,6 +94,15 @@ public sealed class AudibleLibraryCatalogProviderTests
         var item = Assert.Single(result);
         Assert.Equal("A1", item.ProviderId);
         Assert.Equal("Writer", item.Author);
+    }
+
+    private static async IAsyncEnumerable<Item[]> WaitForCancellation(
+        TaskCompletionSource requestStarted,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        requestStarted.TrySetResult();
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        yield break;
     }
 
     private static async IAsyncEnumerable<Item[]> PagesAndCancel(CancellationTokenSource cancellation)
