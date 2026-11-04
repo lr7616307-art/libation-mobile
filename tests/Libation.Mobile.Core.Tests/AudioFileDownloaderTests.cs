@@ -48,6 +48,7 @@ public sealed class AudioFileDownloaderTests
     {
         using var directory = new TemporaryDirectory();
         var destination = Path.Combine(directory.Path, "book.m4b");
+        Directory.CreateDirectory(directory.Path);
         await File.WriteAllTextAsync(destination, "existing");
         using var client = new HttpClient(new StubHandler((_, _) =>
             new HttpResponseMessage(HttpStatusCode.OK)
