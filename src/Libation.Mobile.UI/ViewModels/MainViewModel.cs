@@ -10,6 +10,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly ILibraryRepository _repository;
     private readonly IDownloadQueue _downloadQueue;
+    private readonly LocalAudioImportService? _audioImportService;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
@@ -24,6 +25,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string? _editingBookId;
     private bool _isLoading;
     private string _errorMessage = string.Empty;
+    private string _audioImportStatus = string.Empty;
     private IReadOnlyList<Audiobook>? _pendingImport;
     private string _backupMessage = string.Empty;
     private bool _sortAscending = true;
@@ -40,11 +42,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ObservableCollection<Audiobook> Books { get; } = [];
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
 
-    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
         _syncService = syncService;
+        _audioImportService = audioImportService;
     }
 
     public bool IsSyncing { get => _isSyncing; private set { if (_isSyncing == value) return; _isSyncing = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanSync)); } }
@@ -130,6 +133,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasBooks => Books.Count > 0;
+    public string AudioImportStatus { get => _audioImportStatus; private set { if (_audioImportStatus == value) return; _audioImportStatus = value; OnPropertyChanged(); } }
+    public bool CanImportAudio => _audioImportService is not null;
     public string SortLabel => _sortAscending ? "Sort: A-Z" : "Sort: Z-A";
     public string FilterLabel => _catalogueFilterIndex switch { 1 => "Filter: Manual", 2 => "Filter: Demo", _ => "Filter: All" };
     public void ToggleSort() { _sortAscending = !_sortAscending; OnPropertyChanged(nameof(SortLabel)); ApplyFilter(_allBooks); }
@@ -293,6 +298,25 @@ public sealed class MainViewModel : INotifyPropertyChanged
         BackupMessage = "Backup import cancelled.";
     }
 
+    public async Task ImportAudioAsync(string audiobookId, string fileName, Stream source, CancellationToken cancellationToken = default)
+    {
+        if (_audioImportService is null) { AudioImportStatus = "Local audio import is unavailable."; return; }
+        var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+        if (book is null) { AudioImportStatus = "Select an audiobook in your catalogue first."; return; }
+        try
+        {
+            AudioImportStatus = "Importing audio…";
+            var path = await _audioImportService.ImportAsync(audiobookId, fileName, source, cancellationToken);
+            var updated = book with { AudioFilePath = path };
+            await _repository.UpsertAsync(updated, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+            AudioImportStatus = "Audio attached to: " + book.Title;
+            ErrorMessage = string.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { AudioImportStatus = "Audio import cancelled."; }
+        catch (Exception) { AudioImportStatus = "Could not import this audio file. Choose a supported audio file and try again."; }
+    }
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         try { await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken); await ReloadQueueAsync(cancellationToken); ErrorMessage = string.Empty; }

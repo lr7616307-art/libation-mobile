@@ -9,6 +9,7 @@ namespace Libation.Mobile.UI.Views;
 public partial class MainView : UserControl
 {
     private readonly MainViewModel _viewModel;
+    private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
 
     public MainView()
@@ -18,7 +19,8 @@ public partial class MainView : UserControl
         var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
-        _viewModel = new MainViewModel(repository, queue, syncService);
+        var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
+        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory));
         InitializeComponent();
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
@@ -96,6 +98,21 @@ public partial class MainView : UserControl
             await _viewModel.RemoveBookAsync(book.Id);
     }
 
+    private async void ImportAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: Audiobook book }) return;
+        var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (provider is null) return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose audiobook audio",
+            AllowMultiple = false,
+            FileTypeFilter = [AudioFileType]
+        });
+        if (files.Count == 0) return;
+        await using var stream = await files[0].OpenReadAsync();
+        await _viewModel.ImportAudioAsync(book.Id, files[0].Name, stream);
+    }
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
