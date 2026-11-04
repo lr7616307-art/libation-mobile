@@ -151,12 +151,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             IsLoading = true;
             ErrorMessage = string.Empty;
+            await _repository.EnsureInitializedAsync(InitialSamples, cancellationToken);
             var stored = await _repository.GetBooksAsync(cancellationToken);
-            if (stored.Count == 0)
-            {
-                await _repository.ReplaceAllAsync(InitialSamples, cancellationToken);
-                stored = await _repository.GetBooksAsync(cancellationToken);
-            }
             _allBooks = stored;
             ApplyFilter(_allBooks);
             await ReloadQueueAsync(cancellationToken);
