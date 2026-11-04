@@ -26,6 +26,7 @@ public sealed class DownloadQueueWorker
     private readonly IDownloadQueue _queue;
     private readonly AudioFileDownloader _downloader;
     private readonly IAuthorizedAudioDownloadSource _source;
+    private readonly SemaphoreSlim _runGate = new(1, 1);
 
     public DownloadQueueWorker(
         IDownloadQueue queue,
@@ -41,10 +42,25 @@ public sealed class DownloadQueueWorker
     /// Processes the oldest queued item. Returns false when no work is queued.
     /// Cancellation returns the item to Queued so it can safely be resumed later.
     /// </summary>
+    public async Task<int> RecoverInterruptedDownloadsAsync(CancellationToken cancellationToken = default)
+    {
+        var items = await _queue.GetItemsAsync(cancellationToken);
+        var recovered = 0;
+        foreach (var item in items.Where(x => x.Status == DownloadStatus.Downloading))
+        {
+            await _queue.UpdateStatusAsync(item.AudiobookId, DownloadStatus.Queued, cancellationToken: cancellationToken);
+            recovered++;
+        }
+        return recovered;
+    }
+
     public async Task<bool> ProcessNextAsync(
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        await _runGate.WaitAsync(cancellationToken);
+        try
+        {
         var item = (await _queue.GetItemsAsync(cancellationToken))
             .Where(x => x.Status == DownloadStatus.Queued)
             .OrderBy(x => x.AddedAtUtc)
@@ -90,6 +106,11 @@ public sealed class DownloadQueueWorker
                 exception.Message,
                 cancellationToken: CancellationToken.None);
             return true;
+        }
+        }
+        finally
+        {
+            _runGate.Release();
         }
     }
 }
