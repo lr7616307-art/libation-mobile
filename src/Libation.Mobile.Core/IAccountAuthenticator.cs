@@ -14,4 +14,7 @@ public interface IAccountAuthenticator
 
     Task<AccountSession> RefreshAsync(
         AccountSession currentSession, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes provider-specific credentials from secure storage.</summary>
+    Task DisconnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
