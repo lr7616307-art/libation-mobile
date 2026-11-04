@@ -327,6 +327,43 @@ public sealed class MainViewModelTests
         Assert.Equal(4, vm.Books.Count);
     }
 
+    [Fact]
+    public async Task ImportAudioAsync_AttachesFileToSelectedBookAndPersistsPath()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var importService = new LocalAudioImportService(Path.Combine(directory.Path, "audio"));
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")), audioImportService: importService);
+        await vm.InitializeAsync();
+        var book = Assert.Single(vm.Books.Where(x => x.Title == "Project Hail Mary"));
+        await using var audio = new MemoryStream([1, 2, 3, 4, 5]);
+
+        await vm.ImportAudioAsync(book.Id, "sample.m4b", audio);
+
+        var saved = Assert.Single((await repository.GetBooksAsync()).Where(x => x.Id == book.Id));
+        Assert.NotNull(saved.AudioFilePath);
+        Assert.True(File.Exists(saved.AudioFilePath));
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, await File.ReadAllBytesAsync(saved.AudioFilePath));
+        Assert.Contains("Audio attached", vm.AudioImportStatus);
+    }
+
+    [Fact]
+    public async Task ImportAudioAsync_RejectsUnsupportedFileAndDoesNotAttachPath()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            audioImportService: new LocalAudioImportService(Path.Combine(directory.Path, "audio")));
+        await vm.InitializeAsync();
+        var book = vm.Books[0];
+        await using var audio = new MemoryStream([1, 2, 3]);
+
+        await vm.ImportAudioAsync(book.Id, "protected.aax", audio);
+
+        var saved = Assert.Single((await repository.GetBooksAsync()).Where(x => x.Id == book.Id));
+        Assert.Null(saved.AudioFilePath);
+        Assert.Contains("Could not import", vm.AudioImportStatus);
+    }
     private static MainViewModel CreateViewModel(string directory)
         => new(new JsonLibraryRepository(Path.Combine(directory, "library.json")),
             new JsonDownloadQueue(Path.Combine(directory, "queue.json")));
