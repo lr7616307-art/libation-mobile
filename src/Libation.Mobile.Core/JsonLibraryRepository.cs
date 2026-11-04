@@ -37,6 +37,28 @@ public sealed class JsonLibraryRepository : ILibraryRepository
         }
     }
 
+    public async Task EnsureInitializedAsync(
+        IEnumerable<Audiobook> initialBooks,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(initialBooks);
+        var snapshot = initialBooks.ToArray();
+        ValidateBooks(snapshot);
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            // File existence, not catalogue count, distinguishes first launch
+            // from a deliberately empty catalogue restored or synced by the user.
+            if (!File.Exists(_filePath))
+                await WriteBooksAsync(snapshot, cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task ReplaceAllAsync(
         IEnumerable<Audiobook> books,
         CancellationToken cancellationToken = default)
