@@ -95,6 +95,69 @@ public sealed class DownloadQueueWorkerTests
         Assert.Null(item.ErrorMessage);
     }
 
+
+    [Fact]
+    public async Task ProcessNextAsync_ConcurrentCallsNeverRunTwoDownloadsAtOnce()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-1");
+        await queue.EnqueueAsync("book-2");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        var source = new ConcurrencyTrackingSource();
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        var results = await Task.WhenAll(
+            worker.ProcessNextAsync(),
+            worker.ProcessNextAsync());
+
+        Assert.All(results, Assert.True);
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(1, source.MaximumConcurrentCalls);
+        Assert.All(await queue.GetItemsAsync(), item => Assert.Equal(DownloadStatus.Completed, item.Status));
+    }
+
+
+    private sealed class ConcurrencyTrackingSource : IAuthorizedAudioDownloadSource
+    {
+        private int _activeCalls;
+        private int _maximumConcurrentCalls;
+        private int _callCount;
+
+        public int MaximumConcurrentCalls => _maximumConcurrentCalls;
+        public int CallCount => _callCount;
+
+        public async Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _callCount);
+            var active = Interlocked.Increment(ref _activeCalls);
+            UpdateMaximum(active);
+            try
+            {
+                await Task.Delay(40, cancellationToken);
+                return new AuthorizedAudioDownload(
+                    new Uri("https://provider.example/" + audiobookId),
+                    Path.Combine(Path.GetTempPath(), "LibationMobileWorkerTests", audiobookId + ".m4b"));
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeCalls);
+            }
+        }
+
+        private void UpdateMaximum(int active)
+        {
+            int observed;
+            do
+            {
+                observed = _maximumConcurrentCalls;
+                if (active <= observed) return;
+            }
+            while (Interlocked.CompareExchange(ref _maximumConcurrentCalls, active, observed) != observed);
+        }
+    }
+
     private sealed class CancellingSource(CancellationTokenSource cancellation) : IAuthorizedAudioDownloadSource
     {
         public Task<AuthorizedAudioDownload> ResolveAsync(
