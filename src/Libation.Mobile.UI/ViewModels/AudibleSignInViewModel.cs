@@ -109,6 +109,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             IsBusy = true;
             _challengeId = null;
             OnPropertyChanged(nameof(HasChallenge));
+            OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
             ResponseUrl = string.Empty;
 
@@ -116,6 +117,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             var challenge = await _connection.BeginSignInAsync(request, cancellationToken);
             _challengeId = challenge.ChallengeId;
             OnPropertyChanged(nameof(HasChallenge));
+            OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
 
             _browser.Open(challenge.AuthorizationUri);
@@ -130,6 +132,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         {
             _challengeId = null;
             OnPropertyChanged(nameof(HasChallenge));
+            OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
             Status = "Could not start Audible sign-in. Check the marketplace and try again.";
         }
@@ -170,6 +173,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             _challengeId = null;
             ResponseUrl = string.Empty;
             OnPropertyChanged(nameof(HasChallenge));
+            OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
             IsBusy = false;
         }
@@ -187,6 +191,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             _challengeId = null;
             ResponseUrl = string.Empty;
             OnPropertyChanged(nameof(HasChallenge));
+            OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
             OnPropertyChanged(nameof(CanCancel));
             Status = "Sign-in cancelled. Your existing Audible connection, if any, is unchanged.";
@@ -216,6 +221,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             _challengeId = null;
             ResponseUrl = string.Empty;
             OnPropertyChanged(nameof(HasChallenge));
+            OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
             Status = "Audible account disconnected. Saved Audible credentials were removed from encrypted storage.";
         }
