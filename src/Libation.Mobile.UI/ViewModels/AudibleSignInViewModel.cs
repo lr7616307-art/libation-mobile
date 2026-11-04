@@ -173,6 +173,34 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task DisconnectAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsBusy) return;
+        try
+        {
+            IsBusy = true;
+            await _connection.DisconnectAsync(cancellationToken);
+            _challengeId = null;
+            ResponseUrl = string.Empty;
+            OnPropertyChanged(nameof(HasChallenge));
+            OnPropertyChanged(nameof(CanComplete));
+            Status = "Audible account disconnected. Saved Audible credentials were removed from encrypted storage.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Status = "Disconnect cancelled.";
+            throw;
+        }
+        catch (Exception)
+        {
+            Status = "Could not fully disconnect. Secure account data may still be present; retry disconnect.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
