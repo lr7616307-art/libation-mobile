@@ -209,6 +209,24 @@ public sealed class AccountConnectionServiceTests
     }
 
     [Fact]
+    public async Task CancelSignIn_RemovesPendingChallengeWithoutDisconnectingSavedSession()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AccountSessionStore(secrets);
+        await store.SaveAsync(NewSession("acct-cancel", "a", "r"));
+        var authenticator = new FakeAuthenticator(NewSession("acct-cancel", "a", "r"));
+        var service = new AccountConnectionService(authenticator, store);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        await service.CancelSignInAsync(challenge.ChallengeId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CompleteSignInAsync(challenge.ChallengeId, "https://example.invalid/return"));
+        Assert.Equal(AccountConnectionStatus.Connected, (await service.GetStateAsync()).Status);
+        Assert.Equal(0, authenticator.CompleteCount);
+    }
+
+    [Fact]
     public async Task Disconnect_ClearsSavedSessionAndPendingChallenge()
     {
         var secrets = new InMemorySecretStore();
