@@ -14,6 +14,7 @@ public sealed class LibrarySyncService(
         ArgumentNullException.ThrowIfNull(repository);
 
         var remote = await provider.GetLibraryAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(remote);
         if (remote.Count > 5000)
             throw new InvalidDataException("The provider catalogue exceeds the 5,000-entry safety limit.");
@@ -42,7 +43,9 @@ public sealed class LibrarySyncService(
                 "Library"));
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         var existing = await repository.GetBooksAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         var existingProviderBooks = existing
             .Where(book => book.Id.StartsWith("provider:", StringComparison.Ordinal))
             .ToDictionary(book => book.Id, StringComparer.Ordinal);
@@ -59,6 +62,7 @@ public sealed class LibrarySyncService(
             && book.Status != "Library"
             && book.Status != "Demo");
         var merged = manual.Concat(mergedProviderBooks).ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
         await repository.ReplaceAllAsync(merged, cancellationToken);
         return mapped.Count;
     }
