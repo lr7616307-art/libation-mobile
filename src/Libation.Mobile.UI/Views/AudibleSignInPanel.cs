@@ -40,7 +40,11 @@ internal static class AudibleSignInPanel
         complete.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanComplete)));
         complete.Click += async (_, _) => await viewModel.CompleteSignInAsync();
 
-        var disconnect = new Button { Content = "Disconnect Audible account" };\n        disconnect.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanBegin)));\n        disconnect.Click += async (_, _) => await viewModel.DisconnectAsync();\n\n        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var disconnect = new Button { Content = "Disconnect Audible account" };
+        disconnect.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanBegin)));
+        disconnect.Click += async (_, _) => await viewModel.DisconnectAsync();
+
+        var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
         status.Bind(TextBlock.TextProperty, new Binding(nameof(viewModel.Status)));
 
         var content = new StackPanel
