@@ -11,6 +11,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly ILibraryRepository _repository;
     private readonly IDownloadQueue _downloadQueue;
     private readonly LocalAudioImportService? _audioImportService;
+    private readonly ILocalAudioPlayer? _audioPlayer;
+    private string? _activeAudioBookId;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
@@ -42,12 +44,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ObservableCollection<Audiobook> Books { get; } = [];
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
 
-    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null)
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, ILocalAudioPlayer? audioPlayer = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
         _syncService = syncService;
         _audioImportService = audioImportService;
+        _audioPlayer = audioPlayer;
     }
 
     public bool IsSyncing { get => _isSyncing; private set { if (_isSyncing == value) return; _isSyncing = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanSync)); } }
@@ -336,6 +339,66 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public long GetResumePositionMilliseconds(string audiobookId)
         => _allBooks.FirstOrDefault(x => x.Id == audiobookId)?.PlaybackPositionMilliseconds ?? 0;
+
+    /// <summary>Starts a locally imported audiobook or pauses the currently active one.</summary>
+    public async Task ToggleLocalPlaybackAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        if (_audioPlayer is null)
+        {
+            AudioImportStatus = "Playback is unavailable on this platform.";
+            return;
+        }
+
+        var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+        if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath))
+        {
+            AudioImportStatus = "Import an audio file for this audiobook before playing it.";
+            return;
+        }
+
+        try
+        {
+            if (_audioPlayer.IsPlaying && string.Equals(_activeAudioBookId, audiobookId, StringComparison.Ordinal))
+            {
+                _audioPlayer.Pause();
+                await SavePlaybackPositionAsync(audiobookId, _audioPlayer.PositionMilliseconds, cancellationToken);
+                AudioImportStatus = "Paused: " + book.Title;
+                return;
+            }
+
+            if (!File.Exists(book.AudioFilePath))
+            {
+                AudioImportStatus = "The imported audio file is missing. Import it again.";
+                return;
+            }
+
+            _audioPlayer.Play(book.AudioFilePath, Math.Max(0, book.PlaybackPositionMilliseconds));
+            _activeAudioBookId = audiobookId;
+            AudioImportStatus = "Playing: " + book.Title;
+            ErrorMessage = string.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            AudioImportStatus = "Could not play this audio file. Check that the file is supported and try again.";
+        }
+    }
+
+    /// <summary>Pauses active playback and stores its resume position.</summary>
+    public async Task StopLocalPlaybackAsync(CancellationToken cancellationToken = default)
+    {
+        if (_audioPlayer is null || string.IsNullOrWhiteSpace(_activeAudioBookId)) return;
+        var id = _activeAudioBookId;
+        try
+        {
+            if (_audioPlayer.IsPlaying) _audioPlayer.Pause();
+            await SavePlaybackPositionAsync(id, _audioPlayer.PositionMilliseconds, cancellationToken);
+            _activeAudioBookId = null;
+            AudioImportStatus = "Playback paused. Your position has been saved.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { AudioImportStatus = "Could not pause playback safely."; }
+    }
 
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {

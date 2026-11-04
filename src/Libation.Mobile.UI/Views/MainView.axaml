@@ -7,11 +7,11 @@
         <TextBlock Text="A mobile audiobook manager" FontSize="14" Opacity="0.7" />
       </StackPanel>
       <TextBox PlaceholderText="Search titles, authors or narrators" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-      <Border CornerRadius="14" Padding="14" Background="#3157A4">
+      <Border CornerRadius="14" Padding="14" BorderBrush="#555555" BorderThickness="1">
         <StackPanel Spacing="4">
-          <TextBlock Text="PROTOTYPE MODE" FontWeight="Bold" Foreground="White" />
-          <TextBlock Text="Local catalogue and download queue are saved on this device. The queue currently tracks download status only. The authorized download worker is under development; Audible audio delivery and playback are not yet connected."
-                     TextWrapping="Wrap" Foreground="White" />
+          <TextBlock Text="LOCAL AUDIO" FontWeight="Bold" />
+          <TextBlock Text="Imported audio can be played and resumed on this device. Audible audiobook downloading is still being integrated."
+                     TextWrapping="Wrap" />
         </StackPanel>
       </Border>
       <Border CornerRadius="12" Padding="14" BorderBrush="#555555" BorderThickness="1">
@@ -73,11 +73,12 @@
                   <TextBlock Text="{Binding Length}" FontSize="12" HorizontalAlignment="Right" />
                   <TextBlock Text="{Binding Status}" FontSize="11" Opacity="0.7" HorizontalAlignment="Right" />
                 </StackPanel>
-                <Grid Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,10,0,0">
+                <Grid Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,10,0,0">
                   <Button Grid.Column="0" Content="Add to queue" Click="QueueClicked" />
                   <Button Grid.Column="1" Content="Import audio" Margin="8,0,0,0" Click="ImportAudioClicked" />
-                  <Button Grid.Column="2" Content="Edit" Margin="8,0,0,0" IsEnabled="{Binding CanDelete}" Click="EditBookClicked" />
-                  <Button Grid.Column="3" Content="Delete" Margin="8,0,0,0" IsEnabled="{Binding CanDelete}" Click="DeleteBookClicked" />
+                  <Button Grid.Column="2" Content="Play / pause" Margin="8,0,0,0" Click="PlayAudioClicked" />
+                  <Button Grid.Column="3" Content="Edit" Margin="8,0,0,0" IsEnabled="{Binding CanDelete}" Click="EditBookClicked" />
+                  <Button Grid.Column="4" Content="Delete" Margin="8,0,0,0" IsEnabled="{Binding CanDelete}" Click="DeleteBookClicked" />
                 </Grid>
               </Grid>
             </Border>
@@ -107,7 +108,7 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </StackPanel>
-      <TextBlock Text="Catalogue and queue saved locally · Audio download and playback are not yet available" FontSize="12" Opacity="0.6"
+      <TextBlock Text="Catalogue and queue saved locally · Imported audio playback available" FontSize="12" Opacity="0.6"
                  TextWrapping="Wrap" HorizontalAlignment="Center" Margin="0,8,0,16" />
     </StackPanel>
   </ScrollViewer>

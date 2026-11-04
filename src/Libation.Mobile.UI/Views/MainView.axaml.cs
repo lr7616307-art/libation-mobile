@@ -20,7 +20,7 @@ public partial class MainView : UserControl
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
-        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory));
+        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory), PlatformLocalAudioPlayerFactory?.Invoke());
         InitializeComponent();
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
@@ -113,6 +113,12 @@ public partial class MainView : UserControl
         await using var stream = await files[0].OpenReadAsync();
         await _viewModel.ImportAudioAsync(book.Id, files[0].Name, stream);
     }
+    private async void PlayAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: Audiobook book })
+            await _viewModel.ToggleLocalPlaybackAsync(book.Id);
+    }
+
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
