@@ -34,6 +34,26 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task SyncLibraryAsync_EmptyRemoteLibraryRemainsEmptyInsteadOfReseedingDemoBooks()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([]), repository));
+
+        await vm.InitializeAsync();
+        Assert.Equal(3, vm.Books.Count);
+
+        await vm.SyncLibraryAsync();
+
+        Assert.Empty(vm.Books);
+        Assert.Empty(await repository.GetBooksAsync());
+        Assert.Contains("0 audiobook metadata entries updated", vm.SyncStatus);
+    }
+
+    [Fact]
     public async Task SyncLibraryAsync_WhenProviderFails_ReportsSafeFailure()
     {
         using var directory = new TemporaryDirectory();
