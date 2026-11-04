@@ -77,6 +77,13 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
             {
                 await snapshotStore.SaveAsync(Capture(identity)).ConfigureAwait(false);
             }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is not a storage failure. Restore the prior in-memory token
+                // and preserve the caller's cancellation signal.
+                identity.Update(previousToken);
+                throw;
+            }
             catch (Exception persistenceException)
             {
                 // The new token is not considered committed. Restore the in-memory token so
