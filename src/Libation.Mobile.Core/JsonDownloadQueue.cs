@@ -108,6 +108,8 @@ public sealed class JsonDownloadQueue : IDownloadQueue
                 string.Equals(item.AudiobookId, audiobookId, StringComparison.Ordinal));
             if (index < 0)
                 return;
+            if (items[index].Status == DownloadStatus.Downloading)
+                return;
             items.RemoveAt(index);
             removed = true;
         }, cancellationToken);
