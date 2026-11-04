@@ -78,6 +78,25 @@ public sealed class AccountConnectionService(
         }
     }
 
+    public async Task CancelSignInAsync(string challengeId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(challengeId);
+        await _signInGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_pendingChallenge is null
+                || !string.Equals(_pendingChallenge.ChallengeId, challengeId, StringComparison.Ordinal))
+                return;
+
+            _pendingChallenge = null;
+            await authenticator.CancelSignInAsync(challengeId, cancellationToken);
+        }
+        finally
+        {
+            _signInGate.Release();
+        }
+    }
+
     public async Task<AccountConnectionState> GetStateAsync(CancellationToken cancellationToken = default)
     {
         var session = await sessions.LoadAsync(cancellationToken);
