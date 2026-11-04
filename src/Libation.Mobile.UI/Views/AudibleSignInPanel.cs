@@ -64,6 +64,7 @@ internal static class AudibleSignInPanel
                 begin,
                 responseUrl,
                 complete,
+                disconnect,
                 status
             }
         };
