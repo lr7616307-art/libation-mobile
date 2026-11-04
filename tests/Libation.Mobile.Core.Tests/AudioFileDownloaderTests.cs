@@ -44,6 +44,26 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_StopsWhenStreamExceedsConfiguredSizeLimit()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        await File.WriteAllTextAsync(destination, "existing");
+        using var client = new HttpClient(new StubHandler((_, _) =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3, 4, 5 })
+            }));
+        var downloader = new AudioFileDownloader(client, maximumBytes: 4);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal("existing", await File.ReadAllTextAsync(destination));
+        Assert.Empty(Directory.GetFiles(directory.Path, "*.part"));
+    }
+
+    [Fact]
     public async Task DownloadAsync_DoesNotReplaceDestinationWhenRequestFails()
     {
         using var directory = new TemporaryDirectory();
