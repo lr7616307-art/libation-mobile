@@ -159,6 +159,83 @@ public sealed class LibrarySyncServiceTests
         Assert.Contains((await repository.GetBooksAsync()), x => x.Id == "manual:1");
     }
 
+
+    [Fact]
+    public async Task Sync_CancellationAfterProviderReturnsDoesNotReplaceCatalogue()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([new Audiobook("manual:1", "Keep", "Author", "", "", "Manually added")]);
+        using var cancellation = new CancellationTokenSource();
+        var service = new LibrarySyncService(
+            new CancellingProvider(cancellation, [new RemoteAudiobook("new", "New", "Author", "", "")]),
+            repository);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.SyncAsync(cancellation.Token));
+
+        var saved = Assert.Single(await repository.GetBooksAsync());
+        Assert.Equal("manual:1", saved.Id);
+    }
+
+    [Fact]
+    public async Task Sync_CancellationDuringRepositoryReadDoesNotReplaceCatalogue()
+    {
+        using var directory = new TemporaryDirectory();
+        var inner = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await inner.ReplaceAllAsync([new Audiobook("manual:1", "Keep", "Author", "", "", "Manually added")]);
+        using var cancellation = new CancellationTokenSource();
+        var repository = new CancellingReadRepository(inner, cancellation);
+        var service = new LibrarySyncService(
+            new FakeProvider([new RemoteAudiobook("new", "New", "Author", "", "")]),
+            repository);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.SyncAsync(cancellation.Token));
+
+        var saved = Assert.Single(await inner.GetBooksAsync());
+        Assert.Equal("manual:1", saved.Id);
+        Assert.Equal(0, repository.ReplaceCalls);
+    }
+
+    private sealed class CancellingProvider(
+        CancellationTokenSource cancellation,
+        IReadOnlyList<RemoteAudiobook> books) : ILibraryCatalogProvider
+    {
+        public Task<IReadOnlyList<RemoteAudiobook>> GetLibraryAsync(CancellationToken cancellationToken = default)
+        {
+            cancellation.Cancel();
+            return Task.FromResult(books);
+        }
+    }
+
+    private sealed class CancellingReadRepository(
+        ILibraryRepository inner,
+        CancellationTokenSource cancellation) : ILibraryRepository
+    {
+        public int ReplaceCalls { get; private set; }
+
+        public async Task<IReadOnlyList<Audiobook>> GetBooksAsync(CancellationToken cancellationToken = default)
+        {
+            var books = await inner.GetBooksAsync(cancellationToken);
+            cancellation.Cancel();
+            return books;
+        }
+
+        public Task EnsureInitializedAsync(IEnumerable<Audiobook> initialBooks, CancellationToken cancellationToken = default)
+            => inner.EnsureInitializedAsync(initialBooks, cancellationToken);
+
+        public Task ReplaceAllAsync(IEnumerable<Audiobook> books, CancellationToken cancellationToken = default)
+        {
+            ReplaceCalls++;
+            return inner.ReplaceAllAsync(books, cancellationToken);
+        }
+
+        public Task UpsertAsync(Audiobook book, CancellationToken cancellationToken = default)
+            => inner.UpsertAsync(book, cancellationToken);
+
+        public Task<bool> RemoveAsync(string audiobookId, CancellationToken cancellationToken = default)
+            => inner.RemoveAsync(audiobookId, cancellationToken);
+    }
+
     private sealed class FakeProvider(IReadOnlyList<RemoteAudiobook> books) : ILibraryCatalogProvider
     {
         public Task<IReadOnlyList<RemoteAudiobook>> GetLibraryAsync(CancellationToken cancellationToken = default)
