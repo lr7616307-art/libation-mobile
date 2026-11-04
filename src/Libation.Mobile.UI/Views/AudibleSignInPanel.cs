@@ -16,7 +16,7 @@ internal static class AudibleSignInPanel
     {
         var marketplace = new TextBox
         {
-            Watermark = "Audible marketplace, e.g. www.amazon.in",
+            PlaceholderText = "Audible marketplace, e.g. www.amazon.in",
             Text = viewModel.Marketplace
         };
         marketplace.Bind(TextBox.TextProperty,
@@ -24,7 +24,7 @@ internal static class AudibleSignInPanel
 
         var responseUrl = new TextBox
         {
-            Watermark = "Paste the final HTTPS address-bar URL here",
+            PlaceholderText = "Paste the final HTTPS address-bar URL here",
             AcceptsReturn = false,
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 44
