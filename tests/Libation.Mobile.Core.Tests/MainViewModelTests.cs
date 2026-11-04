@@ -54,6 +54,29 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task EmptyCatalogue_RemainsEmptyAfterRestart()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var first = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([]), repository));
+
+        await first.InitializeAsync();
+        await first.SyncLibraryAsync();
+        Assert.Empty(first.Books);
+
+        var reopened = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await reopened.InitializeAsync();
+
+        Assert.Empty(reopened.Books);
+        Assert.Empty(await repository.GetBooksAsync());
+    }
+
+    [Fact]
     public async Task SyncLibraryAsync_WhenProviderFails_ReportsSafeFailure()
     {
         using var directory = new TemporaryDirectory();
