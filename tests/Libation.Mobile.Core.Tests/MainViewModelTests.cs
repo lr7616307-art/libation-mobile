@@ -364,6 +364,42 @@ public sealed class MainViewModelTests
         Assert.Null(saved.AudioFilePath);
         Assert.Contains("Could not import", vm.AudioImportStatus);
     }
+    [Fact]
+    public async Task PlaybackPosition_IsPersistedAndClampedToZero()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            audioImportService: new LocalAudioImportService(Path.Combine(directory.Path, "audio")));
+        await vm.InitializeAsync();
+        var book = vm.Books.First(x => x.Title == "Project Hail Mary");
+        await using var audio = new MemoryStream([1, 2, 3]);
+        await vm.ImportAudioAsync(book.Id, "sample.m4b", audio);
+
+        await vm.SavePlaybackPositionAsync(book.Id, 123456);
+        Assert.Equal(123456, vm.GetResumePositionMilliseconds(book.Id));
+
+        await vm.SavePlaybackPositionAsync(book.Id, -50);
+        Assert.Equal(0, vm.GetResumePositionMilliseconds(book.Id));
+
+        var saved = Assert.Single((await repository.GetBooksAsync()).Where(x => x.Id == book.Id));
+        Assert.Equal(0, saved.PlaybackPositionMilliseconds);
+    }
+
+    [Fact]
+    public async Task PlaybackPosition_IsIgnoredWhenBookHasNoImportedAudio()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+        var book = vm.Books[0];
+
+        await vm.SavePlaybackPositionAsync(book.Id, 9000);
+
+        Assert.Equal(0, vm.GetResumePositionMilliseconds(book.Id));
+    }
+
     private static MainViewModel CreateViewModel(string directory)
         => new(new JsonLibraryRepository(Path.Combine(directory, "library.json")),
             new JsonDownloadQueue(Path.Combine(directory, "queue.json")));

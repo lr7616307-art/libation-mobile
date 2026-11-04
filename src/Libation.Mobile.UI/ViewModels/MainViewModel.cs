@@ -317,6 +317,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { AudioImportStatus = "Audio import cancelled."; }
         catch (Exception) { AudioImportStatus = "Could not import this audio file. Choose a supported audio file and try again."; }
     }
+    /// <summary>Persist a safe resume position for a locally imported audiobook.</summary>
+    public async Task SavePlaybackPositionAsync(string audiobookId, long positionMilliseconds, CancellationToken cancellationToken = default)
+    {
+        if (positionMilliseconds < 0) positionMilliseconds = 0;
+        var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+        if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath)) return;
+        try
+        {
+            var updated = book with { PlaybackPositionMilliseconds = positionMilliseconds };
+            await _repository.UpsertAsync(updated, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { AudioImportStatus = "Could not save playback position."; }
+    }
+
+    public long GetResumePositionMilliseconds(string audiobookId)
+        => _allBooks.FirstOrDefault(x => x.Id == audiobookId)?.PlaybackPositionMilliseconds ?? 0;
+
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         try { await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken); await ReloadQueueAsync(cancellationToken); ErrorMessage = string.Empty; }

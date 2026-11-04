@@ -13,6 +13,9 @@ public sealed record Audiobook(
     /// <summary>Absolute path to an imported, app-managed local audio file, if present.</summary>
     public string? AudioFilePath { get; init; }
 
+    /// <summary>Last known playback position in milliseconds for resuming local audio.</summary>
+    public long PlaybackPositionMilliseconds { get; init; }
+
     [JsonIgnore]
     public bool CanDelete => !string.Equals(Status, "Demo", StringComparison.Ordinal);
 }
