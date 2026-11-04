@@ -75,6 +75,36 @@ public sealed class DownloadQueueWorkerTests
         Assert.False(string.IsNullOrWhiteSpace(item.ErrorMessage));
     }
 
+
+    [Fact]
+    public async Task ProcessNextAsync_CancellationReturnsItemToQueued()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-cancelled");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        using var cancellation = new CancellationTokenSource();
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client),
+            new CancellingSource(cancellation));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => worker.ProcessNextAsync(cancellationToken: cancellation.Token));
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Queued, item.Status);
+        Assert.Null(item.ErrorMessage);
+    }
+
+    private sealed class CancellingSource(CancellationTokenSource cancellation) : IAuthorizedAudioDownloadSource
+    {
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            cancellation.Cancel();
+            return Task.FromCanceled<AuthorizedAudioDownload>(cancellationToken);
+        }
+    }
+
     private sealed class StubSource(Uri uri, string path) : IAuthorizedAudioDownloadSource
     {
         public Task<AuthorizedAudioDownload> ResolveAsync(
