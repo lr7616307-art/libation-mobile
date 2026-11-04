@@ -14,10 +14,13 @@ public static class AudibleItemMapper
         return new RemoteAudiobook(
             item.ProductId?.Trim() ?? string.Empty,
             item.TitleWithSubtitle?.Trim() ?? string.Empty,
-            JoinNames(item.Authors?.Select(person => person?.Name)),
+            OrUnknownAuthor(JoinNames(item.Authors?.Select(person => person?.Name))),
             JoinNames(item.Narrators?.Select(person => person?.Name)),
             Convert.ToString(item.LengthInMinutes, CultureInfo.InvariantCulture) ?? string.Empty);
     }
+
+    private static string OrUnknownAuthor(string author)
+        => string.IsNullOrWhiteSpace(author) ? "Unknown author" : author;
 
     /// <summary>Joins usable names in source order; null, blank and whitespace-only values are ignored.</summary>
     public static string JoinNames(IEnumerable<string?>? names)
