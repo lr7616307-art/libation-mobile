@@ -39,22 +39,27 @@ public sealed class AudibleIdentitySnapshotStoreTests
     [Theory]
     [InlineData("{not-json")]
     [InlineData("{\"schemaVersion\":99}")]
-    public async Task Load_WhenPayloadIsInvalid_ReturnsNull(string payload)
+    public async Task Load_WhenSavedPayloadIsInvalid_RequiresAccountRecovery(string payload)
     {
         var secrets = new InMemorySecretStore();
         secrets.Seed(AudibleIdentitySnapshotStore.StorageKey, payload);
         var store = new AudibleIdentitySnapshotStore(secrets);
 
-        Assert.Null(await store.LoadAsync());
+        var error = await Assert.ThrowsAsync<AudibleIdentityRecoveryRequiredException>(
+            () => store.LoadAsync());
+        Assert.Contains("Sign in again", error.Message);
     }
 
     [Fact]
-    public async Task Load_WhenAuthenticatedDecryptionFails_ReturnsNull()
+    public async Task Load_WhenAuthenticatedDecryptionFails_RequiresAccountRecovery()
     {
         var secrets = new InMemorySecretStore { GetException = new CryptographicException("bad tag") };
+        secrets.Seed(AudibleIdentitySnapshotStore.StorageKey, "encrypted-record");
         var store = new AudibleIdentitySnapshotStore(secrets);
 
-        Assert.Null(await store.LoadAsync());
+        var error = await Assert.ThrowsAsync<AudibleIdentityRecoveryRequiredException>(
+            () => store.LoadAsync());
+        Assert.Contains("Sign in again", error.Message);
     }
 
     [Fact]
