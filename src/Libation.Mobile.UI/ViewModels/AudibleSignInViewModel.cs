@@ -116,20 +116,31 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(HasChallenge));
             OnPropertyChanged(nameof(CanComplete));
 
-            _browser.Open(challenge.AuthorizationUri);
-            Status = "Browser opened. Complete sign-in there, then copy the final address-bar URL and paste it below. Do not share it with anyone.";
+            try
+            {
+                _browser.Open(challenge.AuthorizationUri);
+                Status = "Browser opened. Complete sign-in there, then copy the final address-bar URL and paste it below. Do not share it with anyone.";
+            }
+            catch (Exception ex)
+            {
+                _challengeId = null;
+                OnPropertyChanged(nameof(HasChallenge));
+                OnPropertyChanged(nameof(CanComplete));
+                Status = $"Could not open the sign-in browser ({ex.GetType().Name}). Check that a browser is installed and try again.";
+                return;
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             Status = "Sign-in start cancelled.";
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             _challengeId = null;
             OnPropertyChanged(nameof(HasChallenge));
             OnPropertyChanged(nameof(CanComplete));
-            Status = "Could not start Audible sign-in. Check the marketplace and try again.";
+            Status = $"Audible could not create the sign-in request ({ex.GetType().Name}). Check the marketplace and try again.";
         }
         finally
         {
