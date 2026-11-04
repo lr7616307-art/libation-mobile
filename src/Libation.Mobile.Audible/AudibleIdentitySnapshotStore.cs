@@ -40,12 +40,12 @@ public sealed class AudibleIdentitySnapshotStore(ISecretStore secrets)
     public async Task<AudibleIdentitySnapshot?> LoadAsync(
         CancellationToken cancellationToken = default)
     {
-        var serialized = await secrets.GetAsync(StorageKey, cancellationToken).ConfigureAwait(false);
-        if (serialized is null)
-            return null;
-
         try
         {
+            var serialized = await secrets.GetAsync(StorageKey, cancellationToken).ConfigureAwait(false);
+            if (serialized is null)
+                return null;
+
             return AudibleIdentitySnapshotSerializer.Deserialize(serialized);
         }
         catch (InvalidDataException ex)
