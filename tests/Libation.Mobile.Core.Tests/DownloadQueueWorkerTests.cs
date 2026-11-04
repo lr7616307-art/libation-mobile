@@ -29,6 +29,23 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task RecoverInterruptedDownloadsAsync_RequeuesItemsLeftDownloading()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-interrupted");
+        await queue.UpdateStatusAsync("book-interrupted", DownloadStatus.Downloading);
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book"), Path.Combine(directory.Path, "book.m4b")));
+
+        var recovered = await worker.RecoverInterruptedDownloadsAsync();
+
+        Assert.Equal(1, recovered);
+        Assert.Equal(DownloadStatus.Queued, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_NoQueuedItemsReturnsFalse()
     {
         using var directory = new TemporaryDirectory();
