@@ -22,4 +22,7 @@ public sealed record DownloadQueueItem(
 
     [JsonIgnore]
     public bool HasErrorMessage => !string.IsNullOrWhiteSpace(ErrorMessage);
+
+    [JsonIgnore]
+    public bool CanRemove => Status != DownloadStatus.Downloading;
 }
