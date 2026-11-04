@@ -87,6 +87,82 @@ public sealed class AudibleIdentitySnapshotSerializerTests
     }
 
     [Fact]
+    public void Serialize_RejectsPayloadThatExceedsLimitByUtf8Bytes()
+    {
+        var snapshot = CreateSnapshot() with
+        {
+            Cookies =
+            [
+                new AudibleCookieSnapshot
+                {
+                    Name = "large",
+                    Value = new string('é', AudibleIdentitySnapshot.MaximumSerializedBytes)
+                }
+            ]
+        };
+
+        Assert.Throws<InvalidDataException>(
+            () => AudibleIdentitySnapshotSerializer.Serialize(snapshot));
+    }
+
+    [Fact]
+    public void Serialize_AcceptsPayloadAtMaximumSerializedByteLimit()
+    {
+        var template = CreateSnapshot();
+        var low = 0;
+        var high = AudibleIdentitySnapshot.MaximumSerializedBytes;
+
+        while (low < high)
+        {
+            var candidateLength = low + (high - low + 1) / 2;
+            var candidate = template with
+            {
+                Cookies =
+                [
+                    new AudibleCookieSnapshot
+                    {
+                        Name = "boundary",
+                        Value = new string('a', candidateLength)
+                    }
+                ]
+            };
+
+            try
+            {
+                _ = AudibleIdentitySnapshotSerializer.Serialize(candidate);
+                low = candidateLength;
+            }
+            catch (InvalidDataException)
+            {
+                high = candidateLength - 1;
+            }
+        }
+
+        var accepted = template with
+        {
+            Cookies =
+            [
+                new AudibleCookieSnapshot { Name = "boundary", Value = new string('a', low) }
+            ]
+        };
+        var serialized = AudibleIdentitySnapshotSerializer.Serialize(accepted);
+
+        Assert.Equal(
+            AudibleIdentitySnapshot.MaximumSerializedBytes,
+            System.Text.Encoding.UTF8.GetByteCount(serialized));
+
+        var rejected = accepted with
+        {
+            Cookies =
+            [
+                new AudibleCookieSnapshot { Name = "boundary", Value = new string('a', low + 1) }
+            ]
+        };
+        Assert.Throws<InvalidDataException>(
+            () => AudibleIdentitySnapshotSerializer.Serialize(rejected));
+    }
+
+    [Fact]
     public void Deserialize_RejectsOversizedPayload()
     {
         var json = new string('x', AudibleIdentitySnapshot.MaximumSerializedBytes + 1);
