@@ -43,8 +43,22 @@ public sealed class LibrarySyncService(
         }
 
         var existing = await repository.GetBooksAsync(cancellationToken);
-        var manual = existing.Where(book => book.Status != "Library" && book.Status != "Demo");
-        var merged = manual.Concat(mapped).ToArray();
+        var existingProviderBooks = existing
+            .Where(book => book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            .ToDictionary(book => book.Id, StringComparer.Ordinal);
+
+        // Keep the user's locally edited metadata for provider IDs that still
+        // exist remotely. Removed remote IDs are intentionally not retained.
+        var mergedProviderBooks = mapped.Select(remoteBook =>
+            existingProviderBooks.TryGetValue(remoteBook.Id, out var localBook)
+                ? localBook
+                : remoteBook);
+
+        var manual = existing.Where(book =>
+            !book.Id.StartsWith("provider:", StringComparison.Ordinal)
+            && book.Status != "Library"
+            && book.Status != "Demo");
+        var merged = manual.Concat(mergedProviderBooks).ToArray();
         await repository.ReplaceAllAsync(merged, cancellationToken);
         return mapped.Count;
     }
