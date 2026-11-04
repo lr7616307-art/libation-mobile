@@ -4,7 +4,8 @@ public enum AccountConnectionStatus
 {
     Disconnected,
     Connected,
-    Expired
+    Expired,
+    ReauthenticationRequired
 }
 
 /// <summary>Safe account status for presentation; deliberately contains no credentials.</summary>

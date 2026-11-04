@@ -15,6 +15,13 @@ public interface IAccountAuthenticator
     Task<AccountSession> RefreshAsync(
         AccountSession currentSession, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Confirms that provider-specific credentials needed for the account are still restorable.
+    /// Generic authenticators without a separate identity record are healthy by default.
+    /// </summary>
+    Task<bool> HasRestorableIdentityAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(true);
+
     /// <summary>Discards an unfinished provider-side browser challenge without disconnecting the account.</summary>
     Task CancelSignInAsync(string challengeId, CancellationToken cancellationToken = default)
         => Task.CompletedTask;

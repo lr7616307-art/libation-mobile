@@ -18,27 +18,18 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     private string? _challengeId;
     private bool _isBusy;
 
-    public AudibleSignInViewModel(
-        AccountConnectionService connection,
-        IExternalBrowserLauncher browser)
+    public AudibleSignInViewModel(AccountConnectionService connection, IExternalBrowserLauncher browser)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _browser = browser ?? throw new ArgumentNullException(nameof(browser));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
     public string Marketplace
     {
         get => _marketplace;
-        set
-        {
-            if (_marketplace == value) return;
-            _marketplace = value;
-            OnPropertyChanged();
-        }
+        set { if (_marketplace == value) return; _marketplace = value; OnPropertyChanged(); }
     }
-
     public string ResponseUrl
     {
         get => _responseUrl;
@@ -50,18 +41,11 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(CanComplete));
         }
     }
-
     public string Status
     {
         get => _status;
-        private set
-        {
-            if (_status == value) return;
-            _status = value;
-            OnPropertyChanged();
-        }
+        private set { if (_status == value) return; _status = value; OnPropertyChanged(); }
     }
-
     public bool IsBusy
     {
         get => _isBusy;
@@ -75,7 +59,6 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(CanCancel));
         }
     }
-
     public bool HasChallenge => !string.IsNullOrWhiteSpace(_challengeId);
     public bool CanCancel => !IsBusy && HasChallenge;
     public bool CanBegin => !IsBusy;
@@ -86,14 +69,18 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         try
         {
             var state = await _connection.GetStateAsync(cancellationToken);
-            Status = state.Status == AccountConnectionStatus.Connected
-                ? "Audible account connected. You can start a new sign-in if needed."
-                : "Audible is not connected. Sign in to access your library.";
+            Status = state.Status switch
+            {
+                AccountConnectionStatus.Connected =>
+                    "Audible account connected. You can start a new sign-in if needed.",
+                AccountConnectionStatus.Expired =>
+                    "Your Audible session has expired. Sign in again to restore access.",
+                AccountConnectionStatus.ReauthenticationRequired =>
+                    "Saved Audible credentials are missing or damaged. Sign in again to restore your library.",
+                _ => "Audible is not connected. Sign in to access your library."
+            };
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception)
         {
             Status = "Could not read the saved account status. Your encrypted account data was not changed.";
@@ -103,7 +90,6 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     public async Task BeginSignInAsync(CancellationToken cancellationToken = default)
     {
         if (IsBusy) return;
-
         try
         {
             IsBusy = true;
@@ -112,14 +98,12 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
             ResponseUrl = string.Empty;
-
             var request = new AccountSignInRequest("audible-mobile", Marketplace.Trim());
             var challenge = await _connection.BeginSignInAsync(request, cancellationToken);
             _challengeId = challenge.ChallengeId;
             OnPropertyChanged(nameof(HasChallenge));
             OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
-
             _browser.Open(challenge.AuthorizationUri);
             Status = "Browser opened. Complete sign-in there, then copy the final address-bar URL and paste it below. Do not share it with anyone.";
         }
@@ -136,20 +120,14 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(CanComplete));
             Status = "Could not start Audible sign-in. Check the marketplace and try again.";
         }
-        finally
-        {
-            IsBusy = false;
-        }
+        finally { IsBusy = false; }
     }
 
     public async Task CompleteSignInAsync(CancellationToken cancellationToken = default)
     {
-        if (IsBusy || string.IsNullOrWhiteSpace(_challengeId) || string.IsNullOrWhiteSpace(ResponseUrl))
-            return;
-
+        if (IsBusy || string.IsNullOrWhiteSpace(_challengeId) || string.IsNullOrWhiteSpace(ResponseUrl)) return;
         var challengeId = _challengeId;
         var responseUrl = ResponseUrl;
-
         try
         {
             IsBusy = true;
@@ -182,7 +160,6 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     public async Task CancelSignInAsync(CancellationToken cancellationToken = default)
     {
         if (IsBusy || string.IsNullOrWhiteSpace(_challengeId)) return;
-
         var challengeId = _challengeId;
         try
         {
@@ -193,7 +170,6 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(HasChallenge));
             OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
-            OnPropertyChanged(nameof(CanCancel));
             Status = "Sign-in cancelled. Your existing Audible connection, if any, is unchanged.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -201,14 +177,8 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             Status = "Sign-in cancellation was interrupted.";
             throw;
         }
-        catch (Exception)
-        {
-            Status = "Could not cancel this sign-in attempt. You can safely start a new attempt.";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        catch (Exception) { Status = "Could not cancel this sign-in attempt. You can safely start a new attempt."; }
+        finally { IsBusy = false; }
     }
 
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
@@ -234,10 +204,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         {
             Status = "Could not fully disconnect. Secure account data may still be present; retry disconnect.";
         }
-        finally
-        {
-            IsBusy = false;
-        }
+        finally { IsBusy = false; }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
