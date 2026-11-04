@@ -47,6 +47,7 @@ public sealed class AudioFileDownloaderTests
     public async Task DownloadAsync_DoesNotReplaceDestinationWhenRequestFails()
     {
         using var directory = new TemporaryDirectory();
+        Directory.CreateDirectory(directory.Path);
         var destination = Path.Combine(directory.Path, "book.m4b");
         await File.WriteAllTextAsync(destination, "existing");
         using var client = new HttpClient(new StubHandler((_, _) =>
