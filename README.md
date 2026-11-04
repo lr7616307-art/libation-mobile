@@ -4,7 +4,7 @@ An independent, unofficial Android community client project exploring a mobile i
 
 ## Project status
 
-**Early prototype.** The current app is a sample-data UI scaffold. A JSON-backed local catalogue repository is now connected to the UI. The app seeds clearly labelled demo entries on first launch and reloads the saved catalogue on subsequent launches. A provider-neutral external-browser sign-in contract, HTTPS challenge validation, and Android external-browser launcher are in place, with automated tests. No Audible authentication adapter or login UI exists yet. The app does not yet sign in to Audible, sync a real library, download audiobooks, or integrate the upstream Libation engine. APKs compile in CI for ARMv7 and ARM64; installation and runtime compatibility are not yet verified on a physical device.
+**Early prototype with initial Audible integration.** The app has a JSON-backed local catalogue, search/filter/sort, metadata editing, backup/restore, a persistent metadata-only download queue, an Audible external-browser sign-in panel, an AudibleApi authentication adapter, Android Keystore-backed encrypted identity storage, and an Audible library metadata provider. Account disconnect now clears both the provider's complete encrypted Audible identity and the generic encrypted session marker. The real account flow and library sync still require end-to-end testing on a physical Android device; the download queue still does not fetch audio, and playback is not implemented. APKs are configured for ARMv7 and ARM64; CI compilation is not proof of runtime compatibility.
 
 ## Device targets
 
