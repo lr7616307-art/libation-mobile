@@ -209,6 +209,57 @@ public sealed class AccountConnectionServiceTests
     }
 
     [Fact]
+    public async Task GetState_WhenProviderIdentityCannotBeRestored_RequiresReauthentication()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AccountSessionStore(secrets);
+        await store.SaveAsync(NewSession("acct-recover", "a", "r"));
+        var authenticator = new FakeAuthenticator { RestorableIdentity = false };
+        var service = new AccountConnectionService(authenticator, store);
+        var state = await service.GetStateAsync();
+        Assert.Equal(AccountConnectionStatus.ReauthenticationRequired, state.Status);
+        Assert.Equal("acct-recover", state.AccountId);
+    }
+
+    [Fact]
+    public async Task GetState_WhenProviderIdentityIsRestorable_ReportsConnected()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AccountSessionStore(secrets);
+        await store.SaveAsync(NewSession("acct-valid", "a", "r"));
+        var authenticator = new FakeAuthenticator { RestorableIdentity = true };
+        var service = new AccountConnectionService(authenticator, store);
+        var state = await service.GetStateAsync();
+        Assert.Equal(AccountConnectionStatus.Connected, state.Status);
+        Assert.Equal("acct-valid", state.AccountId);
+    }
+
+    [Fact]
+    public async Task Refresh_WhenProviderIdentityCannotBeRestored_DoesNotCallRefresh()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AccountSessionStore(secrets);
+        await store.SaveAsync(NewSession("acct-refresh", "a", "r"));
+        var authenticator = new FakeAuthenticator { RestorableIdentity = false };
+        var service = new AccountConnectionService(authenticator, store);
+        var state = await service.RefreshAsync();
+        Assert.Equal(AccountConnectionStatus.ReauthenticationRequired, state.Status);
+        Assert.Equal(0, authenticator.RefreshCount);
+        Assert.Equal("a", (await store.LoadAsync())?.AccessToken);
+    }
+
+    [Fact]
+    public async Task GetState_GenericAuthenticatorWithoutSeparateIdentityRemainsConnected()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AccountSessionStore(secrets);
+        await store.SaveAsync(NewSession("acct-generic", "a", "r"));
+        var authenticator = new FakeAuthenticator();
+        var service = new AccountConnectionService(authenticator, store);
+        var state = await service.GetStateAsync();
+        Assert.Equal(AccountConnectionStatus.Connected, state.Status);
+    }
+    [Fact]
     public async Task CancelSignIn_RemovesPendingChallengeWithoutDisconnectingSavedSession()
     {
         var secrets = new InMemorySecretStore();
@@ -285,6 +336,8 @@ public sealed class AccountConnectionServiceTests
         public int BeginCount { get; private set; }
         public int CompleteCount { get; private set; }
         public int DisconnectCount { get; private set; }
+        public int RefreshCount { get; private set; }
+        public bool? RestorableIdentity { get; set; }
         public string NextChallengeId { get; set; } = "challenge-1";
         public DateTimeOffset ChallengeExpiry { get; set; } = DateTimeOffset.UtcNow.AddMinutes(5);
 
@@ -305,6 +358,9 @@ public sealed class AccountConnectionServiceTests
             return Task.FromResult(completion ?? throw new InvalidOperationException("No fake completion result configured."));
         }
 
+        public Task<bool> HasRestorableIdentityAsync(CancellationToken cancellationToken = default)
+        { cancellationToken.ThrowIfCancellationRequested(); return Task.FromResult(RestorableIdentity ?? true); }
+
         public Task DisconnectAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -316,6 +372,7 @@ public sealed class AccountConnectionServiceTests
             AccountSession currentSession, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            RefreshCount++;
             return Task.FromResult(completion ?? throw new InvalidOperationException("No fake refresh result configured."));
         }
     }
