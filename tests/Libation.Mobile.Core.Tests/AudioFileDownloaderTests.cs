@@ -44,6 +44,32 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_RejectsRedirectToNonHttpsAndPreservesDestination()
+    {
+        using var directory = new TemporaryDirectory();
+        Directory.CreateDirectory(directory.Path);
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        await File.WriteAllTextAsync(destination, "existing");
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3 }),
+                RequestMessage = new HttpRequestMessage(
+                    HttpMethod.Get, new Uri("http://provider.example/insecure-audio"))
+            };
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal("existing", await File.ReadAllTextAsync(destination));
+        Assert.Empty(Directory.GetFiles(directory.Path, "*.part"));
+    }
+
+    [Fact]
     public async Task DownloadAsync_StopsWhenStreamExceedsConfiguredSizeLimit()
     {
         using var directory = new TemporaryDirectory();
