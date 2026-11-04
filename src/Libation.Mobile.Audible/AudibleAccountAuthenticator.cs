@@ -94,6 +94,14 @@ public sealed class AudibleAccountAuthenticator(
             new DateTimeOffset(expiry));
     }
 
+    public Task CancelSignInAsync(string challengeId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(challengeId);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (gate) pending.Remove(challengeId);
+        return Task.CompletedTask;
+    }
+
     public Task DisconnectAsync(CancellationToken cancellationToken = default)
         => snapshotStore.ClearAsync(cancellationToken);
 
