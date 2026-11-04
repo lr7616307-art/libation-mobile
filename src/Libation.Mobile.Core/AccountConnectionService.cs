@@ -112,6 +112,9 @@ public sealed class AccountConnectionService(
         try
         {
             _pendingChallenge = null;
+            // Clear the provider's complete identity before clearing the generic session marker.
+            // This prevents a saved Audible identity from silently reconnecting after sign-out.
+            await authenticator.DisconnectAsync(cancellationToken);
             await sessions.ClearAsync(cancellationToken);
         }
         finally
