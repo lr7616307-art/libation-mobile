@@ -48,7 +48,7 @@ public sealed class AudibleItemMapperTests
 
         var result = AudibleItemMapper.Map(item);
 
-        Assert.Equal(string.Empty, result.Author);
+        Assert.Equal("Unknown author", result.Author);
         Assert.Equal(string.Empty, result.Narrator);
     }
 
@@ -84,7 +84,7 @@ public sealed class AudibleItemMapperTests
 
         var result = AudibleItemMapper.Map(item);
 
-        Assert.Equal(string.Empty, result.Author);
+        Assert.Equal("Unknown author", result.Author);
         Assert.Equal(string.Empty, result.Narrator);
     }
 
