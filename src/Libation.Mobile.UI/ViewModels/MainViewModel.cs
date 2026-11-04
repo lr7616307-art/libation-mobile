@@ -80,7 +80,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
             IsSyncing = true;
             SyncStatus = "Syncing library metadata…";
             var count = await _syncService.SyncAsync(cancellationToken);
-            await InitializeAsync(cancellationToken);
+            // Refresh directly instead of InitializeAsync: an intentionally empty
+            // provider library must remain empty, not trigger first-run demo seeding.
+            var stored = await _repository.GetBooksAsync(cancellationToken);
+            _allBooks = stored;
+            ApplyFilter(_allBooks);
+            await ReloadQueueAsync(cancellationToken);
             LastSuccessfulSync = DateTimeOffset.UtcNow;
             SyncStatus = $"Sync complete. {count} audiobook metadata entr{(count == 1 ? "y" : "ies")} updated.";
         }
