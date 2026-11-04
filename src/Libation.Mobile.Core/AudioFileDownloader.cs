@@ -7,9 +7,15 @@ namespace Libation.Mobile.Core;
 public sealed class AudioFileDownloader
 {
     private readonly HttpClient _httpClient;
+    private readonly long _maximumBytes;
 
-    public AudioFileDownloader(HttpClient httpClient)
-        => _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+    public AudioFileDownloader(HttpClient httpClient, long maximumBytes = 4L * 1024 * 1024 * 1024)
+    {
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        if (maximumBytes <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+        _maximumBytes = maximumBytes;
+    }
 
     public async Task<AudioDownloadResult> DownloadAsync(
         Uri authorizedDownloadUri,
@@ -41,6 +47,9 @@ public sealed class AudioFileDownloader
                 throw new HttpRequestException("The download redirected to a non-HTTPS address.");
 
             var totalBytes = response.Content.Headers.ContentLength;
+            if (totalBytes > _maximumBytes)
+                throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
+
             await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
             await using var output = new FileStream(
                 temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
@@ -52,6 +61,8 @@ public sealed class AudioFileDownloader
             {
                 var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
                 if (read == 0) break;
+                if (read > _maximumBytes - received)
+                    throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
                 await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 received += read;
                 progress?.Report(new AudioDownloadProgress(received, totalBytes));
