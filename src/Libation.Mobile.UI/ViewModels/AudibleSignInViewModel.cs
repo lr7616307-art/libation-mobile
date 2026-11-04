@@ -72,10 +72,12 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanBegin));
             OnPropertyChanged(nameof(CanComplete));
+            OnPropertyChanged(nameof(CanCancel));
         }
     }
 
     public bool HasChallenge => !string.IsNullOrWhiteSpace(_challengeId);
+    public bool CanCancel => !IsBusy && HasChallenge;
     public bool CanBegin => !IsBusy;
     public bool CanComplete => !IsBusy && HasChallenge && !string.IsNullOrWhiteSpace(ResponseUrl);
 
@@ -169,6 +171,37 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             ResponseUrl = string.Empty;
             OnPropertyChanged(nameof(HasChallenge));
             OnPropertyChanged(nameof(CanComplete));
+            IsBusy = false;
+        }
+    }
+
+    public async Task CancelSignInAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsBusy || string.IsNullOrWhiteSpace(_challengeId)) return;
+
+        var challengeId = _challengeId;
+        try
+        {
+            IsBusy = true;
+            await _connection.CancelSignInAsync(challengeId, cancellationToken);
+            _challengeId = null;
+            ResponseUrl = string.Empty;
+            OnPropertyChanged(nameof(HasChallenge));
+            OnPropertyChanged(nameof(CanComplete));
+            OnPropertyChanged(nameof(CanCancel));
+            Status = "Sign-in cancelled. Your existing Audible connection, if any, is unchanged.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Status = "Sign-in cancellation was interrupted.";
+            throw;
+        }
+        catch (Exception)
+        {
+            Status = "Could not cancel this sign-in attempt. You can safely start a new attempt.";
+        }
+        finally
+        {
             IsBusy = false;
         }
     }
