@@ -103,6 +103,19 @@ public sealed class JsonDownloadQueueTests
     }
 
     [Fact]
+    public async Task Remove_DoesNotRemoveAnActivelyDownloadingItem()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-active");
+        await queue.UpdateStatusAsync("book-active", DownloadStatus.Downloading);
+
+        Assert.False(await queue.RemoveAsync("book-active"));
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Downloading, item.Status);
+    }
+
+    [Fact]
     public async Task UpdateStatus_UnknownBookThrows()
     {
         using var directory = new TemporaryDirectory();
