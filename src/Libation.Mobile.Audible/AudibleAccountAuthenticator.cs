@@ -94,6 +94,9 @@ public sealed class AudibleAccountAuthenticator(
             new DateTimeOffset(expiry));
     }
 
+    public Task DisconnectAsync(CancellationToken cancellationToken = default)
+        => snapshotStore.ClearAsync(cancellationToken);
+
     public Task<AccountSession> RefreshAsync(
         AccountSession currentSession,
         CancellationToken cancellationToken = default)
