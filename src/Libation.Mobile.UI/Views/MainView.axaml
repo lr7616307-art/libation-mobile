@@ -10,7 +10,7 @@
       <Border CornerRadius="14" Padding="14" Background="#3157A4">
         <StackPanel Spacing="4">
           <TextBlock Text="PROTOTYPE MODE" FontWeight="Bold" Foreground="White" />
-          <TextBlock Text="Local catalogue and download queue are saved on this device. Queue entries track status only; Audible sign-in, library sync and audio downloads are not connected."
+          <TextBlock Text="Local catalogue and download queue are saved on this device. The queue currently tracks download status only. The authorized download worker is under development; Audible audio delivery and playback are not yet connected."
                      TextWrapping="Wrap" Foreground="White" />
         </StackPanel>
       </Border>
@@ -85,6 +85,7 @@
       <TextBlock Text="{Binding EmptyMessage}" FontSize="13" Opacity="0.7" HorizontalAlignment="Center" />
       <StackPanel Spacing="8">
         <TextBlock Text="{Binding QueueCountLabel}" FontSize="20" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding QueueSummaryLabel}" FontSize="12" Opacity="0.7" />
         <TextBlock Text="Nothing queued yet." IsVisible="{Binding IsQueueEmpty}" FontSize="13" Opacity="0.7" />
         <ItemsControl ItemsSource="{Binding QueueItems}">
           <ItemsControl.ItemTemplate>
@@ -104,7 +105,7 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </StackPanel>
-      <TextBlock Text="Demo catalogue saved locally · Queue does not download files" FontSize="12" Opacity="0.6"
+      <TextBlock Text="Catalogue and queue saved locally · Audio download and playback are not yet available" FontSize="12" Opacity="0.6"
                  TextWrapping="Wrap" HorizontalAlignment="Center" Margin="0,8,0,16" />
     </StackPanel>
   </ScrollViewer>
