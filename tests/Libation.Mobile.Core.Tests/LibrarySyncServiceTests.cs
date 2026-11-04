@@ -30,6 +30,29 @@ public sealed class LibrarySyncServiceTests
     }
 
     [Fact]
+    public async Task Sync_PreservesLocallyEditedMetadataForExistingProviderBooks()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("provider:aud-1", "My corrected title", "My corrected author", "My narrator", "9h", "Library")
+        ]);
+        var service = new LibrarySyncService(
+            new FakeProvider([new RemoteAudiobook("aud-1", "Remote title", "Remote author", "Remote narrator", "8h")]),
+            repository);
+
+        var count = await service.SyncAsync();
+        var saved = Assert.Single(await repository.GetBooksAsync());
+
+        Assert.Equal(1, count);
+        Assert.Equal("provider:aud-1", saved.Id);
+        Assert.Equal("My corrected title", saved.Title);
+        Assert.Equal("My corrected author", saved.Author);
+        Assert.Equal("My narrator", saved.Narrator);
+        Assert.Equal("9h", saved.Length);
+    }
+
+    [Fact]
     public async Task Sync_TrimsProviderIdAndNormalizesOptionalMetadata()
     {
         using var directory = new TemporaryDirectory();
