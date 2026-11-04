@@ -96,7 +96,7 @@
                     <TextBlock Grid.Column="0" Text="{Binding AudiobookId}" VerticalAlignment="Center" TextWrapping="Wrap" />
                     <TextBlock Grid.Column="1" Text="{Binding Status}" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" />
                     <Button Grid.Column="2" Content="Retry" Margin="8,0,0,0" IsEnabled="{Binding CanRetry}" Click="RetryQueueClicked" />
-                    <Button Grid.Column="3" Content="Remove" Margin="8,0,0,0" Click="RemoveQueueClicked" />
+                    <Button Grid.Column="3" Content="Remove" Margin="8,0,0,0" IsEnabled="{Binding CanRemove}" Click="RemoveQueueClicked" />
                   </Grid>
                   <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding HasErrorMessage}" FontSize="12" Foreground="Tomato" TextWrapping="Wrap" />
                 </StackPanel>
