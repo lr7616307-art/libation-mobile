@@ -38,7 +38,7 @@ public sealed class AudibleItemMapperTests
     }
 
     [Fact]
-    public void Map_LeavesContributorsEmptyWhenArraysAreAbsent()
+    public void Map_UsesUnknownAuthorWhenAuthorArrayIsAbsent()
     {
         var item = new Item
         {
