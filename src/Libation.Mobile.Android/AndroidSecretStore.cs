@@ -57,13 +57,24 @@ public sealed class AndroidSecretStore : ISecretStore
         var encoded = _preferences.GetString(key, null);
         if (encoded is null) return Task.FromResult<string?>(null);
 
-        var payload = Base64.Decode(encoded, Base64Flags.NoWrap);
-        if (payload.Length < 1)
-            throw new CryptographicException("Stored secret payload is invalid.");
+        byte[] payload;
+        try
+        {
+            payload = Base64.Decode(encoded, Base64Flags.NoWrap);
+        }
+        catch (FormatException ex)
+        {
+            throw new CryptographicException("Stored secret payload is not valid Base64.", ex);
+        }
+
+        // Android AES-GCM uses a 96-bit nonce and a 128-bit authentication tag.
+        const int expectedIvLength = 12;
+        const int minimumTagLength = 16;
+        if (payload.Length < 1 + expectedIvLength + minimumTagLength
+            || payload[0] != expectedIvLength)
+            throw new CryptographicException("Stored secret payload has an invalid AES-GCM envelope.");
 
         var ivLength = payload[0];
-        if (ivLength == 0 || payload.Length <= 1 + ivLength)
-            throw new CryptographicException("Stored secret payload is invalid.");
 
         var iv = new byte[ivLength];
         var ciphertext = new byte[payload.Length - 1 - ivLength];
