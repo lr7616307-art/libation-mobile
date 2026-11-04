@@ -36,6 +36,10 @@ internal static class AudibleSignInPanel
         begin.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanBegin)));
         begin.Click += async (_, _) => await viewModel.BeginSignInAsync();
 
+        var cancel = new Button { Content = "Cancel sign-in" };
+        cancel.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanCancel)));
+        cancel.Click += async (_, _) => await viewModel.CancelSignInAsync();
+
         var complete = new Button { Content = "Complete sign-in" };
         complete.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanComplete)));
         complete.Click += async (_, _) => await viewModel.CompleteSignInAsync();
@@ -64,6 +68,7 @@ internal static class AudibleSignInPanel
                 begin,
                 responseUrl,
                 complete,
+                cancel,
                 disconnect,
                 status
             }
