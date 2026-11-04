@@ -224,6 +224,7 @@ public sealed class AccountConnectionServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.CompleteSignInAsync(challenge.ChallengeId, "https://example.invalid/return"));
         Assert.Equal(0, authenticator.CompleteCount);
+        Assert.Equal(1, authenticator.DisconnectCount);
     }
 
     [Fact]
@@ -265,6 +266,7 @@ public sealed class AccountConnectionServiceTests
     {
         public int BeginCount { get; private set; }
         public int CompleteCount { get; private set; }
+        public int DisconnectCount { get; private set; }
         public string NextChallengeId { get; set; } = "challenge-1";
         public DateTimeOffset ChallengeExpiry { get; set; } = DateTimeOffset.UtcNow.AddMinutes(5);
 
@@ -283,6 +285,13 @@ public sealed class AccountConnectionServiceTests
             cancellationToken.ThrowIfCancellationRequested();
             CompleteCount++;
             return Task.FromResult(completion ?? throw new InvalidOperationException("No fake completion result configured."));
+        }
+
+        public Task DisconnectAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            DisconnectCount++;
+            return Task.CompletedTask;
         }
 
         public Task<AccountSession> RefreshAsync(
