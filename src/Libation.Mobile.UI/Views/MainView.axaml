@@ -23,6 +23,12 @@
             <StackPanel Spacing="8">
               <TextBlock Text="Now playing" FontSize="20" FontWeight="SemiBold" />
               <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" />
+              <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="11" Foreground="#B9A5E8" />
+                <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="11" Foreground="#B9A5E8" />
+              </Grid>
+              <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0" IsEnabled="False" />
+              <Button Content="Seek to selected position" Click="SeekToSelectedPositionClicked" IsEnabled="{Binding HasLocalAudioBooks}" />
               <Grid ColumnDefinitions="*,*,*">
                 <Button Grid.Column="0" Content="Resume" Click="ResumeAudioClicked" />
                 <Button Grid.Column="1" Content="−15 seconds" Click="RewindAudioClicked" />
