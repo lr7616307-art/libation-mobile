@@ -142,7 +142,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             _title = Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
         _playbackSpeed = 1f;
-        _mediaSession?.SetActive(true);
+        if (_mediaSession is not null) _mediaSession.Active = true;
         UpdateMediaSessionState();
 
         // Android requires a service started with startForegroundService() to
@@ -424,8 +424,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             var actions = PlaybackState.ActionPlay | PlaybackState.ActionPause |
                 PlaybackState.ActionPlayPause | PlaybackState.ActionSeekTo;
             var state = _player?.IsPlaying == true
-                ? PlaybackState.StatePlaying
-                : _player is null ? PlaybackState.StateNone : PlaybackState.StatePaused;
+                ? PlaybackStateCode.Playing
+                : _player is null ? PlaybackStateCode.None : PlaybackStateCode.Paused;
             _mediaSession.SetPlaybackState(new PlaybackState.Builder()
                 .SetActions(actions)
                 .SetState(state, ReadPosition(), _playbackSpeed)
@@ -521,7 +521,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _sleepTimerRunnable = null;
         _checkpointHandler = null;
         StopPlayback(clearRecovery: false);
-        _mediaSession?.SetActive(false);
+        if (_mediaSession is not null) _mediaSession.Active = false;
         _mediaSession?.Release();
         _mediaSession = null;
         if (Current == this) Current = null;
