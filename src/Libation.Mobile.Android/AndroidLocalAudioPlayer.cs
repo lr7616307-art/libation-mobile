@@ -1,18 +1,19 @@
-using Android.Media;
+using Android.Content;
 using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Android;
 
-/// <summary>Android MediaPlayer adapter for imported local audio files.</summary>
+/// <summary>
+/// Client adapter for the foreground playback service. Disposing the UI adapter
+/// deliberately does not stop playback when the screen is closed.
+/// </summary>
 public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
 {
-    private readonly MediaPlayer _player = new();
-    private bool _prepared;
-    private bool _disposed;
+    private static Context AppContext => Android.App.Application.Context;
 
-    public bool IsPlaying => !_disposed && _prepared && _player.IsPlaying;
-    public long PositionMilliseconds => !_disposed && _prepared ? Math.Max(0, _player.CurrentPosition) : 0;
-    public long DurationMilliseconds => !_disposed && _prepared ? Math.Max(0, _player.Duration) : 0;
+    public bool IsPlaying => AndroidLocalAudioPlaybackService.IsPlaying;
+    public long PositionMilliseconds => AndroidLocalAudioPlaybackService.PositionMilliseconds;
+    public long DurationMilliseconds => AndroidLocalAudioPlaybackService.DurationMilliseconds;
 
     public void Play(string filePath, long startPositionMilliseconds = 0)
     {
@@ -20,36 +21,33 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
         if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
             throw new FileNotFoundException("Imported audiobook audio was not found.", filePath);
 
-        _player.Reset();
-        _prepared = false;
-        _player.SetDataSource(filePath);
-        _player.Prepare();
-        _prepared = true;
-
-        if (startPositionMilliseconds > 0)
-            _player.SeekTo((int)Math.Clamp(startPositionMilliseconds, 0, int.MaxValue));
-        _player.Start();
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionPlay);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraFilePath, filePath);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
+        if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.O)
+            AppContext.StartForegroundService(intent);
+        else
+            AppContext.StartService(intent);
     }
 
     public void Pause()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_prepared && _player.IsPlaying)
-            _player.Pause();
+        AppContext.StartService(CreateIntent(AndroidLocalAudioPlaybackService.ActionPause));
     }
 
     public void Seek(long positionMilliseconds)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!_prepared) return;
-        _player.SeekTo((int)Math.Clamp(positionMilliseconds, 0, int.MaxValue));
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionSeek);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, positionMilliseconds));
+        AppContext.StartService(intent);
     }
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _player.Release();
-        _player.Dispose();
-    }
+    public void Dispose() => _disposed = true;
+
+    private bool _disposed;
+
+    private static Intent CreateIntent(string action)
+        => new Intent(AppContext, typeof(AndroidLocalAudioPlaybackService)).SetAction(action);
 }
