@@ -68,11 +68,11 @@
         <TextBlock Text="BEYOND THE SILENCE." FontSize="14" Opacity="0.7" />
       </StackPanel>
       <TextBox PlaceholderText="Search titles, authors or narrators" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-      <Border CornerRadius="14" Padding="14" Background="#3157A4">
+      <Border CornerRadius="14" Padding="14" Background="#211832" BorderBrush="#A78BFA" BorderThickness="1">
         <StackPanel Spacing="4">
-          <TextBlock Text="PROTOTYPE MODE" FontWeight="Bold" Foreground="White" />
-          <TextBlock Text="Local catalogue and download queue are saved on this device. The queue currently tracks download status only. The authorized download worker is under development; Audible audio delivery and playback are not yet connected."
-                     TextWrapping="Wrap" Foreground="White" />
+          <TextBlock Text="YOUR LIBRARY, YOUR SPACE" FontWeight="Bold" Foreground="#E9D5FF" />
+          <TextBlock Text="Your catalogue and queue are saved on this device. Import local audiobooks to listen now; Audible-authorized audiobook downloads are still being integrated."
+                     TextWrapping="Wrap" Foreground="#E9D5FF" />
         </StackPanel>
       </Border>
       <Border CornerRadius="12" Padding="14" BorderBrush="#555555" BorderThickness="1">
@@ -174,7 +174,7 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
       </StackPanel>
-      <TextBlock Text="Catalogue and queue saved locally · Audio download and playback are not yet available" FontSize="12" Opacity="0.6"
+      <TextBlock Text="Catalogue and queue saved locally · Local playback available · Audible downloads in development" FontSize="12" Opacity="0.6"
                  TextWrapping="Wrap" HorizontalAlignment="Center" Margin="0,8,0,16" />
     </StackPanel>
   </ScrollViewer>
