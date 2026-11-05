@@ -29,6 +29,10 @@
               </Grid>
               <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0" IsEnabled="False" />
               <Button Content="Seek to selected position" Click="SeekToSelectedPositionClicked" IsEnabled="{Binding HasLocalAudioBooks}" />
+              <Grid ColumnDefinitions="*,*">
+                <Button Grid.Column="0" Content="Previous chapter" Click="PreviousChapterClicked" />
+                <Button Grid.Column="1" Content="Next chapter" Margin="8,0,0,0" Click="NextChapterClicked" />
+              </Grid>
               <Grid ColumnDefinitions="*,*,*">
                 <Button Grid.Column="0" Content="Resume" Click="ResumeAudioClicked" />
                 <Button Grid.Column="1" Content="−15 seconds" Click="RewindAudioClicked" />

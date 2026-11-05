@@ -231,6 +231,68 @@ public partial class MainView : UserControl
         }
     }
 
+    private async void PreviousChapterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await SeekChapterAsync(forward: false);
+
+    private async void NextChapterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await SeekChapterAsync(forward: true);
+
+    private async Task SeekChapterAsync(bool forward)
+    {
+        if (_localAudioPlayer is null || _playingAudiobookId is null)
+        {
+            _viewModel.ReportAudioStatus("Start an audiobook before using chapter navigation.");
+            return;
+        }
+
+        var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
+        var chapters = AudiobookChapterService.Normalize(book?.Chapters, _localAudioPlayer.DurationMilliseconds);
+        if (chapters.Count == 0)
+        {
+            _viewModel.ReportAudioStatus("No chapter markers are available for this audiobook yet.");
+            return;
+        }
+
+        var position = Math.Max(0, _localAudioPlayer.PositionMilliseconds);
+        var currentIndex = AudiobookChapterService.FindCurrentChapterIndex(chapters, position);
+        long target;
+        if (forward)
+        {
+            var next = AudiobookChapterService.GetNextChapterPosition(chapters, position);
+            if (next is null)
+            {
+                _viewModel.ReportAudioStatus("You are at the last chapter.");
+                return;
+            }
+            target = next.Value;
+        }
+        else
+        {
+            // A second press near the beginning of a chapter returns to the previous chapter.
+            var currentStart = currentIndex >= 0 ? chapters[currentIndex].StartPositionMilliseconds : 0;
+            if (currentIndex >= 0 && position - currentStart > 5_000)
+                target = currentStart;
+            else if (currentIndex > 0)
+                target = chapters[currentIndex - 1].StartPositionMilliseconds;
+            else
+                target = chapters[0].StartPositionMilliseconds;
+        }
+
+        try
+        {
+            _localAudioPlayer.Seek(target);
+            await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+            var targetIndex = AudiobookChapterService.FindCurrentChapterIndex(chapters, target);
+            var chapterTitle = targetIndex >= 0 ? chapters[targetIndex].Title : "chapter";
+            UpdatePlaybackProgressUi();
+            _viewModel.ReportAudioStatus($"Jumped to {chapterTitle}.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not navigate to that chapter.");
+        }
+    }
+
     private async void PlaybackProgressTimerTick(object? sender, EventArgs e)
     {
         if (_isSavingPlaybackPosition || _localAudioPlayer is null || _playingAudiobookId is null) return;
