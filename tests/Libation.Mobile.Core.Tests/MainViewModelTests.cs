@@ -7,6 +7,42 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task ContinueListening_ShowsOnlyLocalAudiobooksWithSavedPositionsAndUpdatesAfterCheckpoint()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync(
+        [
+            new Audiobook("local-resume", "Saved title", "Saved author", "", "4h", "Manual")
+            {
+                AudioFilePath = "/audio/saved-book.mp3",
+                PlaybackPositionMilliseconds = 3_723_000
+            },
+            new Audiobook("local-new", "Not started", "Another author", "", "2h", "Manual")
+            {
+                AudioFilePath = "/audio/new-book.mp3"
+            },
+            new Audiobook("catalogue-only", "No local audio", "Remote author", "", "3h", "Audible")
+            {
+                PlaybackPositionMilliseconds = 1_000
+            }
+        ]);
+
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+
+        var saved = Assert.Single(vm.ContinueListeningBooks);
+        Assert.Equal("local-resume", saved.Id);
+        Assert.True(vm.HasContinueListeningBooks);
+        Assert.Equal("Resume at 01:02:03", saved.ResumePositionLabel);
+
+        await vm.SavePlaybackPositionAsync("local-resume", 0);
+
+        Assert.Empty(vm.ContinueListeningBooks);
+        Assert.False(vm.HasContinueListeningBooks);
+    }
+
+    [Fact]
     public async Task SyncLibraryAsync_WithoutProvider_ReportsNotConnected()
     {
         using var directory = new TemporaryDirectory();
