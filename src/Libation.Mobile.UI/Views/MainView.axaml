@@ -21,7 +21,7 @@
           </Border>
           <StackPanel Spacing="8">
             <TextBlock Text="Downloaded audiobooks" FontSize="20" FontWeight="SemiBold" />
-            <TextBlock Text="{Binding LocalAudioEmptyMessage}" IsVisible="{Binding HasLocalAudioBooks, Converter={x:Static BooleanNegationConverter.Instance}}" FontSize="13" Opacity="0.7" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding LocalAudioEmptyMessage}" IsVisible="{Binding HasNoLocalAudioBooks}" FontSize="13" Opacity="0.7" TextWrapping="Wrap" />
             <ItemsControl ItemsSource="{Binding LocalAudioBooks}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
