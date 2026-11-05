@@ -1,5 +1,37 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="Libation.Mobile.UI.Views.MainView">
-  <ScrollViewer>
+  <TabControl>
+    <TabItem Header="Home">
+      <ScrollViewer>
+        <StackPanel Margin="20" Spacing="16">
+          <StackPanel Spacing="4">
+            <TextBlock Text="LIBATION MOBILE" FontSize="12" FontWeight="Bold" Opacity="0.65" />
+            <TextBlock Text="Home" FontSize="30" FontWeight="Bold" />
+            <TextBlock Text="Your audiobook listening space" FontSize="14" Opacity="0.7" />
+          </StackPanel>
+          <Border CornerRadius="14" Padding="16" BorderBrush="#555555" BorderThickness="1">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Now playing" FontSize="20" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" />
+              <Grid ColumnDefinitions="*,*">
+                <Button Grid.Column="0" Content="−15 seconds" Click="RewindAudioClicked" />
+                <Button Grid.Column="1" Content="+15 seconds" Margin="8,0,0,0" Click="ForwardAudioClicked" />
+              </Grid>
+              <TextBlock Text="Choose an audiobook in Library and tap Play. Playback runs in the Android foreground service." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+          <Border CornerRadius="14" Padding="16" BorderBrush="#555555" BorderThickness="1">
+            <StackPanel Spacing="6">
+              <TextBlock Text="Your library" FontSize="20" FontWeight="SemiBold" />
+              <TextBlock Text="Browse your catalogue, import local audio and manage your download queue in Library." TextWrapping="Wrap" />
+              <TextBlock Text="{Binding QueueCountLabel}" FontSize="14" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding QueueSummaryLabel}" FontSize="12" Opacity="0.7" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+    <TabItem Header="Library">
+      <ScrollViewer>
     <StackPanel Margin="20" Spacing="16">
       <StackPanel Spacing="4">
         <TextBlock Text="LIBATION MOBILE" FontSize="12" FontWeight="Bold" Opacity="0.65" />
@@ -117,4 +149,51 @@
                  TextWrapping="Wrap" HorizontalAlignment="Center" Margin="0,8,0,16" />
     </StackPanel>
   </ScrollViewer>
+    </TabItem>
+    <TabItem Header="Account">
+      <ScrollViewer>
+        <StackPanel Margin="20" Spacing="16">
+          <TextBlock Text="Audible account" FontSize="28" FontWeight="Bold" />
+          <Border CornerRadius="14" Padding="16" BorderBrush="#555555" BorderThickness="1">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Account connection" FontSize="18" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="12" Opacity="0.7" />
+              <Button Content="Sync Audible library" IsEnabled="{Binding CanSync}" Click="SyncLibraryClicked" />
+              <TextBlock Text="Sign-in and secure token management are being integrated. This page does not claim an account is connected unless the provider reports it." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+    <TabItem Header="Settings">
+      <ScrollViewer>
+        <StackPanel Margin="20" Spacing="16">
+          <TextBlock Text="Settings" FontSize="28" FontWeight="Bold" />
+          <Border CornerRadius="14" Padding="16" BorderBrush="#555555" BorderThickness="1">
+            <StackPanel Spacing="8">
+              <TextBlock Text="Catalogue backup" FontSize="18" FontWeight="SemiBold" />
+              <TextBlock Text="Export or restore catalogue metadata. Credentials, audio files and queue items are not included." TextWrapping="Wrap" FontSize="12" Opacity="0.75" />
+              <Grid ColumnDefinitions="*,*">
+                <Button Grid.Column="0" Content="Export backup" Click="ExportBackupClicked" />
+                <Button Grid.Column="1" Content="Import backup" Margin="8,0,0,0" Click="ImportBackupClicked" />
+              </Grid>
+              <TextBlock Text="{Binding BackupMessage}" TextWrapping="Wrap" FontSize="12" />
+              <TextBlock Text="{Binding PendingImportLabel}" IsVisible="{Binding HasPendingImport}" TextWrapping="Wrap" />
+              <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasPendingImport}">
+                <Button Grid.Column="0" Content="Confirm replace catalogue" Click="ConfirmImportClicked" />
+                <Button Grid.Column="1" Content="Cancel" Margin="8,0,0,0" Click="CancelImportClicked" />
+              </Grid>
+            </StackPanel>
+          </Border>
+          <Border CornerRadius="14" Padding="16" BorderBrush="#555555" BorderThickness="1">
+            <StackPanel Spacing="6">
+              <TextBlock Text="Download and storage" FontSize="18" FontWeight="SemiBold" />
+              <TextBlock Text="Storage location, file naming, download quality, Wi-Fi-only mode and batch download controls will be added here as their underlying services become available." TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+  </TabControl>
 </UserControl>
