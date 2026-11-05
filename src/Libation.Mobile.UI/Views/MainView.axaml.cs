@@ -66,6 +66,7 @@ public partial class MainView : UserControl
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
         if (_localAudioPlayer.IsPlaying)
             _playbackProgressTimer.Start();
+        UpdatePlaybackProgressUi();
     }
 
     private async void PlayAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
