@@ -17,10 +17,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionRewind = "org.libationmobile.app.action.REWIND";
     public const string ActionForward = "org.libationmobile.app.action.FORWARD";
     public const string ActionSetSpeed = "org.libationmobile.app.action.SET_SPEED";
+    public const string ActionRestore = "org.libationmobile.app.action.RESTORE";
     public const string ExtraFilePath = "file_path";
     public const string ExtraTitle = "title";
     public const string ExtraPosition = "position_ms";
     public const string ExtraSpeed = "playback_speed";
+    public const string ExtraAutoPlay = "auto_play";
 
     private const string ChannelId = "libation_audiobook_playback";
     private const int NotificationId = 4102;
@@ -28,6 +30,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private string _title = "Audiobook";
     private string? _currentFilePath;
     private float _playbackSpeed = 1f;
+    private Handler? _checkpointHandler;
+    private Java.Lang.Runnable? _checkpointRunnable;
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
@@ -41,6 +45,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         base.OnCreate();
         Current = this;
         CreateNotificationChannel();
+        _checkpointHandler = new Handler(Looper.MainLooper!);
+        _checkpointRunnable = new Java.Lang.Runnable(() =>
+        {
+            SavePlaybackSnapshot();
+            if (_checkpointRunnable is not null)
+                _checkpointHandler?.PostDelayed(_checkpointRunnable, 5_000);
+        });
+        _checkpointHandler.PostDelayed(_checkpointRunnable, 5_000);
     }
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
@@ -54,10 +66,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     break;
                 case ActionPause:
                     if (_player?.IsPlaying == true) _player.Pause();
+                    SavePlaybackSnapshot();
                     UpdateNotification();
                     break;
                 case ActionResume:
                     if (_player is not null && !_player.IsPlaying) _player.Play();
+                    SavePlaybackSnapshot();
                     UpdateNotification();
                     break;
                 case ActionSeek:
@@ -65,6 +79,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     {
                         var target = Math.Clamp(intent.GetLongExtra(ExtraPosition, 0), 0, int.MaxValue);
                         _player.SeekTo((int)target);
+                        SavePlaybackSnapshot();
                     }
                     break;
                 case ActionRewind:
@@ -75,6 +90,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     break;
                 case ActionSetSpeed:
                     SetPlaybackSpeed(intent.GetFloatExtra(ExtraSpeed, 1f));
+                    SavePlaybackSnapshot();
+                    break;
+                case ActionRestore:
+                    RestoreSavedPlayback();
                     break;
             }
         }
@@ -112,7 +131,15 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var position = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
         if (position > 0) _player.SeekTo(position);
         _player.Prepare();
-        _player.Play();
+        var speed = intent.GetFloatExtra(ExtraSpeed, 1f);
+        if (!float.IsNaN(speed) && !float.IsInfinity(speed))
+        {
+            _playbackSpeed = Math.Clamp(speed, 0.5f, 3f);
+            _player.PlaybackParameters = new PlaybackParameters(_playbackSpeed, 1f);
+        }
+        if (intent.GetBooleanExtra(ExtraAutoPlay, true))
+            _player.Play();
+        SavePlaybackSnapshot();
         UpdateNotification();
     }
 
@@ -169,6 +196,36 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnTrackSelectionParametersChanged(TrackSelectionParameters? parameters) { }
     public void OnTracksChanged(Tracks? tracks) { }
     public void OnVideoSizeChanged(VideoSize? size) { }
+
+    private void RestoreSavedPlayback()
+    {
+        var snapshot = PlaybackRecoveryStore.Load(this);
+        if (snapshot is null) return;
+        if (!File.Exists(snapshot.FilePath))
+        {
+            PlaybackRecoveryStore.Clear(this);
+            return;
+        }
+
+        var intent = new Intent(this, typeof(AndroidLocalAudioPlaybackService));
+        intent.PutExtra(ExtraFilePath, snapshot.FilePath);
+        intent.PutExtra(ExtraTitle, snapshot.Title);
+        intent.PutExtra(ExtraPosition, snapshot.PositionMilliseconds);
+        intent.PutExtra(ExtraSpeed, snapshot.PlaybackSpeed);
+        intent.PutExtra(ExtraAutoPlay, snapshot.WasPlaying);
+        StartPlayback(intent);
+    }
+
+    private void SavePlaybackSnapshot()
+    {
+        if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        try
+        {
+            PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
+                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying));
+        }
+        catch (Exception) { /* A checkpoint must never interrupt audio playback. */ }
+    }
 
     private void SetPlaybackSpeed(float speed)
     {
@@ -267,17 +324,30 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _currentFilePath = null;
     }
 
-    private void StopPlayback()
+    private void StopPlayback(bool clearRecovery = true)
     {
         StopPlayer();
+        if (clearRecovery) PlaybackRecoveryStore.Clear(this);
         StopForeground(StopForegroundFlags.Remove);
     }
 
     public override IBinder? OnBind(Intent? intent) => null;
 
+    public override void OnTaskRemoved(Intent? rootIntent)
+    {
+        SavePlaybackSnapshot();
+        base.OnTaskRemoved(rootIntent);
+    }
+
     public override void OnDestroy()
     {
-        StopPlayback();
+        SavePlaybackSnapshot();
+        if (_checkpointRunnable is not null)
+            _checkpointHandler?.RemoveCallbacks(_checkpointRunnable);
+        _checkpointRunnable?.Dispose();
+        _checkpointRunnable = null;
+        _checkpointHandler = null;
+        StopPlayback(clearRecovery: false);
         if (Current == this) Current = null;
         base.OnDestroy();
     }
