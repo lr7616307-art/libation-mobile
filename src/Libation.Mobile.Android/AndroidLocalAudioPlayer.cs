@@ -71,6 +71,17 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
         AppContext.StartService(intent);
     }
 
+    public SleepTimerSnapshot? GetSleepTimer()
+    {
+        var preferences = AppContext.GetSharedPreferences("vorath_sleep_timer", FileCreationMode.Private);
+        var deadlineTicks = preferences?.GetLong("deadline_utc_ticks", 0) ?? 0;
+        var chapterPosition = preferences?.GetLong("chapter_position_ms", -1) ?? -1;
+        if (deadlineTicks <= 0 && chapterPosition < 0) return null;
+        DateTimeOffset? deadline = deadlineTicks > 0
+            ? new DateTimeOffset(deadlineTicks, TimeSpan.Zero) : null;
+        return new SleepTimerSnapshot(deadline, chapterPosition >= 0 ? chapterPosition : null);
+    }
+
     public void SetSleepTimer(DateTimeOffset? deadline, long? chapterPositionMilliseconds)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

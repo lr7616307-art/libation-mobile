@@ -76,7 +76,26 @@ public partial class MainView : UserControl
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
         if (_localAudioPlayer.IsPlaying)
             _playbackProgressTimer.Start();
+        RestoreSleepTimerUi();
         UpdatePlaybackProgressUi();
+    }
+
+    private void RestoreSleepTimerUi()
+    {
+        if (_localAudioPlayer is not ISleepTimerAudioPlayer timerPlayer)
+            return;
+
+        var snapshot = timerPlayer.GetSleepTimer();
+        if (snapshot is null)
+            return;
+
+        _sleepTimerEndsAt = snapshot.Deadline;
+        _sleepAtPositionMilliseconds = snapshot.ChapterPositionMilliseconds;
+        // A restored timer can be cancelled with the next tap. Its original
+        // preset is intentionally not guessed from the remaining duration.
+        _sleepTimerSelection = SleepTimerMinutes.Length;
+        _sleepTimer.Start();
+        UpdateSleepTimerButton();
     }
 
     private async void PlayAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
