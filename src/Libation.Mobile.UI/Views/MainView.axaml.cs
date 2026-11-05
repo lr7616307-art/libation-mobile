@@ -14,6 +14,7 @@ public partial class MainView : UserControl
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private bool _isSavingPlaybackPosition;
+    private bool _isUpdatingPlaybackSlider;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
     private static readonly FilePickerFileType CoverImageFileType = new("Audiobook cover image") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"] };
@@ -86,6 +87,7 @@ public partial class MainView : UserControl
             _playingAudiobookId = book.Id;
             _playbackProgressTimer.Start();
             _viewModel.ReportAudioStatus("Playing: " + book.Title);
+            UpdatePlaybackProgressUi();
         }
         catch (Exception)
         {
@@ -101,6 +103,7 @@ public partial class MainView : UserControl
             _localAudioPlayer.Pause();
             _playbackProgressTimer.Stop();
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+            UpdatePlaybackProgressUi();
             _viewModel.ReportAudioStatus("Playback paused. Your position has been saved.");
         }
         catch (Exception)
@@ -118,6 +121,7 @@ public partial class MainView : UserControl
             _playbackProgressTimer.Start();
             var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
             if (book is not null) _viewModel.ReportAudioStatus("Playing: " + book.Title);
+            UpdatePlaybackProgressUi();
         }
         catch (Exception)
         {
@@ -180,6 +184,52 @@ public partial class MainView : UserControl
         }
     }
 
+    private void UpdatePlaybackProgressUi()
+    {
+        if (PlaybackSeekSlider is null || PlaybackPositionLabel is null || PlaybackDurationLabel is null)
+            return;
+
+        var position = Math.Max(0, _localAudioPlayer?.PositionMilliseconds ?? 0);
+        var duration = Math.Max(0, _localAudioPlayer?.DurationMilliseconds ?? 0);
+        _isUpdatingPlaybackSlider = true;
+        try
+        {
+            PlaybackSeekSlider.Maximum = Math.Max(1, duration);
+            PlaybackSeekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
+            PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
+            PlaybackPositionLabel.Text = FormatPlaybackTime(position);
+            PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
+        }
+        finally { _isUpdatingPlaybackSlider = false; }
+    }
+
+    private static string FormatPlaybackTime(long milliseconds)
+    {
+        var time = TimeSpan.FromMilliseconds(Math.Max(0, milliseconds));
+        return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
+    }
+
+    private async void SeekToSelectedPositionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
+            return;
+
+        try
+        {
+            var target = Math.Max(0, (long)PlaybackSeekSlider.Value);
+            var duration = _localAudioPlayer.DurationMilliseconds;
+            if (duration > 0) target = Math.Min(target, duration);
+            _localAudioPlayer.Seek(target);
+            await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+            UpdatePlaybackProgressUi();
+            _viewModel.ReportAudioStatus("Playback position updated.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not seek to that position.");
+        }
+    }
+
     private async void PlaybackProgressTimerTick(object? sender, EventArgs e)
     {
         if (_isSavingPlaybackPosition || _localAudioPlayer is null || _playingAudiobookId is null) return;
@@ -187,6 +237,7 @@ public partial class MainView : UserControl
         try
         {
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+            UpdatePlaybackProgressUi();
         }
         catch (Exception)
         {
