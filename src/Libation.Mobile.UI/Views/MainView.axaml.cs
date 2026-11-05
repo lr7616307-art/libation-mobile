@@ -16,6 +16,7 @@ public partial class MainView : UserControl
     private bool _isSavingPlaybackPosition;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
+    private static readonly FilePickerFileType CoverImageFileType = new("Audiobook cover image") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"] };
 
     public MainView()
     {
@@ -25,7 +26,7 @@ public partial class MainView : UserControl
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
-        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory));
+        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory), new CoverArtImportService(Path.Combine(dataDirectory, "covers")));
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
@@ -285,6 +286,22 @@ public partial class MainView : UserControl
         await using var stream = await files[0].OpenReadAsync();
         await _viewModel.ImportAudioAsync(book.Id, files[0].Name, stream);
     }
+    private async void ImportCoverArtClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: Audiobook book }) return;
+        var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (provider is null) return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose audiobook cover artwork",
+            AllowMultiple = false,
+            FileTypeFilter = [CoverImageFileType]
+        });
+        if (files.Count == 0) return;
+        await using var stream = await files[0].OpenReadAsync();
+        await _viewModel.ImportCoverArtAsync(book.Id, files[0].Name, stream);
+    }
+
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
