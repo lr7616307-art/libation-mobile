@@ -17,6 +17,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     private string _status = "Checking Audible connection…";
     private string? _challengeId;
     private bool _isBusy;
+    private bool _isConnected;
 
     public AudibleSignInViewModel(AccountConnectionService connection, IExternalBrowserLauncher browser)
     {
@@ -46,6 +47,11 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         get => _status;
         private set { if (_status == value) return; _status = value; OnPropertyChanged(); }
     }
+    public bool IsConnected
+    {
+        get => _isConnected;
+        private set { if (_isConnected == value) return; _isConnected = value; OnPropertyChanged(); }
+    }
     public bool IsBusy
     {
         get => _isBusy;
@@ -69,6 +75,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         try
         {
             var state = await _connection.GetStateAsync(cancellationToken);
+            IsConnected = state.Status == AccountConnectionStatus.Connected;
             Status = state.Status switch
             {
                 AccountConnectionStatus.Connected =>
@@ -133,6 +140,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             IsBusy = true;
             Status = "Completing secure Audible sign-in…";
             var state = await _connection.CompleteSignInAsync(challengeId, responseUrl, cancellationToken);
+            IsConnected = state.Status == AccountConnectionStatus.Connected;
             Status = state.Status == AccountConnectionStatus.Connected
                 ? "Audible account connected. Your complete identity was saved in encrypted storage."
                 : "Sign-in completed, but the account needs attention.";
@@ -188,6 +196,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         {
             IsBusy = true;
             await _connection.DisconnectAsync(cancellationToken);
+            IsConnected = false;
             _challengeId = null;
             ResponseUrl = string.Empty;
             OnPropertyChanged(nameof(HasChallenge));
