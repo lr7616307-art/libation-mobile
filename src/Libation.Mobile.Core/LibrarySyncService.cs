@@ -40,7 +40,12 @@ public sealed class LibrarySyncService(
                 item.Author.Trim(),
                 item.Narrator?.Trim() ?? string.Empty,
                 item.Length?.Trim() ?? string.Empty,
-                "Library"));
+                "Library")
+            {
+                Series = item.Series?.Trim() ?? string.Empty,
+                Genre = item.Genre?.Trim() ?? string.Empty,
+                Description = item.Description?.Trim() ?? string.Empty
+            });
         }
 
         cancellationToken.ThrowIfCancellationRequested();
