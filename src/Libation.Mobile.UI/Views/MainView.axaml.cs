@@ -216,6 +216,11 @@ public partial class MainView : UserControl
         var position = Math.Max(0, _localAudioPlayer?.PositionMilliseconds ?? 0);
         var duration = Math.Max(0, _localAudioPlayer?.DurationMilliseconds ?? 0);
         UpdateCurrentChapterUi(position, duration);
+        if (PlaybackSpeedButton is not null)
+        {
+            var speed = _localAudioPlayer?.PlaybackSpeed ?? 1f;
+            PlaybackSpeedButton.Content = $"Speed · {speed:0.##}×";
+        }
         _isUpdatingPlaybackSlider = true;
         try
         {

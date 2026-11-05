@@ -174,7 +174,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         if (_player is null || float.IsNaN(speed) || float.IsInfinity(speed)) return;
         speed = Math.Clamp(speed, 0.5f, 3f);
-        _player.SetPlaybackParameters(new PlaybackParameters(speed, 1f));
+        _player.PlaybackParameters = new PlaybackParameters(speed, 1f);
         _playbackSpeed = speed;
     }
 
