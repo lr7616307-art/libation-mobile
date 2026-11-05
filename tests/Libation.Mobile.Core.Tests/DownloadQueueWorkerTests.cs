@@ -29,6 +29,32 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_AttachesCompletedAudioToLocalCatalogue()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var book = new Audiobook("book-attach", "Title", "Author", "", "", "Audible");
+        await repository.ReplaceAllAsync([book]);
+        await queue.EnqueueAsync(book.Id);
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+        }));
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book"), destination),
+            libraryRepository: repository);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        var savedBook = Assert.Single(await repository.GetBooksAsync());
+        Assert.Equal(destination, savedBook.AudioFilePath);
+        Assert.True(File.Exists(savedBook.AudioFilePath));
+    }
+
+    [Fact]
     public async Task RecoverInterruptedDownloadsAsync_RequeuesItemsLeftDownloading()
     {
         using var directory = new TemporaryDirectory();
