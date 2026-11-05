@@ -48,7 +48,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service
                     UpdateNotification();
                     break;
                 case ActionResume:
-                    if (_player is not null && !_player.IsPlaying) _player.Start();
+                    if (_player is not null && !_player.IsPlaying) _player.Play();
                     UpdateNotification();
                     break;
                 case ActionSeek:
