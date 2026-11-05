@@ -11,6 +11,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly ILibraryRepository _repository;
     private readonly IDownloadQueue _downloadQueue;
     private readonly LocalAudioImportService? _audioImportService;
+    private readonly CoverArtImportService? _coverArtImportService;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
@@ -74,12 +75,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SelectedBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
     }
 
-    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null)
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, CoverArtImportService? coverArtImportService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
         _syncService = syncService;
         _audioImportService = audioImportService;
+        _coverArtImportService = coverArtImportService;
     }
 
     public bool IsSyncing { get => _isSyncing; private set { if (_isSyncing == value) return; _isSyncing = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanSync)); } }
@@ -363,6 +365,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { AudioImportStatus = "Audio import cancelled."; }
         catch (Exception) { AudioImportStatus = "Could not import this audio file. Choose a supported audio file and try again."; }
     }
+    public async Task ImportCoverArtAsync(string audiobookId, string fileName, Stream source, CancellationToken cancellationToken = default)
+    {
+        if (_coverArtImportService is null) { AudioImportStatus = "Cover artwork import is unavailable."; return; }
+        var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+        if (book is null) { AudioImportStatus = "Select an audiobook in your catalogue first."; return; }
+        try
+        {
+            AudioImportStatus = "Importing cover artwork…";
+            var path = await _coverArtImportService.ImportAsync(audiobookId, fileName, source, cancellationToken);
+            var updated = book with { CoverImagePath = path };
+            await _repository.UpsertAsync(updated, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+            if (SelectedBook?.Id == audiobookId) SelectBook(audiobookId);
+            AudioImportStatus = "Cover artwork saved for: " + book.Title;
+            ErrorMessage = string.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { AudioImportStatus = "Cover artwork import cancelled."; }
+        catch (Exception) { AudioImportStatus = "Could not import this cover image. Choose a valid JPG, PNG or WebP image and try again."; }
+    }
+
     /// <summary>Persist a safe resume position for a locally imported audiobook.</summary>
     public async Task SavePlaybackPositionAsync(string audiobookId, long positionMilliseconds, CancellationToken cancellationToken = default)
     {
