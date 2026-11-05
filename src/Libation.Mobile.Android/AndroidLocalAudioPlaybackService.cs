@@ -19,7 +19,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service
 
     private const string ChannelId = "libation_audiobook_playback";
     private const int NotificationId = 4102;
-    private ExoPlayer? _player;
+    private IExoPlayer? _player;
     private string _title = "Audiobook";
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
