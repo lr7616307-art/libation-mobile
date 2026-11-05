@@ -125,7 +125,9 @@ public partial class MainView : UserControl
         {
             if (_playingAudiobookId is not null)
             {
-                _localAudioPlayer.Pause();
+                // The Android foreground service owns playback independently of
+                // this view. Unloading the UI must checkpoint progress, not pause
+                // the audiobook; the service continues while the app is backgrounded.
                 await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
             }
         }
