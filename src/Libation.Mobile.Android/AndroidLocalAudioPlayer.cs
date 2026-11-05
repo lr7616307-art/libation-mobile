@@ -4,7 +4,7 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Android;
 
 /// <summary>UI adapter for the playback service, including crash-safe session recovery.</summary>
-public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer
+public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioArtworkPlayer, ISleepTimerAudioPlayer
 {
     private static Context AppContext => global::Android.App.Application.Context;
 
@@ -49,6 +49,9 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
         ? AndroidLocalAudioPlaybackService.PlaybackSpeed : Recovery?.PlaybackSpeed ?? 1f;
 
     public void Play(string filePath, long startPositionMilliseconds = 0, string? title = null)
+        => Play(filePath, startPositionMilliseconds, title, null);
+
+    public void Play(string filePath, long startPositionMilliseconds, string? title, string? artworkPath)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
@@ -56,6 +59,8 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionPlay);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraFilePath, filePath);
         if (!string.IsNullOrWhiteSpace(title)) intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraTitle, title);
+        if (!string.IsNullOrWhiteSpace(artworkPath) && File.Exists(artworkPath))
+            intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraArtworkPath, artworkPath);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
         StartService(intent, foreground: true);
     }
