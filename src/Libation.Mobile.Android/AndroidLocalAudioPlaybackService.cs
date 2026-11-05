@@ -1,6 +1,7 @@
 using Android.App;
 using Android.Content;
-using Android.Media;
+using AndroidX.Media3.Common;
+using AndroidX.Media3.ExoPlayer;
 using Android.OS;
 
 namespace Libation.Mobile.Android;
@@ -18,7 +19,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service
 
     private const string ChannelId = "libation_audiobook_playback";
     private const int NotificationId = 4102;
-    private MediaPlayer? _player;
+    private ExoPlayer? _player;
     private string _title = "Audiobook";
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
@@ -82,17 +83,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service
         // large local audiobook is inspected, so promote before preparing it.
         StartForeground(NotificationId, BuildNotification());
 
-        _player = new MediaPlayer();
-        _player.SetDataSource(path);
+        _player = new ExoPlayerBuilder(this).Build();
+        var mediaUri = global::Android.Net.Uri.FromFile(new Java.IO.File(path));
+        _player.SetMediaItem(MediaItem.FromUri(mediaUri));
+        var position = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
+        if (position > 0) _player.SeekTo(position);
         _player.Prepare();
-        var position = Math.Clamp(intent.GetLongExtra(ExtraPosition, 0), 0, int.MaxValue);
-        if (position > 0) _player.SeekTo((int)position);
-        _player.Completion += (_, _) =>
-        {
-            StopPlayback();
-            StopSelf();
-        };
-        _player.Start();
+        _player.Play();
         UpdateNotification();
     }
 
