@@ -37,5 +37,19 @@ public sealed record Audiobook(
     public long PlaybackPositionMilliseconds { get; init; }
 
     [JsonIgnore]
+    public bool HasSavedPlaybackPosition => PlaybackPositionMilliseconds > 0;
+
+    [JsonIgnore]
+    public string ResumePositionLabel
+    {
+        get
+        {
+            if (!HasSavedPlaybackPosition) return string.Empty;
+            var position = TimeSpan.FromMilliseconds(PlaybackPositionMilliseconds);
+            return $"Resume at {(long)position.TotalHours:00}:{position.Minutes:00}:{position.Seconds:00}";
+        }
+    }
+
+    [JsonIgnore]
     public bool CanDelete => !string.Equals(Status, "Demo", StringComparison.Ordinal);
 }
