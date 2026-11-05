@@ -17,6 +17,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionRewind = "org.libationmobile.app.action.REWIND";
     public const string ActionForward = "org.libationmobile.app.action.FORWARD";
     public const string ExtraFilePath = "file_path";
+    public const string ExtraTitle = "title";
     public const string ExtraPosition = "position_ms";
 
     private const string ChannelId = "libation_audiobook_playback";
@@ -86,7 +87,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             throw new FileNotFoundException("Audiobook audio file was not found.", path);
 
         StopPlayer();
-        _title = Path.GetFileNameWithoutExtension(path);
+        _title = intent.GetStringExtra(ExtraTitle);
+        if (string.IsNullOrWhiteSpace(_title))
+            _title = Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
 
         // Android requires a service started with startForegroundService() to

@@ -7,7 +7,7 @@ public interface ILocalAudioPlayer : IDisposable
     string? CurrentFilePath { get; }
     long PositionMilliseconds { get; }
     long DurationMilliseconds { get; }
-    void Play(string filePath, long startPositionMilliseconds = 0);
+    void Play(string filePath, long startPositionMilliseconds = 0, string? title = null);
     void Pause();
     void Resume();
     void Seek(long positionMilliseconds);

@@ -84,7 +84,7 @@ public partial class MainView : UserControl
         }
         try
         {
-            _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id));
+            _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _playingAudiobookId = book.Id;
             _playbackProgressTimer.Start();
             _viewModel.ReportAudioStatus("Playing: " + book.Title);

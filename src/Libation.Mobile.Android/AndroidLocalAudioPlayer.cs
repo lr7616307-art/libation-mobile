@@ -16,7 +16,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
     public long PositionMilliseconds => AndroidLocalAudioPlaybackService.PositionMilliseconds;
     public long DurationMilliseconds => AndroidLocalAudioPlaybackService.DurationMilliseconds;
 
-    public void Play(string filePath, long startPositionMilliseconds = 0)
+    public void Play(string filePath, long startPositionMilliseconds = 0, string? title = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
@@ -24,6 +24,8 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
 
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionPlay);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraFilePath, filePath);
+        if (!string.IsNullOrWhiteSpace(title))
+            intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraTitle, title);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
         if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
             AppContext.StartForegroundService(intent);
