@@ -240,6 +240,15 @@ public partial class MainView : UserControl
     private async void SyncLibraryClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await _viewModel.SyncLibraryAsync();
 
+    private void ShowDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: Audiobook book })
+            _viewModel.SelectBook(book.Id);
+    }
+
+    private void CloseDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.SelectBook(string.Empty);
+
     private void SortClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.ToggleSort();
     private void FilterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.CycleCatalogueFilter();
 
