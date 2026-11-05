@@ -50,6 +50,7 @@ public sealed class LibrarySyncServiceTests
         Assert.Equal("My corrected author", saved.Author);
         Assert.Equal("My narrator", saved.Narrator);
         Assert.Equal("9h", saved.Length);
+        Assert.Empty(saved.CoverImageUrl);
     }
 
     [Fact]
