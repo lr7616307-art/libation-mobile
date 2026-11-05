@@ -7,6 +7,7 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <application android:allowBackup="false"
                android:label="VØRATH"
+               android:icon="@mipmap/ic_launcher"
                android:usesCleartextTraffic="false">
     <service android:name="org.libationmobile.app.AndroidLocalAudioPlaybackService"
              android:exported="false"
