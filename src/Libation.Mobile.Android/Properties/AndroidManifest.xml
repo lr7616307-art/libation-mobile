@@ -6,7 +6,7 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <application android:allowBackup="false"
-               android:label="Libation Mobile"
+               android:label="VØRATH"
                android:usesCleartextTraffic="false">
     <service android:name="org.libationmobile.app.AndroidLocalAudioPlaybackService"
              android:exported="false"

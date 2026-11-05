@@ -3,10 +3,17 @@
     <TabItem Header="Home">
       <ScrollViewer>
         <StackPanel Margin="20" Spacing="16">
-          <StackPanel Spacing="4">
-            <TextBlock Text="LIBATION MOBILE" FontSize="12" FontWeight="Bold" Opacity="0.65" />
-            <TextBlock Text="Home" FontSize="30" FontWeight="Bold" />
-            <TextBlock Text="Your audiobook listening space" FontSize="14" Opacity="0.7" />
+          <StackPanel Spacing="5">
+            <Border Width="58" Height="58" CornerRadius="29" BorderBrush="#A78BFA" BorderThickness="2" Background="#120F22" HorizontalAlignment="Left" Padding="8">
+              <Grid>
+                <Ellipse Stroke="#A78BFA" StrokeThickness="2" Margin="2" />
+                <Ellipse Stroke="#6D5AA8" StrokeThickness="1.5" Margin="8" />
+                <Ellipse Fill="#C4B5FD" Width="5" Height="5" HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Grid>
+            </Border>
+            <TextBlock Text="VØRATH" FontSize="25" FontWeight="Bold" Foreground="#E9D5FF" />
+            <TextBlock Text="BEYOND THE SILENCE." FontSize="11" FontWeight="SemiBold" LetterSpacing="2" Foreground="#B9A5E8" />
+            <TextBlock Text="Your universe of stories" FontSize="14" Opacity="0.75" />
           </StackPanel>
           <Border CornerRadius="14" Padding="16" BorderBrush="#555555" BorderThickness="1">
             <StackPanel Spacing="8">
@@ -56,9 +63,9 @@
       <ScrollViewer>
     <StackPanel Margin="20" Spacing="16">
       <StackPanel Spacing="4">
-        <TextBlock Text="LIBATION MOBILE" FontSize="12" FontWeight="Bold" Opacity="0.65" />
+        <TextBlock Text="VØRATH" FontSize="12" FontWeight="Bold" Opacity="0.65" />
         <TextBlock Text="Your library" FontSize="30" FontWeight="Bold" />
-        <TextBlock Text="A mobile audiobook manager" FontSize="14" Opacity="0.7" />
+        <TextBlock Text="BEYOND THE SILENCE." FontSize="14" Opacity="0.7" />
       </StackPanel>
       <TextBox PlaceholderText="Search titles, authors or narrators" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
       <Border CornerRadius="14" Padding="14" Background="#3157A4">

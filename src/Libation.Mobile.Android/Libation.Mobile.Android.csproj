@@ -4,7 +4,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Libation.Mobile.Android</RootNamespace>
     <ApplicationId>org.libationmobile.app</ApplicationId>
-    <ApplicationTitle>Libation Mobile</ApplicationTitle>
+    <ApplicationTitle>VØRATH</ApplicationTitle>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
     <SupportedOSPlatformVersion>29.0</SupportedOSPlatformVersion>
