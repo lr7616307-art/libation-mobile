@@ -30,7 +30,7 @@ public partial class MainView : UserControl
         InitializeComponent();
         DataContext = _viewModel;
         _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
-        _ = _viewModel.InitializeAsync();
+        _ = InitializeAndRestorePlaybackAsync();
         Unloaded += MainViewUnloaded;
     }
 
@@ -41,6 +41,23 @@ public partial class MainView : UserControl
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
         Unloaded += MainViewUnloaded;
+    }
+
+    private async Task InitializeAndRestorePlaybackAsync()
+    {
+        await _viewModel.InitializeAsync();
+        if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
+            return;
+
+        var currentBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
+            string.Equals(book.AudioFilePath, currentPath, StringComparison.Ordinal));
+        if (currentBook is null)
+            return;
+
+        _playingAudiobookId = currentBook.Id;
+        _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
+        if (_localAudioPlayer.IsPlaying)
+            _playbackProgressTimer.Start();
     }
 
     private async void PlayAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
