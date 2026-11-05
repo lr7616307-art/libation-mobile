@@ -72,7 +72,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         string.IsNullOrWhiteSpace(SelectedBook.AudioFilePath) ? "Audio not imported on this device" : "Local audio is ready to play";
     public string SelectedBookResumeLabel => SelectedBook is null ? string.Empty :
         SelectedBook.PlaybackPositionMilliseconds > 0
-            ? $"Saved position: {TimeSpan.FromMilliseconds(SelectedBook.PlaybackPositionMilliseconds):h\:mm\:ss}"
+            ? $"Saved position: {TimeSpan.FromMilliseconds(SelectedBook.PlaybackPositionMilliseconds):h\\:mm\\:ss}"
             : "Not started yet";
     public void SelectBook(string audiobookId)
     {
