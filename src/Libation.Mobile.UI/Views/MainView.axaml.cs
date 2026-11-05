@@ -192,6 +192,7 @@ public partial class MainView : UserControl
 
         var position = Math.Max(0, _localAudioPlayer?.PositionMilliseconds ?? 0);
         var duration = Math.Max(0, _localAudioPlayer?.DurationMilliseconds ?? 0);
+        UpdateCurrentChapterUi(position, duration);
         _isUpdatingPlaybackSlider = true;
         try
         {
@@ -202,6 +203,42 @@ public partial class MainView : UserControl
             PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
+    }
+
+    private void UpdateCurrentChapterUi(long positionMilliseconds, long durationMilliseconds)
+    {
+        if (CurrentChapterTitleLabel is null || ChapterProgressLabel is null)
+            return;
+
+        var book = _playingAudiobookId is null
+            ? null
+            : _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
+        var chapters = AudiobookChapterService.Normalize(book?.Chapters, durationMilliseconds);
+        var currentIndex = AudiobookChapterService.FindCurrentChapterIndex(chapters, positionMilliseconds);
+
+        if (chapters.Count == 0)
+        {
+            CurrentChapterTitleLabel.Text = "No chapter markers available";
+            ChapterProgressLabel.Text = "Add chapter markers in audiobook details";
+            return;
+        }
+
+        if (currentIndex < 0)
+        {
+            CurrentChapterTitleLabel.Text = "Before first chapter";
+            ChapterProgressLabel.Text = $"Starts at {FormatPlaybackTime(chapters[0].StartPositionMilliseconds)}";
+            return;
+        }
+
+        var current = chapters[currentIndex];
+        var end = currentIndex + 1 < chapters.Count
+            ? chapters[currentIndex + 1].StartPositionMilliseconds
+            : durationMilliseconds;
+        CurrentChapterTitleLabel.Text = current.Title;
+        var chapterRange = end > current.StartPositionMilliseconds
+            ? $"{FormatPlaybackTime(current.StartPositionMilliseconds)} – {FormatPlaybackTime(end)}"
+            : $"from {FormatPlaybackTime(current.StartPositionMilliseconds)}";
+        ChapterProgressLabel.Text = $"Chapter {currentIndex + 1} of {chapters.Count} · {chapterRange}";
     }
 
     private static string FormatPlaybackTime(long milliseconds)

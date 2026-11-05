@@ -23,6 +23,8 @@
             <StackPanel Spacing="8">
               <TextBlock Text="Now playing" FontSize="20" FontWeight="SemiBold" />
               <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" />
+              <TextBlock x:Name="CurrentChapterTitleLabel" Text="No chapter markers available" FontSize="15" FontWeight="SemiBold" Foreground="#E9D5FF" TextWrapping="Wrap" />
+              <TextBlock x:Name="ChapterProgressLabel" Text="Chapter —" FontSize="11" Foreground="#B9A5E8" />
               <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                 <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="11" Foreground="#B9A5E8" />
                 <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="11" Foreground="#B9A5E8" />
