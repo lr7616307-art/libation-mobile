@@ -167,8 +167,8 @@ public partial class MainView : UserControl
             var nextChapter = AudiobookChapterService.GetNextChapterPosition(chapters, _localAudioPlayer.PositionMilliseconds);
             if (chapters.Count == 0 || nextChapter is null)
             {
-                _sleepTimerSelection = SleepTimerMinutes.Length - 1;
-                _viewModel.ReportAudioStatus("Add a following chapter marker to use end-of-chapter sleep.");
+                _sleepTimerSelection = SleepTimerMinutes.Length;
+                _viewModel.ReportAudioStatus("Add a following chapter marker to use end-of-chapter sleep. Tap again to cancel.");
                 return;
             }
 
