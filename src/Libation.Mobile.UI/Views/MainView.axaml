@@ -41,6 +41,7 @@
                 <Button Grid.Column="2" Content="+15 seconds" Margin="8,0,0,0" Click="ForwardAudioClicked" />
               </Grid>
               <Button x:Name="PlaybackSpeedButton" Content="Speed · 1.0×" Click="PlaybackSpeedClicked" />
+              <Button x:Name="SleepTimerButton" Content="Sleep timer · Off" Click="SleepTimerClicked" />
               <TextBlock Text="Choose an audiobook in Library and tap Play. Playback runs in the Android foreground service." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
             </StackPanel>
           </Border>

@@ -13,6 +13,10 @@ public partial class MainView : UserControl
     private ILocalAudioPlayer? _localAudioPlayer;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    private readonly DispatcherTimer _sleepTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private DateTimeOffset? _sleepTimerEndsAt;
+    private static readonly int[] SleepTimerMinutes = [15, 30, 45, 60];
+    private int _sleepTimerSelection = -1;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
@@ -48,6 +52,8 @@ public partial class MainView : UserControl
     {
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
+        _sleepTimer.Tick -= SleepTimerTick;
+        _sleepTimer.Tick += SleepTimerTick;
         await InitializeAndRestorePlaybackAsync();
     }
 
@@ -132,6 +138,100 @@ public partial class MainView : UserControl
 
     private async void RewindAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await SeekRelativeAsync(-15_000);
+
+    private void SleepTimerClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_localAudioPlayer is null || _playingAudiobookId is null)
+        {
+            _viewModel.ReportAudioStatus("Start an audiobook before setting a sleep timer.");
+            return;
+        }
+
+        _sleepTimerSelection++;
+        if (_sleepTimerSelection >= SleepTimerMinutes.Length)
+        {
+            CancelSleepTimer();
+            _viewModel.ReportAudioStatus("Sleep timer cancelled.");
+            return;
+        }
+
+        var minutes = SleepTimerMinutes[_sleepTimerSelection];
+        _sleepTimerEndsAt = DateTimeOffset.UtcNow.AddMinutes(minutes);
+        _sleepTimer.Start();
+        UpdateSleepTimerButton();
+        _viewModel.ReportAudioStatus($"Sleep timer set for {minutes} minutes.");
+    }
+
+    private void CancelSleepTimer()
+    {
+        _sleepTimer.Stop();
+        _sleepTimerEndsAt = null;
+        _sleepTimerSelection = -1;
+        if (SleepTimerButton is not null)
+            SleepTimerButton.Content = "Sleep timer · Off";
+    }
+
+    private void UpdateSleepTimerButton()
+    {
+        if (SleepTimerButton is null)
+            return;
+
+        if (_sleepTimerEndsAt is not { } endsAt)
+        {
+            SleepTimerButton.Content = "Sleep timer · Off";
+            return;
+        }
+
+        var remaining = endsAt - DateTimeOffset.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+        {
+            SleepTimerButton.Content = "Sleep timer · Finishing…";
+            return;
+        }
+
+        var totalSeconds = (int)Math.Ceiling(remaining.TotalSeconds);
+        SleepTimerButton.Content = $"Sleep timer · {totalSeconds / 60:D2}:{totalSeconds % 60:D2}";
+    }
+
+    private async void SleepTimerTick(object? sender, EventArgs e)
+    {
+        if (_sleepTimerEndsAt is not { } endsAt)
+        {
+            CancelSleepTimer();
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow < endsAt)
+        {
+            UpdateSleepTimerButton();
+            return;
+        }
+
+        _sleepTimer.Stop();
+        _sleepTimerEndsAt = null;
+        _sleepTimerSelection = -1;
+        if (SleepTimerButton is not null)
+            SleepTimerButton.Content = "Sleep timer · Off";
+
+        if (_localAudioPlayer is null || _playingAudiobookId is null)
+        {
+            _viewModel.ReportAudioStatus("Sleep timer ended; no active audiobook was playing.");
+            return;
+        }
+
+        try
+        {
+            _localAudioPlayer.Pause();
+            _playbackProgressTimer.Stop();
+            await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+            UpdatePlaybackProgressUi();
+            _viewModel.ReportAudioStatus("Sleep timer finished. Playback paused and position saved.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Sleep timer finished, but playback could not be paused cleanly.");
+        }
+    }
 
     private void PlaybackSpeedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
