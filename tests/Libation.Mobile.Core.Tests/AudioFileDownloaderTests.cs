@@ -110,6 +110,7 @@ public sealed class AudioFileDownloaderTests
         using var directory = new TemporaryDirectory();
         var destination = Path.Combine(directory.Path, "book.m4b");
         var partial = destination + ".part";
+        Directory.CreateDirectory(directory.Path);
         await File.WriteAllBytesAsync(partial, new byte[] { 1, 2 });
         using var client = new HttpClient(new StubHandler((_, _) =>
         {
