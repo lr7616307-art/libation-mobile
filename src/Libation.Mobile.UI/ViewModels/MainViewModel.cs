@@ -288,7 +288,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (SelectedBook is null) { ErrorMessage = "Open an audiobook's details before adding a chapter."; return; }
         var title = NewChapterTitle.Trim();
         if (string.IsNullOrWhiteSpace(title)) { ErrorMessage = "Enter a chapter title."; return; }
-        if (!TimeSpan.TryParse(NewChapterStart.Trim(), CultureInfo.InvariantCulture, out var start)
+        if (!TimeSpan.TryParseExact(NewChapterStart.Trim(), [@"m\\:ss", @"mm\\:ss", @"h\\:mm\\:ss", @"hh\\:mm\\:ss"], CultureInfo.InvariantCulture, out var start)
             || start < TimeSpan.Zero || start.TotalMilliseconds > long.MaxValue)
         { ErrorMessage = "Enter a valid start time as mm:ss or hh:mm:ss."; return; }
         var startMilliseconds = (long)start.TotalMilliseconds;
