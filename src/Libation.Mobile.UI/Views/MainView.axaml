@@ -12,9 +12,10 @@
             <StackPanel Spacing="8">
               <TextBlock Text="Now playing" FontSize="20" FontWeight="SemiBold" />
               <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" />
-              <Grid ColumnDefinitions="*,*">
-                <Button Grid.Column="0" Content="−15 seconds" Click="RewindAudioClicked" />
-                <Button Grid.Column="1" Content="+15 seconds" Margin="8,0,0,0" Click="ForwardAudioClicked" />
+              <Grid ColumnDefinitions="*,*,*">
+                <Button Grid.Column="0" Content="Resume" Click="ResumeAudioClicked" />
+                <Button Grid.Column="1" Content="−15 seconds" Click="RewindAudioClicked" />
+                <Button Grid.Column="2" Content="+15 seconds" Margin="8,0,0,0" Click="ForwardAudioClicked" />
               </Grid>
               <TextBlock Text="Choose an audiobook in Library and tap Play. Playback runs in the Android foreground service." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
             </StackPanel>
