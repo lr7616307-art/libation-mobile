@@ -39,6 +39,8 @@ public sealed class CoverArtDownloadService
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(12));
         using var response = await _httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400)
+            throw new HttpRequestException("Cover image redirects are not permitted.");
         response.EnsureSuccessStatusCode();
         if (response.RequestMessage?.RequestUri is not { } finalUri ||
             !string.Equals(finalUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
