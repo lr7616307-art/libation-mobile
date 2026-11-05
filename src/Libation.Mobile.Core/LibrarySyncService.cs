@@ -20,8 +20,15 @@ public sealed class LibrarySyncService
         else if (OperatingSystem.IsAndroid())
         {
             var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "covers");
-            _coverArtDownloader = new CoverArtDownloadService(new HttpClient { Timeout = TimeSpan.FromSeconds(12) }, directory);
+            _coverArtDownloader = new CoverArtDownloadService(CreateCoverArtHttpClient(), directory);
         }
+    }
+
+    private static HttpClient CreateCoverArtHttpClient()
+    {
+        // Do not follow redirects: image downloads must remain on the approved host.
+        var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(12) };
     }
 
     public async Task<int> SyncAsync(CancellationToken cancellationToken = default)
