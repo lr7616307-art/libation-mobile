@@ -24,13 +24,27 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
     }
 
     private PlaybackRecoverySnapshot? Recovery => PlaybackRecoveryStore.Load(AppContext);
-    public bool IsPlaying => AndroidLocalAudioPlaybackService.Current is not null
-        ? AndroidLocalAudioPlaybackService.IsPlaying : Recovery?.WasPlaying ?? false;
+    // While ExoPlayer is preparing after process recovery, the service may
+    // exist before IsPlaying becomes true. Keep the persisted intent visible
+    // until the player reports its actual state (a user pause writes false).
+    public bool IsPlaying => AndroidLocalAudioPlaybackService.IsPlaying || Recovery?.WasPlaying == true;
     public string? CurrentFilePath => AndroidLocalAudioPlaybackService.CurrentFilePath ?? Recovery?.FilePath;
-    public long PositionMilliseconds => AndroidLocalAudioPlaybackService.Current is not null
-        ? AndroidLocalAudioPlaybackService.PositionMilliseconds : Recovery?.PositionMilliseconds ?? 0;
-    public long DurationMilliseconds => AndroidLocalAudioPlaybackService.Current is not null
-        ? AndroidLocalAudioPlaybackService.DurationMilliseconds : Recovery?.DurationMilliseconds ?? 0;
+    public long PositionMilliseconds
+    {
+        get
+        {
+            var current = AndroidLocalAudioPlaybackService.PositionMilliseconds;
+            return current > 0 ? current : Recovery?.PositionMilliseconds ?? 0;
+        }
+    }
+    public long DurationMilliseconds
+    {
+        get
+        {
+            var current = AndroidLocalAudioPlaybackService.DurationMilliseconds;
+            return current > 0 ? current : Recovery?.DurationMilliseconds ?? 0;
+        }
+    }
     public float PlaybackSpeed => AndroidLocalAudioPlaybackService.Current is not null
         ? AndroidLocalAudioPlaybackService.PlaybackSpeed : Recovery?.PlaybackSpeed ?? 1f;
 

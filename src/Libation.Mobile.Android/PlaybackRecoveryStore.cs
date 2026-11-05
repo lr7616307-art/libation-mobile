@@ -38,7 +38,9 @@ internal static class PlaybackRecoveryStore
         editor?.PutLong(DurationKey, Math.Max(0, snapshot.DurationMilliseconds));
         editor?.PutFloat(SpeedKey, Math.Clamp(snapshot.PlaybackSpeed, 0.5f, 3f));
         editor?.PutBoolean(WasPlayingKey, snapshot.WasPlaying);
-        editor?.Commit();
+        // Apply persists asynchronously so the five-second checkpoint never blocks
+        // the main looper or causes audible playback stutter.
+        editor?.Apply();
     }
 
     public static void Clear(global::Android.Content.Context context)
