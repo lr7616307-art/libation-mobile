@@ -22,6 +22,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _newAuthor = string.Empty;
     private string _newNarrator = string.Empty;
     private string _newLength = string.Empty;
+    private string _newSeries = string.Empty;
+    private string _newGenre = string.Empty;
+    private string _newDescription = string.Empty;
     private string? _editingBookId;
     private bool _isLoading;
     private string _errorMessage = string.Empty;
@@ -150,6 +153,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string NewAuthor { get => _newAuthor; set => SetField(ref _newAuthor, value); }
     public string NewNarrator { get => _newNarrator; set => SetField(ref _newNarrator, value); }
     public string NewLength { get => _newLength; set => SetField(ref _newLength, value); }
+    public string NewSeries { get => _newSeries; set => SetField(ref _newSeries, value); }
+    public string NewGenre { get => _newGenre; set => SetField(ref _newGenre, value); }
+    public string NewDescription { get => _newDescription; set => SetField(ref _newDescription, value); }
     public bool IsEditing => _editingBookId is not null;
     public string SaveButtonLabel => IsEditing ? "Save changes" : "Save to local catalogue";
 
@@ -208,6 +214,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         NewAuthor = book.Author;
         NewNarrator = book.Narrator;
         NewLength = book.Length;
+        NewSeries = book.Series;
+        NewGenre = book.Genre;
+        NewDescription = book.Description;
         OnPropertyChanged(nameof(IsEditing));
         OnPropertyChanged(nameof(SaveButtonLabel));
         ErrorMessage = string.Empty;
@@ -239,11 +248,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 var existing = _allBooks.FirstOrDefault(x => x.Id == _editingBookId);
                 if (existing is null) { CancelEdit(); ErrorMessage = "This audiobook is no longer in the catalogue."; return; }
-                book = existing with { Title = title, Author = author, Narrator = NewNarrator.Trim(), Length = NewLength.Trim() };
+                book = existing with { Title = title, Author = author, Narrator = NewNarrator.Trim(), Length = NewLength.Trim(), Series = NewSeries.Trim(), Genre = NewGenre.Trim(), Description = NewDescription.Trim() };
             }
             else
             {
-                book = new Audiobook(Guid.NewGuid().ToString("N"), title, author, NewNarrator.Trim(), NewLength.Trim(), "Manually added");
+                book = new Audiobook(Guid.NewGuid().ToString("N"), title, author, NewNarrator.Trim(), NewLength.Trim(), "Manually added")
+                {
+                    Series = NewSeries.Trim(),
+                    Genre = NewGenre.Trim(),
+                    Description = NewDescription.Trim()
+                };
             }
 
             await _repository.UpsertAsync(book, cancellationToken);
@@ -253,6 +267,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsEditing));
             OnPropertyChanged(nameof(SaveButtonLabel));
             ApplyFilter(_allBooks);
+            if (SelectedBook?.Id == book.Id) SelectBook(book.Id);
             ErrorMessage = string.Empty;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -384,7 +399,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception) { ErrorMessage = "Could not remove the item from the local download queue."; }
     }
 
-    private void ClearEditor() { NewTitle = string.Empty; NewAuthor = string.Empty; NewNarrator = string.Empty; NewLength = string.Empty; }
+    private void ClearEditor() { NewTitle = string.Empty; NewAuthor = string.Empty; NewNarrator = string.Empty; NewLength = string.Empty; NewSeries = string.Empty; NewGenre = string.Empty; NewDescription = string.Empty; }
 
     private async Task ReloadQueueAsync(CancellationToken cancellationToken)
     {
@@ -420,7 +435,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
             (string.IsNullOrEmpty(query) ||
              book.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              book.Author.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-             book.Narrator.Contains(query, StringComparison.OrdinalIgnoreCase)));
+             book.Narrator.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+             book.Series.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+             book.Genre.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+             book.Description.Contains(query, StringComparison.OrdinalIgnoreCase)));
         matches = _sortAscending
             ? matches.OrderBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
             : matches.OrderByDescending(book => book.Title, StringComparer.OrdinalIgnoreCase);
