@@ -54,6 +54,10 @@
       </Border>
       <TextBlock Text="Local catalogue" FontSize="20" FontWeight="SemiBold" />
       <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" FontSize="12" />
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+        <Button Grid.Column="0" Content="−15 seconds" Click="RewindAudioClicked" />
+        <Button Grid.Column="1" Content="+15 seconds" Click="ForwardAudioClicked" />
+      </Grid>
       <Grid ColumnDefinitions="*,*,Auto">
         <Button Grid.Column="0" Content="{Binding SortLabel}" Click="SortClicked" />
         <Button Grid.Column="1" Content="{Binding FilterLabel}" Margin="8,0,0,0" Click="FilterClicked" />

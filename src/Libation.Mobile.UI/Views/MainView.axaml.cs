@@ -79,6 +79,37 @@ public partial class MainView : UserControl
         }
     }
 
+    private async void RewindAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await SeekRelativeAsync(-15_000);
+
+    private async void ForwardAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await SeekRelativeAsync(15_000);
+
+    private async Task SeekRelativeAsync(long offsetMilliseconds)
+    {
+        if (_localAudioPlayer is null || _playingAudiobookId is null)
+        {
+            _viewModel.ReportAudioStatus("Start an audiobook before using the skip controls.");
+            return;
+        }
+
+        try
+        {
+            var target = Math.Max(0, _localAudioPlayer.PositionMilliseconds + offsetMilliseconds);
+            var duration = _localAudioPlayer.DurationMilliseconds;
+            if (duration > 0) target = Math.Min(target, duration);
+            _localAudioPlayer.Seek(target);
+            await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+            _viewModel.ReportAudioStatus(offsetMilliseconds < 0
+                ? "Moved back 15 seconds. Playback position saved."
+                : "Moved forward 15 seconds. Playback position saved.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not change the playback position.");
+        }
+    }
+
     private async void MainViewUnloaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_localAudioPlayer is null) return;
