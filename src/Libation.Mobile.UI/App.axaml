@@ -3,7 +3,33 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:fluent="clr-namespace:Avalonia.Themes.Fluent;assembly=Avalonia.Themes.Fluent"
              x:Class="Libation.Mobile.UI.App">
+  <Application.Resources>
+    <SolidColorBrush x:Key="VorathVoid" Color="#090711" />
+    <SolidColorBrush x:Key="VorathSurface" Color="#151020" />
+    <SolidColorBrush x:Key="VorathSurfaceRaised" Color="#211832" />
+    <SolidColorBrush x:Key="VorathViolet" Color="#A78BFA" />
+    <SolidColorBrush x:Key="VorathLavender" Color="#E9D5FF" />
+    <SolidColorBrush x:Key="VorathMuted" Color="#B9A5E8" />
+    <SolidColorBrush x:Key="VorathOutline" Color="#51416F" />
+  </Application.Resources>
   <Application.Styles>
     <fluent:FluentTheme />
+    <Style Selector="Button">
+      <Setter Property="Background" Value="{DynamicResource VorathSurfaceRaised}" />
+      <Setter Property="Foreground" Value="{DynamicResource VorathLavender}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource VorathOutline}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="12,9" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="{DynamicResource VorathSurface}" />
+      <Setter Property="Foreground" Value="{DynamicResource VorathLavender}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource VorathOutline}" />
+      <Setter Property="CaretBrush" Value="{DynamicResource VorathViolet}" />
+    </Style>
+    <Style Selector="TabItem">
+      <Setter Property="Foreground" Value="{DynamicResource VorathMuted}" />
+    </Style>
   </Application.Styles>
 </Application>
