@@ -130,13 +130,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
             ApplyFilter(_allBooks);
             await ReloadQueueAsync(cancellationToken);
             LastSuccessfulSync = DateTimeOffset.UtcNow;
+            var timestampSaved = true;
             if (_syncStateStore is not null)
             {
                 try { await _syncStateStore.SaveLastSuccessfulSyncAsync(LastSuccessfulSync.Value, cancellationToken); }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                catch (Exception) { SyncStatus = "Sync completed, but its timestamp could not be saved."; }
+                catch (Exception) { timestampSaved = false; }
             }
-            SyncStatus = $"Sync complete. {count} audiobook metadata entr{(count == 1 ? "y" : "ies")} updated.";
+            SyncStatus = timestampSaved
+                ? $"Sync complete. {count} audiobook metadata entr{(count == 1 ? "y" : "ies")} updated."
+                : $"Sync complete. {count} audiobook metadata entr{(count == 1 ? "y" : "ies")} updated, but the timestamp could not be saved.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
