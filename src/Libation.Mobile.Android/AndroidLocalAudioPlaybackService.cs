@@ -11,6 +11,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service
 {
     public const string ActionPlay = "org.libationmobile.app.action.PLAY";
     public const string ActionPause = "org.libationmobile.app.action.PAUSE";
+    public const string ActionResume = "org.libationmobile.app.action.RESUME";
     public const string ActionSeek = "org.libationmobile.app.action.SEEK";
     public const string ExtraFilePath = "file_path";
     public const string ExtraPosition = "position_ms";
@@ -19,7 +20,6 @@ public sealed class AndroidLocalAudioPlaybackService : Service
     private const int NotificationId = 4102;
     private MediaPlayer? _player;
     private string _title = "Audiobook";
-    private bool _disposed;
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
@@ -44,6 +44,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service
                     break;
                 case ActionPause:
                     if (_player?.IsPlaying == true) _player.Pause();
+                    UpdateNotification();
+                    break;
+                case ActionResume:
+                    if (_player is not null && !_player.IsPlaying) _player.Start();
                     UpdateNotification();
                     break;
                 case ActionSeek:
@@ -107,7 +111,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service
         var contentPendingIntent = PendingIntent.GetActivity(
             this, 4102, launchIntent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
-        var action = _player?.IsPlaying == true ? ActionPause : ActionPlay;
+        var action = _player?.IsPlaying == true ? ActionPause : ActionResume;
         var actionLabel = _player?.IsPlaying == true ? "Pause" : "Resume";
         var actionIcon = _player?.IsPlaying == true
             ? Android.Resource.Drawable.IcMediaPause
@@ -166,7 +170,6 @@ public sealed class AndroidLocalAudioPlaybackService : Service
     {
         StopPlayback();
         if (Current == this) Current = null;
-        _disposed = true;
         base.OnDestroy();
     }
 }
