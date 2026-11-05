@@ -3,6 +3,8 @@ using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer;
 using Android.OS;
+using Android.Media;
+using Android.Media.Session;
 
 namespace Libation.Mobile.Android;
 
@@ -35,6 +37,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private string? _currentFilePath;
     private float _playbackSpeed = 1f;
     private bool _isRestoringPlayback;
+    private MediaSession? _mediaSession;
     private Handler? _checkpointHandler;
     private Java.Lang.Runnable? _checkpointRunnable;
     private Java.Lang.Runnable? _sleepTimerRunnable;
@@ -53,6 +56,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         base.OnCreate();
         Current = this;
         CreateNotificationChannel();
+        CreateMediaSession();
         _checkpointHandler = new Handler(Looper.MainLooper!);
         _checkpointRunnable = new Java.Lang.Runnable(() =>
         {
@@ -138,6 +142,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             _title = Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
         _playbackSpeed = 1f;
+        if (_mediaSession is not null) _mediaSession.Active = true;
+        UpdateMediaSessionState();
 
         // Android requires a service started with startForegroundService() to
         // promote itself promptly. MediaPlayer.Prepare() can block while a
@@ -197,7 +203,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         StopSelf();
     }
 
-    public void OnAudioAttributesChanged(AudioAttributes? value) { }
+    public void OnAudioAttributesChanged(AndroidX.Media3.Common.AudioAttributes? value) { }
     public void OnAudioSessionIdChanged(int value) { }
     public void OnAvailableCommandsChanged(PlayerCommands? value) { }
     public void OnCues(AndroidX.Media3.Common.Text.CueGroup? value) { }
@@ -208,14 +214,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnLoadingChanged(bool isLoading) { }
     public void OnMaxSeekToPreviousPositionChanged(long value) { }
     public void OnMediaItemTransition(MediaItem? mediaItem, int reason) { }
-    public void OnMediaMetadataChanged(MediaMetadata? metadata) { }
+    public void OnMediaMetadataChanged(AndroidX.Media3.Common.MediaMetadata? metadata) { }
     public void OnMetadata(Metadata? metadata) { }
     public void OnPlayWhenReadyChanged(bool playWhenReady, int reason) => UpdateNotification();
     public void OnPositionDiscontinuity(PlayerPositionInfo? oldPosition, PlayerPositionInfo? newPosition, int reason) { }
     public void OnPlaybackParametersChanged(PlaybackParameters? parameters) { }
     public void OnPlaybackSuppressionReasonChanged(int reason) { }
     public void OnPlayerErrorChanged(PlaybackException? error) { }
-    public void OnPlaylistMetadataChanged(MediaMetadata? metadata) { }
+    public void OnPlaylistMetadataChanged(AndroidX.Media3.Common.MediaMetadata? metadata) { }
     public void OnRenderedFirstFrame() { }
     public void OnRepeatModeChanged(int repeatMode) { }
     public void OnSeekBackIncrementChanged(long value) { }
@@ -378,6 +384,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             .SetContentIntent(contentPendingIntent)
             .SetOngoing(_player?.IsPlaying == true)
             .SetOnlyAlertOnce(true)
+            .SetStyle(new Notification.MediaStyle()
+                .SetMediaSession(_mediaSession?.SessionToken)
+                .SetShowActionsInCompactView(0, 1, 2))
             .AddAction(global::Android.Resource.Drawable.IcMediaRew, "−15 sec", rewindPendingIntent)
             .AddAction(actionIcon, actionLabel, controlPendingIntent)
             .AddAction(global::Android.Resource.Drawable.IcMediaFf, "+15 sec", forwardPendingIntent);
@@ -386,8 +395,79 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void UpdateNotification()
     {
+        UpdateMediaSessionState();
         var manager = (NotificationManager?)GetSystemService(NotificationService);
         manager?.Notify(NotificationId, BuildNotification());
+    }
+
+    private void CreateMediaSession()
+    {
+        _mediaSession = new MediaSession(this, "VORATHPlayback");
+        _mediaSession.SetFlags(MediaSessionFlags.HandlesMediaButtons | MediaSessionFlags.HandlesTransportControls);
+        _mediaSession.SetCallback(new PlaybackSessionCallback(this), new Handler(Looper.MainLooper!));
+        _mediaSession.SetMetadata(new global::Android.Media.MediaMetadata.Builder()
+            .PutString(global::Android.Media.MediaMetadata.MetadataKeyTitle, _title)
+            .PutString(global::Android.Media.MediaMetadata.MetadataKeyArtist, "VØRATH")
+            .Build());
+    }
+
+    private void UpdateMediaSessionState()
+    {
+        if (_mediaSession is null) return;
+        try
+        {
+            _mediaSession.SetMetadata(new global::Android.Media.MediaMetadata.Builder()
+                .PutString(global::Android.Media.MediaMetadata.MetadataKeyTitle, _title)
+                .PutString(global::Android.Media.MediaMetadata.MetadataKeyArtist, "VØRATH")
+                .Build());
+
+            var actions = PlaybackState.ActionPlay | PlaybackState.ActionPause |
+                PlaybackState.ActionPlayPause | PlaybackState.ActionSeekTo;
+            var state = _player?.IsPlaying == true
+                ? PlaybackStateCode.Playing
+                : _player is null ? PlaybackStateCode.None : PlaybackStateCode.Paused;
+            _mediaSession.SetPlaybackState(new PlaybackState.Builder()
+                .SetActions(actions)
+                .SetState(state, ReadPosition(), _playbackSpeed)
+                .Build());
+        }
+        catch (Exception) { /* System media controls must never interrupt playback. */ }
+    }
+
+    private void HandleSessionPlay()
+    {
+        if (_player is null) return;
+        _player.Play();
+        SavePlaybackSnapshot();
+        UpdateNotification();
+    }
+
+    private void HandleSessionPause()
+    {
+        if (_player is null) return;
+        _player.Pause();
+        SavePlaybackSnapshot();
+        UpdateNotification();
+    }
+
+    private void HandleSessionSeek(long position)
+    {
+        if (_player is null) return;
+        var target = Math.Max(0L, position);
+        var duration = ReadDuration();
+        if (duration > 0) target = Math.Min(target, duration);
+        _player.SeekTo((int)Math.Min(target, int.MaxValue));
+        SavePlaybackSnapshot();
+        UpdateNotification();
+    }
+
+    private sealed class PlaybackSessionCallback : MediaSession.Callback
+    {
+        private readonly AndroidLocalAudioPlaybackService _service;
+        public PlaybackSessionCallback(AndroidLocalAudioPlaybackService service) => _service = service;
+        public override void OnPlay() => _service.HandleSessionPlay();
+        public override void OnPause() => _service.HandleSessionPause();
+        public override void OnSeekTo(long position) => _service.HandleSessionSeek(position);
     }
 
     private long ReadPosition()
@@ -441,6 +521,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _sleepTimerRunnable = null;
         _checkpointHandler = null;
         StopPlayback(clearRecovery: false);
+        if (_mediaSession is not null) _mediaSession.Active = false;
+        _mediaSession?.Release();
+        _mediaSession = null;
         if (Current == this) Current = null;
         base.OnDestroy();
     }
