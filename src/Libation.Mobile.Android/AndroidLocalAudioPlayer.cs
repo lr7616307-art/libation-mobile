@@ -37,6 +37,12 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
         AppContext.StartService(CreateIntent(AndroidLocalAudioPlaybackService.ActionPause));
     }
 
+    public void Resume()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        AppContext.StartService(CreateIntent(AndroidLocalAudioPlaybackService.ActionResume));
+    }
+
     public void Seek(long positionMilliseconds)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
