@@ -9,5 +9,6 @@ public interface ILocalAudioPlayer : IDisposable
     long DurationMilliseconds { get; }
     void Play(string filePath, long startPositionMilliseconds = 0);
     void Pause();
+    void Resume();
     void Seek(long positionMilliseconds);
 }
