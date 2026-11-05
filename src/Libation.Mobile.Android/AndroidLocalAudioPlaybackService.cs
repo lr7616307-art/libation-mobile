@@ -34,6 +34,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private string _title = "Audiobook";
     private string? _currentFilePath;
     private float _playbackSpeed = 1f;
+    private bool _isRestoringPlayback;
     private Handler? _checkpointHandler;
     private Java.Lang.Runnable? _checkpointRunnable;
     private Java.Lang.Runnable? _sleepTimerRunnable;
@@ -57,9 +58,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         {
             SavePlaybackSnapshot();
             if (_checkpointRunnable is not null)
-                _checkpointHandler?.PostDelayed(_checkpointRunnable, 5_000);
+                _checkpointHandler?.PostDelayed(_checkpointRunnable, 2_000);
         });
-        _checkpointHandler.PostDelayed(_checkpointRunnable, 5_000);
+        _checkpointHandler.PostDelayed(_checkpointRunnable, 2_000);
         RestoreSleepTimer();
         _sleepTimerRunnable = new Java.Lang.Runnable(CheckSleepTimer);
         _checkpointHandler.PostDelayed(_sleepTimerRunnable, 1_000);
@@ -124,13 +125,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         return StartCommandResult.NotSticky;
     }
 
-    private void StartPlayback(Intent intent)
+    private void StartPlayback(Intent intent, bool restoring = false)
     {
         var path = intent.GetStringExtra(ExtraFilePath);
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             throw new FileNotFoundException("Audiobook audio file was not found.", path);
 
         StopPlayer();
+        _isRestoringPlayback = restoring;
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
             _title = Path.GetFileNameWithoutExtension(path);
@@ -157,7 +159,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
         if (intent.GetBooleanExtra(ExtraAutoPlay, true))
             _player.Play();
-        SavePlaybackSnapshot();
+        // During recovery, the player can still report position zero while it
+        // prepares and applies the restored seek. Wait for STATE_READY before
+        // allowing any checkpoint to replace the durable saved position.
+        if (!_isRestoringPlayback) SavePlaybackSnapshot();
         UpdateNotification();
     }
 
@@ -166,6 +171,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     // lifecycle synchronized with the actual decoder state.
     public void OnPlaybackStateChanged(int playbackState)
     {
+        if (playbackState == 3 && _isRestoringPlayback) // Player.STATE_READY
+        {
+            _isRestoringPlayback = false;
+            SavePlaybackSnapshot();
+        }
+
         if (playbackState == 4) // Player.STATE_ENDED
         {
             StopPlayback();
@@ -180,7 +191,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public void OnPlayerError(PlaybackException? error)
     {
-        StopPlayback();
+        // Keep the recovery snapshot if decoding failed before a restored
+        // session became ready; the next launch can retry from the same point.
+        StopPlayback(clearRecovery: !_isRestoringPlayback);
         StopSelf();
     }
 
@@ -217,6 +230,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void RestoreSavedPlayback()
     {
+        // A recreated UI adapter may send RESTORE while this service is already
+        // playing. Never tear down a live session or rewind it to an older snapshot.
+        if (_player is not null) return;
+
         var snapshot = PlaybackRecoveryStore.Load(this);
         if (snapshot is null) return;
         if (!File.Exists(snapshot.FilePath))
@@ -231,7 +248,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         intent.PutExtra(ExtraPosition, snapshot.PositionMilliseconds);
         intent.PutExtra(ExtraSpeed, snapshot.PlaybackSpeed);
         intent.PutExtra(ExtraAutoPlay, snapshot.WasPlaying);
-        StartPlayback(intent);
+        StartPlayback(intent, restoring: true);
     }
 
     private void SetSleepTimer(Intent intent)
@@ -289,7 +306,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     }
     private void SavePlaybackSnapshot()
     {
-        if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        if (_isRestoringPlayback || _player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         try
         {
             PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
@@ -399,6 +416,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         StopPlayer();
         if (clearRecovery) PlaybackRecoveryStore.Clear(this);
+        _isRestoringPlayback = false;
         StopForeground(StopForegroundFlags.Remove);
     }
 
