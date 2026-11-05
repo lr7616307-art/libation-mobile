@@ -16,7 +16,6 @@
   <ItemGroup>
     <PackageReference Include="Avalonia.Android" Version="12.1.2" />
     <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="1.11.1" />
-    <PackageReference Include="Xamarin.AndroidX.Media3.Session" Version="1.11.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Libation.Mobile.UI\Libation.Mobile.UI.csproj" />
