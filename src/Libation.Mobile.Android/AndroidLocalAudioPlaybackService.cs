@@ -203,7 +203,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         StopSelf();
     }
 
-    public void OnAudioAttributesChanged(AudioAttributes? value) { }
+    public void OnAudioAttributesChanged(AndroidX.Media3.Common.AudioAttributes? value) { }
     public void OnAudioSessionIdChanged(int value) { }
     public void OnAvailableCommandsChanged(PlayerCommands? value) { }
     public void OnCues(AndroidX.Media3.Common.Text.CueGroup? value) { }
@@ -405,9 +405,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _mediaSession = new MediaSession(this, "VORATHPlayback");
         _mediaSession.SetFlags(MediaSessionFlags.HandlesMediaButtons | MediaSessionFlags.HandlesTransportControls);
         _mediaSession.SetCallback(new PlaybackSessionCallback(this), new Handler(Looper.MainLooper!));
-        _mediaSession.SetMetadata(new MediaMetadata.Builder()
-            .PutString(MediaMetadata.MetadataKeyTitle, _title)
-            .PutString(MediaMetadata.MetadataKeyArtist, "VØRATH")
+        _mediaSession.SetMetadata(new global::Android.Media.MediaMetadata.Builder()
+            .PutString(global::Android.Media.MediaMetadata.MetadataKeyTitle, _title)
+            .PutString(global::Android.Media.MediaMetadata.MetadataKeyArtist, "VØRATH")
             .Build());
     }
 
