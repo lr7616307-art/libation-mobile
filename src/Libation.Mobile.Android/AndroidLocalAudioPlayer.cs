@@ -9,7 +9,7 @@ namespace Libation.Mobile.Android;
 /// </summary>
 public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
 {
-    private static Context AppContext => Android.App.Application.Context;
+    private static Context AppContext => global::Android.App.Application.Context;
 
     public bool IsPlaying => AndroidLocalAudioPlaybackService.IsPlaying;
     public long PositionMilliseconds => AndroidLocalAudioPlaybackService.PositionMilliseconds;
@@ -24,7 +24,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionPlay);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraFilePath, filePath);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
-        if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.O)
+        if (global::Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.O)
             AppContext.StartForegroundService(intent);
         else
             AppContext.StartService(intent);

@@ -114,14 +114,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service
         var action = _player?.IsPlaying == true ? ActionPause : ActionResume;
         var actionLabel = _player?.IsPlaying == true ? "Pause" : "Resume";
         var actionIcon = _player?.IsPlaying == true
-            ? Android.Resource.Drawable.IcMediaPause
-            : Android.Resource.Drawable.IcMediaPlay;
+            ? global::Android.Resource.Drawable.StatSysHeadset
+            : global::Android.Resource.Drawable.StatSysHeadset;
         var controlIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService)).SetAction(action);
         var controlPendingIntent = PendingIntent.GetService(
             this, 4103, controlIntent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
-        builder.SetSmallIcon(Android.Resource.Drawable.IcMediaPlay)
+        builder.SetSmallIcon(global::Android.Resource.Drawable.StatSysHeadset)
             .SetContentTitle("Libation Mobile")
             .SetContentText(_title)
             .SetContentIntent(contentPendingIntent)
