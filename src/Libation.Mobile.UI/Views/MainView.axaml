@@ -155,8 +155,8 @@
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Title}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Author}" Margin="0,5,0,0" Opacity="0.75" />
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding Narrator}" Margin="0,3,0,0" FontSize="12" Opacity="0.65" />
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding Series, StringFormat='Series · {0}'}" IsVisible="{Binding Series.Length}" Margin="0,4,0,0" FontSize="12" Foreground="#C4B5FD" />
-                <TextBlock Grid.Row="4" Grid.Column="0" Text="{Binding Genre, StringFormat='Genre · {0}'}" IsVisible="{Binding Genre.Length}" Margin="0,2,0,0" FontSize="12" Opacity="0.7" />
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding Series, StringFormat='Series · {0}'}" IsVisible="{Binding HasSeries}" Margin="0,4,0,0" FontSize="12" Foreground="#C4B5FD" />
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="{Binding Genre, StringFormat='Genre · {0}'}" IsVisible="{Binding HasGenre}" Margin="0,2,0,0" FontSize="12" Opacity="0.7" />
                 <StackPanel Grid.Row="0" Grid.RowSpan="5" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="4">
                   <TextBlock Text="{Binding Length}" FontSize="12" HorizontalAlignment="Right" />
                   <TextBlock Text="{Binding Status}" FontSize="11" Opacity="0.7" HorizontalAlignment="Right" />
