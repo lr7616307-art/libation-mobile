@@ -21,9 +21,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private const int NotificationId = 4102;
     private IExoPlayer? _player;
     private string _title = "Audiobook";
+    private string? _currentFilePath;
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
+    public static string? CurrentFilePath => Current?._currentFilePath;
     public static long PositionMilliseconds => Current?.ReadPosition() ?? 0;
     public static long DurationMilliseconds => Current?.ReadDuration() ?? 0;
 
@@ -77,6 +79,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
         StopPlayer();
         _title = Path.GetFileNameWithoutExtension(path);
+        _currentFilePath = path;
 
         // Android requires a service started with startForegroundService() to
         // promote itself promptly. MediaPlayer.Prepare() can block while a
@@ -213,6 +216,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _player.Release();
         _player.Dispose();
         _player = null;
+        _currentFilePath = null;
     }
 
     private void StopPlayback()
