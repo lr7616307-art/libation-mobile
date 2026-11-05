@@ -12,6 +12,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
     private static Context AppContext => global::Android.App.Application.Context;
 
     public bool IsPlaying => AndroidLocalAudioPlaybackService.IsPlaying;
+    public string? CurrentFilePath => AndroidLocalAudioPlaybackService.CurrentFilePath;
     public long PositionMilliseconds => AndroidLocalAudioPlaybackService.PositionMilliseconds;
     public long DurationMilliseconds => AndroidLocalAudioPlaybackService.DurationMilliseconds;
 
