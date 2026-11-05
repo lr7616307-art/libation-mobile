@@ -3,6 +3,8 @@ namespace Libation.Mobile.Core;
 /// <summary>
 /// Streams an audio file from a provider-issued HTTPS URL to local storage.
 /// This component does not discover URLs, authenticate to a store, or decrypt media.
+/// Incomplete transfers are retained as a .part file and resumed with HTTP Range
+/// when the provider supports byte-range requests.
 /// </summary>
 public sealed class AudioFileDownloader
 {
@@ -33,51 +35,78 @@ public sealed class AudioFileDownloader
         var directory = Path.GetDirectoryName(fullPath)
             ?? throw new ArgumentException("Destination must include a parent directory.", nameof(destinationPath));
         Directory.CreateDirectory(directory);
-        var temporaryPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".part";
 
-        try
+        // A stable partial-file name allows a later worker run to continue the same transfer.
+        var partialPath = fullPath + ".part";
+        var existingBytes = File.Exists(partialPath) ? new FileInfo(partialPath).Length : 0;
+        if (existingBytes > _maximumBytes)
         {
-            using var response = await _httpClient.GetAsync(
-                authorizedDownloadUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            File.Delete(partialPath);
+            existingBytes = 0;
+        }
 
-            // Do not follow a provider redirect from HTTPS to an insecure transport.
-            if (response.RequestMessage?.RequestUri is { } finalUri &&
-                !string.Equals(finalUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-                throw new HttpRequestException("The download redirected to a non-HTTPS address.");
+        using var request = new HttpRequestMessage(HttpMethod.Get, authorizedDownloadUri);
+        if (existingBytes > 0)
+            request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingBytes, null);
 
-            var totalBytes = response.Content.Headers.ContentLength;
-            if (totalBytes > _maximumBytes)
+        using var response = await _httpClient.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        // Never accept a provider redirect from HTTPS to an insecure transport.
+        if (response.RequestMessage?.RequestUri is { } finalUri &&
+            !string.Equals(finalUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            throw new HttpRequestException("The download redirected to a non-HTTPS address.");
+
+        var append = existingBytes > 0 && response.StatusCode == System.Net.HttpStatusCode.PartialContent;
+        if (append)
+        {
+            if (response.Content.Headers.ContentRange?.From != existingBytes)
+                throw new HttpRequestException("The server returned an invalid byte range for the saved partial download.");
+        }
+        else if (response.StatusCode == System.Net.HttpStatusCode.PartialContent &&
+                 response.Content.Headers.ContentRange?.From is not (0 or null))
+        {
+            throw new HttpRequestException("The server returned an unexpected partial download range.");
+        }
+
+        // A server that ignores Range returns 200; safely restart rather than append duplicate bytes.
+        var startingBytes = append ? existingBytes : 0;
+        var responseLength = response.Content.Headers.ContentLength;
+        if (responseLength is not null && responseLength > _maximumBytes - startingBytes)
+            throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
+
+        await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var output = new FileStream(
+            partialPath,
+            append ? FileMode.Open : FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 64 * 1024,
+            useAsync: true);
+        if (append)
+            output.Seek(0, SeekOrigin.End);
+
+        var buffer = new byte[64 * 1024];
+        long received = startingBytes;
+        while (true)
+        {
+            var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            if (read == 0) break;
+            if (read > _maximumBytes - received)
                 throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
-
-            await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
-            await using var output = new FileStream(
-                temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
-                bufferSize: 64 * 1024, useAsync: true);
-
-            var buffer = new byte[64 * 1024];
-            long received = 0;
-            while (true)
-            {
-                var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-                if (read == 0) break;
-                if (read > _maximumBytes - received)
-                    throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
-                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                received += read;
-                progress?.Report(new AudioDownloadProgress(received, totalBytes));
-            }
-
-            await output.FlushAsync(cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporaryPath, fullPath, overwrite: true);
-            return new AudioDownloadResult(fullPath, received);
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            received += read;
+            progress?.Report(new AudioDownloadProgress(received, response.Content.Headers.ContentLength is long length
+                ? startingBytes + length
+                : null));
         }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-                File.Delete(temporaryPath);
-        }
+
+        await output.FlushAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        output.Close();
+        File.Move(partialPath, fullPath, overwrite: true);
+        return new AudioDownloadResult(fullPath, received);
     }
 }
 
