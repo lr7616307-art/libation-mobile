@@ -82,6 +82,9 @@
           <TextBox PlaceholderText="Author (required)" Text="{Binding NewAuthor, UpdateSourceTrigger=PropertyChanged}" />
           <TextBox PlaceholderText="Narrator (optional)" Text="{Binding NewNarrator, UpdateSourceTrigger=PropertyChanged}" />
           <TextBox PlaceholderText="Length, e.g. 8h 30m (optional)" Text="{Binding NewLength, UpdateSourceTrigger=PropertyChanged}" />
+          <TextBox PlaceholderText="Series (optional)" Text="{Binding NewSeries, UpdateSourceTrigger=PropertyChanged}" />
+          <TextBox PlaceholderText="Genre (optional)" Text="{Binding NewGenre, UpdateSourceTrigger=PropertyChanged}" />
+          <TextBox PlaceholderText="Description (optional)" Text="{Binding NewDescription, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" MinHeight="72" TextWrapping="Wrap" />
           <Grid ColumnDefinitions="*,Auto">
             <Button Grid.Column="0" Content="{Binding SaveButtonLabel}" Click="AddBookClicked" />
             <Button Grid.Column="1" Content="Cancel" Margin="8,0,0,0" IsVisible="{Binding IsEditing}" Click="CancelEditClicked" />
@@ -131,6 +134,9 @@
           <TextBlock Text="AUDIOBOOK DETAILS" FontSize="11" FontWeight="Bold" Foreground="#C4B5FD" />
           <TextBlock Text="{Binding SelectedBook.Title}" FontSize="22" FontWeight="Bold" TextWrapping="Wrap" Foreground="#E9D5FF" />
           <TextBlock Text="{Binding SelectedBook.Author}" FontSize="15" />
+          <TextBlock Text="{Binding SelectedBook.Series, StringFormat='Series · {0}'}" FontSize="13" />
+          <TextBlock Text="{Binding SelectedBook.Genre, StringFormat='Genre · {0}'}" FontSize="13" />
+          <TextBlock Text="{Binding SelectedBook.Description}" TextWrapping="Wrap" FontSize="13" Opacity="0.85" />
           <TextBlock Text="{Binding SelectedBook.Narrator, StringFormat='Narrated by {0}'}" FontSize="13" Opacity="0.8" />
           <Grid ColumnDefinitions="*,*" Margin="0,4,0,0">
             <TextBlock Grid.Column="0" Text="{Binding SelectedBook.Length, StringFormat='Length · {0}'}" FontSize="12" />
