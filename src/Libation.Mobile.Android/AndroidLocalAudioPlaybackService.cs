@@ -16,21 +16,25 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionSeek = "org.libationmobile.app.action.SEEK";
     public const string ActionRewind = "org.libationmobile.app.action.REWIND";
     public const string ActionForward = "org.libationmobile.app.action.FORWARD";
+    public const string ActionSetSpeed = "org.libationmobile.app.action.SET_SPEED";
     public const string ExtraFilePath = "file_path";
     public const string ExtraTitle = "title";
     public const string ExtraPosition = "position_ms";
+    public const string ExtraSpeed = "playback_speed";
 
     private const string ChannelId = "libation_audiobook_playback";
     private const int NotificationId = 4102;
     private IExoPlayer? _player;
     private string _title = "Audiobook";
     private string? _currentFilePath;
+    private float _playbackSpeed = 1f;
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
     public static string? CurrentFilePath => Current?._currentFilePath;
     public static long PositionMilliseconds => Current?.ReadPosition() ?? 0;
     public static long DurationMilliseconds => Current?.ReadDuration() ?? 0;
+    public static float PlaybackSpeed => Current?._playbackSpeed ?? 1f;
 
     public override void OnCreate()
     {
@@ -69,6 +73,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                 case ActionForward:
                     SeekBy(15_000);
                     break;
+                case ActionSetSpeed:
+                    SetPlaybackSpeed(intent.GetFloatExtra(ExtraSpeed, 1f));
+                    break;
             }
         }
         catch (Exception)
@@ -91,6 +98,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (string.IsNullOrWhiteSpace(_title))
             _title = Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
+        _playbackSpeed = 1f;
 
         // Android requires a service started with startForegroundService() to
         // promote itself promptly. MediaPlayer.Prepare() can block while a
@@ -161,6 +169,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnTrackSelectionParametersChanged(TrackSelectionParameters? parameters) { }
     public void OnTracksChanged(Tracks? tracks) { }
     public void OnVideoSizeChanged(VideoSize? size) { }
+
+    private void SetPlaybackSpeed(float speed)
+    {
+        if (_player is null || float.IsNaN(speed) || float.IsInfinity(speed)) return;
+        speed = Math.Clamp(speed, 0.5f, 3f);
+        _player.SetPlaybackParameters(new PlaybackParameters(speed, 1f));
+        _playbackSpeed = speed;
+    }
 
     private void SeekBy(long offsetMilliseconds)
     {

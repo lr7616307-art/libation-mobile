@@ -15,6 +15,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
     public string? CurrentFilePath => AndroidLocalAudioPlaybackService.CurrentFilePath;
     public long PositionMilliseconds => AndroidLocalAudioPlaybackService.PositionMilliseconds;
     public long DurationMilliseconds => AndroidLocalAudioPlaybackService.DurationMilliseconds;
+    public float PlaybackSpeed => AndroidLocalAudioPlaybackService.PlaybackSpeed;
 
     public void Play(string filePath, long startPositionMilliseconds = 0, string? title = null)
     {
@@ -50,6 +51,16 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
         ObjectDisposedException.ThrowIf(_disposed, this);
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionSeek);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, positionMilliseconds));
+        AppContext.StartService(intent);
+    }
+
+    public void SetPlaybackSpeed(float speed)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (float.IsNaN(speed) || float.IsInfinity(speed))
+            throw new ArgumentOutOfRangeException(nameof(speed));
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionSetSpeed);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraSpeed, Math.Clamp(speed, 0.5f, 3f));
         AppContext.StartService(intent);
     }
 

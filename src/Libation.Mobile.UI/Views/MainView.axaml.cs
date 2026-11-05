@@ -133,6 +133,29 @@ public partial class MainView : UserControl
     private async void RewindAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await SeekRelativeAsync(-15_000);
 
+    private void PlaybackSpeedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_localAudioPlayer is null)
+        {
+            _viewModel.ReportAudioStatus("Playback speed is available when an audiobook is playing.");
+            return;
+        }
+
+        float[] speeds = [0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f];
+        var currentIndex = Array.FindIndex(speeds, speed => Math.Abs(speed - _localAudioPlayer.PlaybackSpeed) < 0.01f);
+        var nextSpeed = speeds[(currentIndex + 1) % speeds.Length];
+        try
+        {
+            _localAudioPlayer.SetPlaybackSpeed(nextSpeed);
+            PlaybackSpeedButton.Content = $"Speed · {nextSpeed:0.##}×";
+            _viewModel.ReportAudioStatus($"Playback speed set to {nextSpeed:0.##}×.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not change playback speed.");
+        }
+    }
+
     private async void ForwardAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await SeekRelativeAsync(15_000);
 
