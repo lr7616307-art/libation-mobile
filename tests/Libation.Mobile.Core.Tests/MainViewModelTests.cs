@@ -213,6 +213,57 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AddBookAsync_PersistsSeriesGenreAndDescriptionAndSearchFindsThem()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.NewTitle = "The Archive";
+        vm.NewAuthor = "A. Writer";
+        vm.NewSeries = "Forgotten Worlds";
+        vm.NewGenre = "Science Fiction";
+        vm.NewDescription = "A journey through distant galaxies.";
+
+        await vm.AddBookAsync();
+
+        var saved = Assert.Single((await new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")).GetBooksAsync())
+            .Where(book => book.Title == "The Archive"));
+        Assert.Equal("Forgotten Worlds", saved.Series);
+        Assert.Equal("Science Fiction", saved.Genre);
+        Assert.Equal("A journey through distant galaxies.", saved.Description);
+
+        vm.SearchText = "Forgotten Worlds";
+        Assert.Contains(vm.Books, book => book.Id == saved.Id);
+        vm.SearchText = "distant galaxies";
+        Assert.Contains(vm.Books, book => book.Id == saved.Id);
+    }
+
+    [Fact]
+    public async Task SyncLibraryAsync_MapsExtendedProviderMetadata()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var remote = new RemoteAudiobook("remote-rich", "The Archive", "A. Writer", "Narrator", "9h")
+        {
+            Series = "Forgotten Worlds",
+            Genre = "Science Fiction",
+            Description = "A journey through distant galaxies."
+        };
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([remote]), repository));
+
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+
+        var saved = Assert.Single((await repository.GetBooksAsync()).Where(book => book.Id == "provider:remote-rich"));
+        Assert.Equal("Forgotten Worlds", saved.Series);
+        Assert.Equal("Science Fiction", saved.Genre);
+        Assert.Equal("A journey through distant galaxies.", saved.Description);
+    }
+
+    [Fact]
     public async Task Search_FiltersByTitleAuthorAndNarrator()
     {
         using var directory = new TemporaryDirectory();
