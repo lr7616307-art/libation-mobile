@@ -9,6 +9,8 @@ namespace Libation.Mobile.UI.Views;
 public partial class MainView : UserControl
 {
     private readonly MainViewModel _viewModel;
+    private ILocalAudioPlayer? _localAudioPlayer;
+    private string? _playingAudiobookId;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
 
@@ -21,9 +23,11 @@ public partial class MainView : UserControl
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
         _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory));
+        _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
+        Unloaded += MainViewUnloaded;
     }
 
     public MainView(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
@@ -32,6 +36,67 @@ public partial class MainView : UserControl
         InitializeComponent();
         DataContext = _viewModel;
         _ = _viewModel.InitializeAsync();
+        Unloaded += MainViewUnloaded;
+    }
+
+    private async void PlayAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: Audiobook book }) return;
+        if (string.IsNullOrWhiteSpace(book.AudioFilePath))
+        {
+            _viewModel.ReportAudioStatus("Import an audio file for this audiobook before playing it.");
+            return;
+        }
+        if (_localAudioPlayer is null)
+        {
+            _viewModel.ReportAudioStatus("Audio playback is unavailable on this platform.");
+            return;
+        }
+        try
+        {
+            _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id));
+            _playingAudiobookId = book.Id;
+            _viewModel.ReportAudioStatus("Playing: " + book.Title);
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not play this audio file. Re-import it and try again.");
+        }
+    }
+
+    private async void PauseAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_localAudioPlayer is null || _playingAudiobookId is null) return;
+        try
+        {
+            _localAudioPlayer.Pause();
+            await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+            _viewModel.ReportAudioStatus("Playback paused. Your position has been saved.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not pause playback cleanly.");
+        }
+    }
+
+    private async void MainViewUnloaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_localAudioPlayer is null) return;
+        try
+        {
+            if (_playingAudiobookId is not null)
+            {
+                _localAudioPlayer.Pause();
+                await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+            }
+        }
+        catch (Exception) { /* Cleanup must continue even if saving progress fails. */ }
+        finally
+        {
+            _localAudioPlayer.Dispose();
+            _localAudioPlayer = null;
+            _playingAudiobookId = null;
+        }
     }
 
     private async void ExportBackupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
