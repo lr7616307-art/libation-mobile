@@ -18,6 +18,15 @@ public sealed record DownloadQueueItem(
     string? ErrorMessage = null)
 {
     [JsonIgnore]
+    public string DisplayTitle { get; init; } = AudiobookId;
+
+    [JsonIgnore]
+    public string DisplayAuthor { get; init; } = string.Empty;
+
+    [JsonIgnore]
+    public bool HasDisplayAuthor => !string.IsNullOrWhiteSpace(DisplayAuthor);
+
+    [JsonIgnore]
     public bool CanRetry => Status == DownloadStatus.Failed;
 
     [JsonIgnore]

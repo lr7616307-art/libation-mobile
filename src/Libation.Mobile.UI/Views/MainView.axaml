@@ -242,7 +242,10 @@
               <Border CornerRadius="10" Padding="12" Margin="0,0,0,8" BorderBrush="#555555" BorderThickness="1">
                 <StackPanel Spacing="6">
                   <Grid ColumnDefinitions="*,Auto,Auto,Auto">
-                    <TextBlock Grid.Column="0" Text="{Binding AudiobookId}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                      <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding DisplayAuthor}" IsVisible="{Binding HasDisplayAuthor}" FontSize="11" Opacity="0.7" TextWrapping="Wrap" />
+                    </StackPanel>
                     <TextBlock Grid.Column="1" Text="{Binding Status}" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" />
                     <Button Grid.Column="2" Content="Retry" Margin="8,0,0,0" IsEnabled="{Binding CanRetry}" Click="RetryQueueClicked" />
                     <Button Grid.Column="3" Content="Remove" Margin="8,0,0,0" IsEnabled="{Binding CanRemove}" Click="RemoveQueueClicked" />

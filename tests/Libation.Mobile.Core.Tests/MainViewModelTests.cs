@@ -278,6 +278,38 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task QueueItems_ShowAudiobookTitleAndAuthorInsteadOfInternalId()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        var vm = new MainViewModel(repository, queue);
+        await vm.InitializeAsync();
+        vm.NewTitle = "The Quiet Void";
+        vm.NewAuthor = "A. Narrator";
+        await vm.AddBookAsync();
+        var book = Assert.Single(vm.Books.Where(item => item.Title == "The Quiet Void"));
+        await vm.EnqueueAsync(book.Id);
+        var queued = Assert.Single(vm.QueueItems);
+        Assert.Equal("The Quiet Void", queued.DisplayTitle);
+        Assert.Equal("A. Narrator", queued.DisplayAuthor);
+        Assert.DoesNotContain(book.Id, queued.DisplayTitle);
+    }
+
+    [Fact]
+    public async Task QueueItems_UseAudiobookIdWhenCatalogueEntryIsMissing()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        var vm = new MainViewModel(new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")), queue);
+        await vm.InitializeAsync();
+        await vm.EnqueueAsync("missing-book-id");
+        var queued = Assert.Single(vm.QueueItems);
+        Assert.Equal("missing-book-id", queued.DisplayTitle);
+        Assert.False(queued.HasDisplayAuthor);
+    }
+
+    [Fact]
     public async Task QueueSummary_ReflectsPersistedStatusCounts()
     {
         using var directory = new TemporaryDirectory();
