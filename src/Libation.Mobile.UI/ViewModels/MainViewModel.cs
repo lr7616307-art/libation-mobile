@@ -40,6 +40,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public ObservableCollection<Audiobook> Books { get; } = [];
+    public ObservableCollection<Audiobook> LocalAudioBooks { get; } = [];
+    public bool HasLocalAudioBooks => LocalAudioBooks.Count > 0;
+    public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "No locally imported audiobooks yet. Import audio from the Library tab to see it here.";
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
 
     public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null)
@@ -366,8 +369,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(QueueSummaryLabel));
     }
 
+    private void RefreshLocalAudioBooks(IReadOnlyList<Audiobook> source)
+    {
+        var localBooks = source
+            .Where(book => !string.IsNullOrWhiteSpace(book.AudioFilePath))
+            .OrderBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        LocalAudioBooks.Clear();
+        foreach (var book in localBooks) LocalAudioBooks.Add(book);
+        OnPropertyChanged(nameof(HasLocalAudioBooks));
+        OnPropertyChanged(nameof(LocalAudioEmptyMessage));
+    }
+
     private void ApplyFilter(IReadOnlyList<Audiobook> source)
     {
+        RefreshLocalAudioBooks(source);
         var query = SearchText.Trim();
         var matches = source.Where(book =>
             (_catalogueFilterIndex == 0 ||
