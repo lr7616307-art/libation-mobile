@@ -8,7 +8,7 @@ namespace Libation.Mobile.Android;
 
 /// <summary>Owns audiobook playback independently of the Avalonia view lifecycle.</summary>
 [Service(Name = "org.libationmobile.app.AndroidLocalAudioPlaybackService", Exported = false)]
-public sealed class AndroidLocalAudioPlaybackService : Service
+public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 {
     public const string ActionPlay = "org.libationmobile.app.action.PLAY";
     public const string ActionPause = "org.libationmobile.app.action.PAUSE";
@@ -84,6 +84,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service
         StartForeground(NotificationId, BuildNotification());
 
         _player = new ExoPlayerBuilder(this).Build();
+        _player.AddListener(this);
         var mediaUri = global::Android.Net.Uri.FromFile(new Java.IO.File(path));
         _player.SetMediaItem(MediaItem.FromUri(mediaUri));
         var position = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
@@ -92,6 +93,60 @@ public sealed class AndroidLocalAudioPlaybackService : Service
         _player.Play();
         UpdateNotification();
     }
+
+
+    // Media3 player callbacks keep the foreground notification and service
+    // lifecycle synchronized with the actual decoder state.
+    public void OnPlaybackStateChanged(int playbackState)
+    {
+        if (playbackState == 4) // Player.STATE_ENDED
+        {
+            StopPlayback();
+            StopSelf();
+            return;
+        }
+
+        UpdateNotification();
+    }
+
+    public void OnIsPlayingChanged(bool isPlaying) => UpdateNotification();
+
+    public void OnPlayerError(PlaybackException? error)
+    {
+        StopPlayback();
+        StopSelf();
+    }
+
+    public void OnAudioAttributesChanged(AudioAttributes? value) { }
+    public void OnAudioSessionIdChanged(int value) { }
+    public void OnAvailableCommandsChanged(PlayerCommands? value) { }
+    public void OnCues(CueGroup? value) { }
+    public void OnDeviceInfoChanged(DeviceInfo? value) { }
+    public void OnDeviceVolumeChanged(int volume, bool muted) { }
+    public void OnEvents(IPlayer? player, PlayerEvents? events) { }
+    public void OnIsLoadingChanged(bool isLoading) { }
+    public void OnLoadingChanged(bool isLoading) { }
+    public void OnMaxSeekToPreviousPositionChanged(long value) { }
+    public void OnMediaItemTransition(MediaItem? mediaItem, int reason) { }
+    public void OnMediaMetadataChanged(MediaMetadata? metadata) { }
+    public void OnMetadata(Metadata? metadata) { }
+    public void OnPlayWhenReadyChanged(bool playWhenReady, int reason) => UpdateNotification();
+    public void OnPositionDiscontinuity(PlayerPositionInfo? oldPosition, PlayerPositionInfo? newPosition, int reason) { }
+    public void OnPlaybackParametersChanged(PlaybackParameters? parameters) { }
+    public void OnPlaybackSuppressionReasonChanged(int reason) { }
+    public void OnPlayerErrorChanged(PlaybackException? error) { }
+    public void OnPlaylistMetadataChanged(MediaMetadata? metadata) { }
+    public void OnRenderedFirstFrame() { }
+    public void OnRepeatModeChanged(int repeatMode) { }
+    public void OnSeekBackIncrementChanged(long value) { }
+    public void OnSeekForwardIncrementChanged(long value) { }
+    public void OnShuffleModeEnabledChanged(bool enabled) { }
+    public void OnSkipSilenceEnabledChanged(bool enabled) { }
+    public void OnSurfaceSizeChanged(int width, int height) { }
+    public void OnTimelineChanged(Timeline? timeline, int reason) { }
+    public void OnTrackSelectionParametersChanged(TrackSelectionParameters? parameters) { }
+    public void OnTracksChanged(Tracks? tracks) { }
+    public void OnVideoSizeChanged(VideoSize? size) { }
 
     private void CreateNotificationChannel()
     {
