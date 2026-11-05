@@ -27,7 +27,8 @@ public sealed class CoverArtDownloadService
         ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
         if (!TryGetTrustedUri(coverUrl, out var uri)) return null;
 
-        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(audiobookId))).ToLowerInvariant();
+        var cacheIdentity = audiobookId + "\\n" + uri.AbsoluteUri;
+        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cacheIdentity))).ToLowerInvariant();
         Directory.CreateDirectory(_storageDirectory);
         foreach (var extension in Extensions)
         {
@@ -47,7 +48,7 @@ public sealed class CoverArtDownloadService
         var mediaType = response.Content.Headers.ContentType?.MediaType;
         if (mediaType is not ("image/jpeg" or "image/png" or "image/webp"))
             throw new InvalidDataException("The cover response is not a supported image type.");
-        if (response.Content.Headers.ContentLength is > 0 and var length && length > _maximumBytes)
+        if (response.Content.Headers.ContentLength is long length && length > _maximumBytes)
             throw new InvalidDataException("The cover image exceeds the configured size limit.");
 
         await using var input = await response.Content.ReadAsStreamAsync(timeout.Token);
