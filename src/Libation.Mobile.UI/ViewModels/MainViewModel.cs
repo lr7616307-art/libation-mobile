@@ -30,6 +30,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _backupMessage = string.Empty;
     private bool _sortAscending = true;
     private int _catalogueFilterIndex;
+    private Audiobook? _selectedBook;
 
     private static readonly Audiobook[] InitialSamples =
     [
@@ -45,6 +46,30 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasNoLocalAudioBooks => !HasLocalAudioBooks;
     public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "No locally imported audiobooks yet. Import audio from the Library tab to see it here.";
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
+    public Audiobook? SelectedBook
+    {
+        get => _selectedBook;
+        private set
+        {
+            if (_selectedBook == value) return;
+            _selectedBook = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasSelectedBook));
+            OnPropertyChanged(nameof(SelectedBookAudioLabel));
+            OnPropertyChanged(nameof(SelectedBookResumeLabel));
+        }
+    }
+    public bool HasSelectedBook => SelectedBook is not null;
+    public string SelectedBookAudioLabel => SelectedBook is null ? string.Empty :
+        string.IsNullOrWhiteSpace(SelectedBook.AudioFilePath) ? "Audio not imported on this device" : "Local audio is ready to play";
+    public string SelectedBookResumeLabel => SelectedBook is null ? string.Empty :
+        SelectedBook.PlaybackPositionMilliseconds > 0
+            ? $"Saved position: {TimeSpan.FromMilliseconds(SelectedBook.PlaybackPositionMilliseconds):h\\:mm\\:ss}"
+            : "Not started yet";
+    public void SelectBook(string audiobookId)
+    {
+        SelectedBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
+    }
 
     public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null)
     {
@@ -241,6 +266,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
             if (book is null || !book.CanDelete) { ErrorMessage = "Demo entries are protected; only manually added entries can be deleted."; return; }
             if (_editingBookId == audiobookId) CancelEdit();
+            if (SelectedBook?.Id == audiobookId) SelectedBook = null;
             await _repository.RemoveAsync(audiobookId, cancellationToken);
             _allBooks = await _repository.GetBooksAsync(cancellationToken);
             ApplyFilter(_allBooks);
