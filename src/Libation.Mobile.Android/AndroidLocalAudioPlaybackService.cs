@@ -14,6 +14,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionPause = "org.libationmobile.app.action.PAUSE";
     public const string ActionResume = "org.libationmobile.app.action.RESUME";
     public const string ActionSeek = "org.libationmobile.app.action.SEEK";
+    public const string ActionRewind = "org.libationmobile.app.action.REWIND";
+    public const string ActionForward = "org.libationmobile.app.action.FORWARD";
     public const string ExtraFilePath = "file_path";
     public const string ExtraPosition = "position_ms";
 
@@ -59,6 +61,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                         var target = Math.Clamp(intent.GetLongExtra(ExtraPosition, 0), 0, int.MaxValue);
                         _player.SeekTo((int)target);
                     }
+                    break;
+                case ActionRewind:
+                    SeekBy(-15_000);
+                    break;
+                case ActionForward:
+                    SeekBy(15_000);
                     break;
             }
         }
@@ -151,6 +159,16 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnTracksChanged(Tracks? tracks) { }
     public void OnVideoSizeChanged(VideoSize? size) { }
 
+    private void SeekBy(long offsetMilliseconds)
+    {
+        if (_player is null) return;
+        var current = Math.Max(0L, _player.CurrentPosition);
+        var target = Math.Max(0L, current + offsetMilliseconds);
+        var duration = _player.Duration;
+        if (duration > 0) target = Math.Min(target, duration);
+        _player.SeekTo((int)Math.Min(target, int.MaxValue));
+    }
+
     private void CreateNotificationChannel()
     {
         if (Build.VERSION.SdkInt < BuildVersionCodes.O) return;
@@ -181,13 +199,24 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             this, 4103, controlIntent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
+        var rewindIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService)).SetAction(ActionRewind);
+        var rewindPendingIntent = PendingIntent.GetService(
+            this, 4104, rewindIntent,
+            PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
+        var forwardIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService)).SetAction(ActionForward);
+        var forwardPendingIntent = PendingIntent.GetService(
+            this, 4105, forwardIntent,
+            PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
+
         builder.SetSmallIcon(global::Android.Resource.Drawable.StatSysHeadset)
-            .SetContentTitle("Libation Mobile")
+            .SetContentTitle("VØRATH")
             .SetContentText(_title)
             .SetContentIntent(contentPendingIntent)
             .SetOngoing(_player?.IsPlaying == true)
             .SetOnlyAlertOnce(true)
-            .AddAction(actionIcon, actionLabel, controlPendingIntent);
+            .AddAction(global::Android.Resource.Drawable.IcMediaRew, "−15 sec", rewindPendingIntent)
+            .AddAction(actionIcon, actionLabel, controlPendingIntent)
+            .AddAction(global::Android.Resource.Drawable.IcMediaFf, "+15 sec", forwardPendingIntent);
         return builder.Build();
     }
 
