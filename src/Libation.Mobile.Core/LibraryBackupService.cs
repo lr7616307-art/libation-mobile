@@ -26,7 +26,9 @@ public static class LibraryBackupService
         ArgumentNullException.ThrowIfNull(books);
         if (!destination.CanWrite) throw new ArgumentException("The backup destination must be writable.", nameof(destination));
 
-        var snapshot = books.ToList();
+        // Local file paths are device-specific and the backup intentionally excludes audio/artwork.
+        // Never export absolute paths that would be stale or disclose private storage locations.
+        var snapshot = books.Select(CreatePortableBook).ToList();
         Validate(snapshot);
         var document = new BackupDocument(CurrentFormatVersion, DateTime.UtcNow, snapshot);
         await JsonSerializer.SerializeAsync(destination, document, Options, cancellationToken);
@@ -68,8 +70,17 @@ public static class LibraryBackupService
         if (document.Books is null || document.Books.Count == 0)
             throw new InvalidDataException("The backup contains no catalogue entries.");
         Validate(document.Books);
-        return document.Books.AsReadOnly();
+        // Also sanitize imported backups: never trust another device's local filesystem paths.
+        return document.Books.Select(CreatePortableBook).ToList().AsReadOnly();
     }
+
+    private static Audiobook CreatePortableBook(Audiobook book)
+        => book with
+        {
+            AudioFilePath = null,
+            CoverImagePath = null,
+            PlaybackPositionMilliseconds = 0
+        };
 
     private static void Validate(IReadOnlyCollection<Audiobook> books)
     {
