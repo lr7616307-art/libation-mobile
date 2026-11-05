@@ -45,6 +45,29 @@
               <TextBlock Text="Choose an audiobook in Library and tap Play. Playback runs in the Android foreground service." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
             </StackPanel>
           </Border>
+          <StackPanel Spacing="8" IsVisible="{Binding HasContinueListeningBooks}">
+            <TextBlock Text="Continue listening" FontSize="20" FontWeight="SemiBold" />
+            <ItemsControl ItemsSource="{Binding ContinueListeningBooks}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border CornerRadius="12" Padding="14" Margin="0,0,0,10" BorderBrush="#8B70C7" BorderThickness="1" Background="#171225">
+                    <Grid ColumnDefinitions="52,*,Auto" RowDefinitions="Auto,Auto,Auto">
+                      <Grid Grid.Row="0" Grid.RowSpan="3" Grid.Column="0" Width="44" Height="62" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <Border CornerRadius="6" Background="#120F22" BorderBrush="#51416F" BorderThickness="1">
+                          <TextBlock Text="VØ" FontSize="18" FontWeight="Bold" Foreground="#A78BFA" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <Image Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" IsVisible="{Binding CoverImagePath, Converter={StaticResource CoverImageVisibilityConverter}}" Stretch="UniformToFill" />
+                      </Grid>
+                      <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Author}" Margin="0,3,0,0" FontSize="12" Opacity="0.7" />
+                      <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ResumePositionLabel}" Margin="0,5,0,0" FontSize="12" FontWeight="SemiBold" Foreground="#C4B5FD" />
+                      <Button Grid.Row="0" Grid.RowSpan="3" Grid.Column="2" Content="Resume" VerticalAlignment="Center" Click="PlayAudioClicked" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
           <StackPanel Spacing="8">
             <TextBlock Text="Audiobooks on this device" FontSize="20" FontWeight="SemiBold" />
             <TextBlock Text="{Binding LocalAudioEmptyMessage}" IsVisible="{Binding HasNoLocalAudioBooks}" FontSize="13" Opacity="0.7" TextWrapping="Wrap" />

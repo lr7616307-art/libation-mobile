@@ -49,6 +49,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     public ObservableCollection<Audiobook> Books { get; } = [];
     public ObservableCollection<Audiobook> LocalAudioBooks { get; } = [];
+    public IReadOnlyList<Audiobook> ContinueListeningBooks { get; private set; } = [];
+    public bool HasContinueListeningBooks => ContinueListeningBooks.Count > 0;
     public bool HasLocalAudioBooks => LocalAudioBooks.Count > 0;
     public bool HasNoLocalAudioBooks => !HasLocalAudioBooks;
     public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "No locally imported audiobooks yet. Import audio from the Library tab to see it here.";
@@ -489,6 +491,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
             .ToArray();
         LocalAudioBooks.Clear();
         foreach (var book in localBooks) LocalAudioBooks.Add(book);
+        ContinueListeningBooks = localBooks
+            .Where(book => book.PlaybackPositionMilliseconds > 0)
+            .OrderBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        OnPropertyChanged(nameof(ContinueListeningBooks));
+        OnPropertyChanged(nameof(HasContinueListeningBooks));
         OnPropertyChanged(nameof(HasLocalAudioBooks));
         OnPropertyChanged(nameof(HasNoLocalAudioBooks));
         OnPropertyChanged(nameof(LocalAudioEmptyMessage));
