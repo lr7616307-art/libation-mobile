@@ -214,14 +214,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnLoadingChanged(bool isLoading) { }
     public void OnMaxSeekToPreviousPositionChanged(long value) { }
     public void OnMediaItemTransition(MediaItem? mediaItem, int reason) { }
-    public void OnMediaMetadataChanged(MediaMetadata? metadata) { }
+    public void OnMediaMetadataChanged(AndroidX.Media3.Common.MediaMetadata? metadata) { }
     public void OnMetadata(Metadata? metadata) { }
     public void OnPlayWhenReadyChanged(bool playWhenReady, int reason) => UpdateNotification();
     public void OnPositionDiscontinuity(PlayerPositionInfo? oldPosition, PlayerPositionInfo? newPosition, int reason) { }
     public void OnPlaybackParametersChanged(PlaybackParameters? parameters) { }
     public void OnPlaybackSuppressionReasonChanged(int reason) { }
     public void OnPlayerErrorChanged(PlaybackException? error) { }
-    public void OnPlaylistMetadataChanged(MediaMetadata? metadata) { }
+    public void OnPlaylistMetadataChanged(AndroidX.Media3.Common.MediaMetadata? metadata) { }
     public void OnRenderedFirstFrame() { }
     public void OnRepeatModeChanged(int repeatMode) { }
     public void OnSeekBackIncrementChanged(long value) { }
@@ -416,9 +416,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (_mediaSession is null) return;
         try
         {
-            _mediaSession.SetMetadata(new MediaMetadata.Builder()
-                .PutString(MediaMetadata.MetadataKeyTitle, _title)
-                .PutString(MediaMetadata.MetadataKeyArtist, "VØRATH")
+            _mediaSession.SetMetadata(new global::Android.Media.MediaMetadata.Builder()
+                .PutString(global::Android.Media.MediaMetadata.MetadataKeyTitle, _title)
+                .PutString(global::Android.Media.MediaMetadata.MetadataKeyArtist, "VØRATH")
                 .Build());
 
             var actions = PlaybackState.ActionPlay | PlaybackState.ActionPause |
