@@ -60,6 +60,9 @@ public partial class MainView : UserControl
 
     private async Task InitializeAndRestorePlaybackAsync()
     {
+        // The view may be unloaded and loaded again while the Android playback
+        // service keeps running. Recreate its lightweight adapter on each load.
+        _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
         await _viewModel.InitializeAsync();
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
