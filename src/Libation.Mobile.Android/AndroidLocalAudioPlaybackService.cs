@@ -18,11 +18,15 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionForward = "org.libationmobile.app.action.FORWARD";
     public const string ActionSetSpeed = "org.libationmobile.app.action.SET_SPEED";
     public const string ActionRestore = "org.libationmobile.app.action.RESTORE";
+    public const string ActionSetSleepTimer = "org.libationmobile.app.action.SET_SLEEP_TIMER";
+    public const string ActionCancelSleepTimer = "org.libationmobile.app.action.CANCEL_SLEEP_TIMER";
     public const string ExtraFilePath = "file_path";
     public const string ExtraTitle = "title";
     public const string ExtraPosition = "position_ms";
     public const string ExtraSpeed = "playback_speed";
     public const string ExtraAutoPlay = "auto_play";
+    public const string ExtraSleepDeadlineUtcTicks = "sleep_deadline_utc_ticks";
+    public const string ExtraSleepChapterPosition = "sleep_chapter_position";
 
     private const string ChannelId = "libation_audiobook_playback";
     private const int NotificationId = 4102;
@@ -32,6 +36,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private float _playbackSpeed = 1f;
     private Handler? _checkpointHandler;
     private Java.Lang.Runnable? _checkpointRunnable;
+    private Java.Lang.Runnable? _sleepTimerRunnable;
+    private long? _sleepDeadlineUtcTicks;
+    private long? _sleepChapterPositionMilliseconds;
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
@@ -53,6 +60,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                 _checkpointHandler?.PostDelayed(_checkpointRunnable, 5_000);
         });
         _checkpointHandler.PostDelayed(_checkpointRunnable, 5_000);
+        RestoreSleepTimer();
+        _sleepTimerRunnable = new Java.Lang.Runnable(CheckSleepTimer);
+        _checkpointHandler.PostDelayed(_sleepTimerRunnable, 1_000);
     }
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
@@ -94,6 +104,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     break;
                 case ActionRestore:
                     RestoreSavedPlayback();
+                    break;
+                case ActionSetSleepTimer:
+                    SetSleepTimer(intent);
+                    break;
+                case ActionCancelSleepTimer:
+                    ClearSleepTimer();
                     break;
             }
         }
@@ -218,6 +234,59 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         StartPlayback(intent);
     }
 
+    private void SetSleepTimer(Intent intent)
+    {
+        var deadline = intent.GetLongExtra(ExtraSleepDeadlineUtcTicks, 0);
+        var chapterPosition = intent.GetLongExtra(ExtraSleepChapterPosition, -1);
+        _sleepDeadlineUtcTicks = deadline > 0 ? deadline : null;
+        _sleepChapterPositionMilliseconds = chapterPosition >= 0 ? chapterPosition : null;
+        PersistSleepTimer();
+    }
+
+    private void RestoreSleepTimer()
+    {
+        var preferences = GetSharedPreferences("vorath_sleep_timer", FileCreationMode.Private);
+        var deadline = preferences?.GetLong("deadline_utc_ticks", 0) ?? 0;
+        var chapter = preferences?.GetLong("chapter_position_ms", -1) ?? -1;
+        _sleepDeadlineUtcTicks = deadline > 0 ? deadline : null;
+        _sleepChapterPositionMilliseconds = chapter >= 0 ? chapter : null;
+    }
+
+    private void PersistSleepTimer()
+    {
+        var editor = GetSharedPreferences("vorath_sleep_timer", FileCreationMode.Private)?.Edit();
+        editor?.PutLong("deadline_utc_ticks", _sleepDeadlineUtcTicks ?? 0);
+        editor?.PutLong("chapter_position_ms", _sleepChapterPositionMilliseconds ?? -1);
+        editor?.Apply();
+    }
+
+    private void ClearSleepTimer()
+    {
+        _sleepDeadlineUtcTicks = null;
+        _sleepChapterPositionMilliseconds = null;
+        PersistSleepTimer();
+    }
+
+    private void CheckSleepTimer()
+    {
+        try
+        {
+            var deadlineReached = _sleepDeadlineUtcTicks is { } deadline && DateTime.UtcNow.Ticks >= deadline;
+            var chapterReached = _sleepChapterPositionMilliseconds is { } chapter && _player?.IsPlaying == true && ReadPosition() >= chapter;
+            if (deadlineReached || chapterReached)
+            {
+                if (_player?.IsPlaying == true) _player.Pause();
+                SavePlaybackSnapshot();
+                ClearSleepTimer();
+                UpdateNotification();
+            }
+        }
+        catch (Exception) { /* Timer checks must never interrupt playback. */ }
+        finally
+        {
+            if (_sleepTimerRunnable is not null) _checkpointHandler?.PostDelayed(_sleepTimerRunnable, 1_000);
+        }
+    }
     private void SavePlaybackSnapshot()
     {
         if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
@@ -346,8 +415,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         SavePlaybackSnapshot();
         if (_checkpointRunnable is not null)
             _checkpointHandler?.RemoveCallbacks(_checkpointRunnable);
+        if (_sleepTimerRunnable is not null)
+            _checkpointHandler?.RemoveCallbacks(_sleepTimerRunnable);
         _checkpointRunnable?.Dispose();
         _checkpointRunnable = null;
+        _sleepTimerRunnable?.Dispose();
+        _sleepTimerRunnable = null;
         _checkpointHandler = null;
         StopPlayback(clearRecovery: false);
         if (Current == this) Current = null;

@@ -4,7 +4,7 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Android;
 
 /// <summary>UI adapter for the playback service, including crash-safe session recovery.</summary>
-public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
+public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer
 {
     private static Context AppContext => global::Android.App.Application.Context;
 
@@ -71,6 +71,20 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
         AppContext.StartService(intent);
     }
 
+    public void SetSleepTimer(DateTimeOffset? deadline, long? chapterPositionMilliseconds)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionSetSleepTimer);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraSleepDeadlineUtcTicks, deadline?.UtcDateTime.Ticks ?? 0);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraSleepChapterPosition, chapterPositionMilliseconds ?? -1);
+        AppContext.StartService(intent);
+    }
+
+    public void CancelSleepTimer()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        AppContext.StartService(CreateIntent(AndroidLocalAudioPlaybackService.ActionCancelSleepTimer));
+    }
     public void SetPlaybackSpeed(float speed)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

@@ -157,6 +157,8 @@ public partial class MainView : UserControl
             var minutes = SleepTimerMinutes[_sleepTimerSelection];
             _sleepAtPositionMilliseconds = null;
             _sleepTimerEndsAt = DateTimeOffset.UtcNow.AddMinutes(minutes);
+            if (_localAudioPlayer is ISleepTimerAudioPlayer timerPlayer)
+                timerPlayer.SetSleepTimer(_sleepTimerEndsAt, null);
             _sleepTimer.Start();
             UpdateSleepTimerButton();
             _viewModel.ReportAudioStatus($"Sleep timer set for {minutes} minutes.");
@@ -177,6 +179,8 @@ public partial class MainView : UserControl
 
             _sleepAtPositionMilliseconds = nextChapter.Value;
             _sleepTimerEndsAt = null;
+            if (_localAudioPlayer is ISleepTimerAudioPlayer timerPlayer)
+                timerPlayer.SetSleepTimer(null, _sleepAtPositionMilliseconds);
             _sleepTimer.Start();
             UpdateSleepTimerButton();
             _viewModel.ReportAudioStatus("Sleep timer will pause at the end of this chapter.");
@@ -193,6 +197,8 @@ public partial class MainView : UserControl
         _sleepTimerEndsAt = null;
         _sleepAtPositionMilliseconds = null;
         _sleepTimerSelection = -1;
+        if (_localAudioPlayer is ISleepTimerAudioPlayer timerPlayer)
+            timerPlayer.CancelSleepTimer();
         if (SleepTimerButton is not null)
             SleepTimerButton.Content = "Sleep timer · Off";
     }
