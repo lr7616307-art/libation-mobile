@@ -108,6 +108,22 @@ public partial class MainView : UserControl
         }
     }
 
+    private void ResumeAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_localAudioPlayer is null || _playingAudiobookId is null) return;
+        try
+        {
+            _localAudioPlayer.Resume();
+            _playbackProgressTimer.Start();
+            var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
+            if (book is not null) _viewModel.ReportAudioStatus("Playing: " + book.Title);
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not resume playback.");
+        }
+    }
+
     private async void RewindAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await SeekRelativeAsync(-15_000);
 
