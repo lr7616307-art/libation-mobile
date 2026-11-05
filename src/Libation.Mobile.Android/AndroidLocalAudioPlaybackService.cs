@@ -120,7 +120,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnAudioAttributesChanged(AudioAttributes? value) { }
     public void OnAudioSessionIdChanged(int value) { }
     public void OnAvailableCommandsChanged(PlayerCommands? value) { }
-    public void OnCues(CueGroup? value) { }
+    public void OnCues(AndroidX.Media3.Common.Text.CueGroup? value) { }
     public void OnDeviceInfoChanged(DeviceInfo? value) { }
     public void OnDeviceVolumeChanged(int volume, bool muted) { }
     public void OnEvents(IPlayer? player, PlayerEvents? events) { }
