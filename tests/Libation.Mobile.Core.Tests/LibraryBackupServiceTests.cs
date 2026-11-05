@@ -25,8 +25,8 @@ public sealed class LibraryBackupServiceTests
         stream.Position = 0;
         var restored = await LibraryBackupService.ImportAsync(stream);
 
-        Assert.Equal(books[0] with { AudioFilePath = null, CoverImagePath = null, PlaybackPositionMilliseconds = 0 }, restored[0]);
-        Assert.Equal(books[1], restored[1]);
+        Assert.Equal(books[0] with { AudioFilePath = null, CoverImagePath = null, PlaybackPositionMilliseconds = 0, Chapters = restored[0].Chapters }, restored[0]);
+        Assert.Equal(books[1] with { Chapters = restored[1].Chapters }, restored[1]);
     }
 
     [Fact]

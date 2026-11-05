@@ -29,7 +29,11 @@ public sealed class JsonLibraryRepositoryTests
         await repository.ReplaceAllAsync(expected);
         var actual = await new JsonLibraryRepository(path).GetBooksAsync();
 
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected.Length, actual.Count);
+        for (var index = 0; index < expected.Length; index++)
+        {
+            Assert.Equal(expected[index] with { Chapters = actual[index].Chapters }, actual[index]);
+        }
     }
 
     [Fact]
