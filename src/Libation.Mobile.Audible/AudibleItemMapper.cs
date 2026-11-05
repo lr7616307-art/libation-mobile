@@ -16,7 +16,10 @@ public static class AudibleItemMapper
             item.TitleWithSubtitle?.Trim() ?? string.Empty,
             OrUnknownAuthor(JoinNames(item.Authors?.Select(person => person?.Name))),
             JoinNames(item.Narrators?.Select(person => person?.Name)),
-            Convert.ToString(item.LengthInMinutes, CultureInfo.InvariantCulture) ?? string.Empty);
+            Convert.ToString(item.LengthInMinutes, CultureInfo.InvariantCulture) ?? string.Empty)
+        {
+            CoverImageUrl = item.ProductImages?.The500?.AbsoluteUri ?? string.Empty
+        };
     }
 
     private static string OrUnknownAuthor(string author)
