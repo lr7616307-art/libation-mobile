@@ -167,6 +167,25 @@
           </Grid>
           <TextBlock Text="{Binding SelectedBookAudioLabel}" FontSize="13" />
           <TextBlock Text="{Binding SelectedBookResumeLabel}" FontSize="12" Opacity="0.75" />
+          <TextBlock Text="CHAPTERS" FontSize="11" FontWeight="Bold" Foreground="#C4B5FD" Margin="0,8,0,0" />
+          <TextBlock Text="{Binding SelectedBookChapterCountLabel}" FontSize="12" Opacity="0.7" />
+          <ItemsControl ItemsSource="{Binding SelectedBook.Chapters}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="*,Auto" Margin="0,2,0,2">
+                  <TextBlock Grid.Column="0" Text="{Binding Title}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="{Binding StartPositionMilliseconds, StringFormat='{}{0} ms'}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" />
+                    <Button Content="Remove" Tag="{Binding StartPositionMilliseconds}" Click="RemoveChapterClicked" />
+                  </StackPanel>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Text="Add a chapter marker" FontSize="13" FontWeight="SemiBold" Margin="0,6,0,0" />
+          <TextBox PlaceholderText="Chapter title" Text="{Binding NewChapterTitle, UpdateSourceTrigger=PropertyChanged}" />
+          <TextBox PlaceholderText="Start time (mm:ss or hh:mm:ss)" Text="{Binding NewChapterStart, UpdateSourceTrigger=PropertyChanged}" />
+          <Button Content="Add chapter" Click="AddChapterClicked" />
           <Button Content="Close details" HorizontalAlignment="Right" Click="CloseDetailsClicked" />
         </StackPanel>
       </Border>

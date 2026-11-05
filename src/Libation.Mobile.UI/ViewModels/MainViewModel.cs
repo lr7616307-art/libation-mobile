@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using Libation.Mobile.Core;
 
@@ -26,6 +27,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _newSeries = string.Empty;
     private string _newGenre = string.Empty;
     private string _newDescription = string.Empty;
+    private string _newChapterTitle = string.Empty;
+    private string _newChapterStart = string.Empty;
     private string? _editingBookId;
     private bool _isLoading;
     private string _errorMessage = string.Empty;
@@ -61,6 +64,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(HasSelectedBook));
             OnPropertyChanged(nameof(SelectedBookAudioLabel));
             OnPropertyChanged(nameof(SelectedBookResumeLabel));
+            OnPropertyChanged(nameof(SelectedBookChapterCountLabel));
         }
     }
     public bool HasSelectedBook => SelectedBook is not null;
@@ -158,6 +162,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string NewSeries { get => _newSeries; set => SetField(ref _newSeries, value); }
     public string NewGenre { get => _newGenre; set => SetField(ref _newGenre, value); }
     public string NewDescription { get => _newDescription; set => SetField(ref _newDescription, value); }
+    public string NewChapterTitle { get => _newChapterTitle; set => SetField(ref _newChapterTitle, value); }
+    public string NewChapterStart { get => _newChapterStart; set => SetField(ref _newChapterStart, value); }
+    public string SelectedBookChapterCountLabel => SelectedBook is null ? string.Empty : $"{SelectedBook.Chapters.Count} chapter marker(s)";
     public bool IsEditing => _editingBookId is not null;
     public string SaveButtonLabel => IsEditing ? "Save changes" : "Save to local catalogue";
 
@@ -274,6 +281,46 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { ErrorMessage = "Could not save this audiobook to the local catalogue."; }
+    }
+
+    public async Task AddChapterAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedBook is null) { ErrorMessage = "Open an audiobook's details before adding a chapter."; return; }
+        var title = NewChapterTitle.Trim();
+        if (string.IsNullOrWhiteSpace(title)) { ErrorMessage = "Enter a chapter title."; return; }
+        if (!TimeSpan.TryParse(NewChapterStart.Trim(), CultureInfo.InvariantCulture, out var start)
+            || start < TimeSpan.Zero || start.TotalMilliseconds > long.MaxValue)
+        { ErrorMessage = "Enter a valid start time as mm:ss or hh:mm:ss."; return; }
+        var startMilliseconds = (long)start.TotalMilliseconds;
+        var chapters = AudiobookChapterService.Normalize(SelectedBook.Chapters).ToList();
+        if (chapters.Any(chapter => chapter.StartPositionMilliseconds == startMilliseconds))
+        { ErrorMessage = "A chapter already starts at that time. Choose a different start time."; return; }
+        try
+        {
+            var updated = SelectedBook with { Chapters = AudiobookChapterService.Normalize(chapters.Append(new AudiobookChapter(title, startMilliseconds))) };
+            await _repository.UpsertAsync(updated, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            SelectBook(updated.Id);
+            NewChapterTitle = string.Empty; NewChapterStart = string.Empty;
+            ErrorMessage = string.Empty; AudioImportStatus = $"Chapter added to: {updated.Title}";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not save this chapter marker."; }
+    }
+
+    public async Task RemoveChapterAsync(long startPositionMilliseconds, CancellationToken cancellationToken = default)
+    {
+        if (SelectedBook is null) return;
+        try
+        {
+            var updated = SelectedBook with { Chapters = AudiobookChapterService.Normalize(SelectedBook.Chapters).Where(chapter => chapter.StartPositionMilliseconds != startPositionMilliseconds).ToArray() };
+            await _repository.UpsertAsync(updated, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            SelectBook(updated.Id);
+            ErrorMessage = string.Empty; AudioImportStatus = $"Chapter marker removed from: {updated.Title}";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not remove this chapter marker."; }
     }
 
     public async Task RemoveBookAsync(string audiobookId, CancellationToken cancellationToken = default)
@@ -422,7 +469,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception) { ErrorMessage = "Could not remove the item from the local download queue."; }
     }
 
-    private void ClearEditor() { NewTitle = string.Empty; NewAuthor = string.Empty; NewNarrator = string.Empty; NewLength = string.Empty; NewSeries = string.Empty; NewGenre = string.Empty; NewDescription = string.Empty; }
+    private void ClearEditor() { NewTitle = string.Empty; NewAuthor = string.Empty; NewNarrator = string.Empty; NewLength = string.Empty; NewSeries = string.Empty; NewGenre = string.Empty; NewDescription = string.Empty; NewChapterTitle = string.Empty; NewChapterStart = string.Empty; }
 
     private async Task ReloadQueueAsync(CancellationToken cancellationToken)
     {

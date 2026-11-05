@@ -361,6 +361,15 @@ public partial class MainView : UserControl
             _viewModel.SelectBook(book.Id);
     }
 
+    private async void AddChapterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await _viewModel.AddChapterAsync();
+
+    private async void RemoveChapterClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: long startPositionMilliseconds })
+            await _viewModel.RemoveChapterAsync(startPositionMilliseconds);
+    }
+
     private void CloseDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.SelectBook(string.Empty);
 
