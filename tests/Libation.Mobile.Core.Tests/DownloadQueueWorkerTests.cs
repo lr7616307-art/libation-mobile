@@ -118,6 +118,74 @@ public sealed class DownloadQueueWorkerTests
     }
 
 
+    [Fact]
+    public async Task ProcessNextAsync_InvokesOptionalPostDownloadProcessorAfterTransfer()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-processed");
+        var payload = new byte[] { 4, 5, 6 };
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload)
+        }));
+        var sourcePath = Path.Combine(directory.Path, "book.m4b");
+        var processor = new RecordingProcessor();
+
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book"), sourcePath),
+            processor);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(sourcePath, processor.InputPath);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(sourcePath));
+        Assert.Equal(DownloadStatus.Completed, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_PostProcessorFailureMarksItemFailedAndKeepsDownloadedFile()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-processing-failed");
+        var payload = new byte[] { 9, 8, 7 };
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload)
+        }));
+        var sourcePath = Path.Combine(directory.Path, "book.m4b");
+
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book"), sourcePath),
+            new ThrowingProcessor());
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(sourcePath));
+    }
+
+    private sealed class RecordingProcessor : IAudioPostDownloadProcessor
+    {
+        public string? InputPath { get; private set; }
+
+        public Task<string> ProcessAsync(string downloadedFilePath, CancellationToken cancellationToken = default)
+        {
+            InputPath = downloadedFilePath;
+            return Task.FromResult(downloadedFilePath);
+        }
+    }
+
+    private sealed class ThrowingProcessor : IAudioPostDownloadProcessor
+    {
+        public Task<string> ProcessAsync(string downloadedFilePath, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Audio processing failed.");
+    }
+
     private sealed class ConcurrencyTrackingSource : IAuthorizedAudioDownloadSource
     {
         private int _activeCalls;
