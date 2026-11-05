@@ -16,6 +16,9 @@ public sealed record Audiobook(
     public string Genre { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
 
+    /// <summary>Absolute path to app-managed local cover artwork, if present.</summary>
+    public string? CoverImagePath { get; init; }
+
     [JsonIgnore]
     public bool HasSeries => !string.IsNullOrWhiteSpace(Series);
 
