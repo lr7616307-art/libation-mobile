@@ -17,6 +17,7 @@ public partial class MainView : UserControl
     private DateTimeOffset? _sleepTimerEndsAt;
     private static readonly int[] SleepTimerMinutes = [15, 30, 45, 60];
     private int _sleepTimerSelection = -1;
+    private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
@@ -148,24 +149,46 @@ public partial class MainView : UserControl
         }
 
         _sleepTimerSelection++;
-        if (_sleepTimerSelection >= SleepTimerMinutes.Length)
+        if (_sleepTimerSelection < SleepTimerMinutes.Length)
         {
-            CancelSleepTimer();
-            _viewModel.ReportAudioStatus("Sleep timer cancelled.");
+            var minutes = SleepTimerMinutes[_sleepTimerSelection];
+            _sleepAtPositionMilliseconds = null;
+            _sleepTimerEndsAt = DateTimeOffset.UtcNow.AddMinutes(minutes);
+            _sleepTimer.Start();
+            UpdateSleepTimerButton();
+            _viewModel.ReportAudioStatus($"Sleep timer set for {minutes} minutes.");
             return;
         }
 
-        var minutes = SleepTimerMinutes[_sleepTimerSelection];
-        _sleepTimerEndsAt = DateTimeOffset.UtcNow.AddMinutes(minutes);
-        _sleepTimer.Start();
-        UpdateSleepTimerButton();
-        _viewModel.ReportAudioStatus($"Sleep timer set for {minutes} minutes.");
+        if (_sleepTimerSelection == SleepTimerMinutes.Length)
+        {
+            var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
+            var chapters = AudiobookChapterService.Normalize(book?.Chapters, _localAudioPlayer.DurationMilliseconds);
+            var nextChapter = AudiobookChapterService.GetNextChapterPosition(chapters, _localAudioPlayer.PositionMilliseconds);
+            if (chapters.Count == 0 || nextChapter is null)
+            {
+                _sleepTimerSelection = SleepTimerMinutes.Length - 1;
+                _viewModel.ReportAudioStatus("Add a following chapter marker to use end-of-chapter sleep.");
+                return;
+            }
+
+            _sleepAtPositionMilliseconds = nextChapter.Value;
+            _sleepTimerEndsAt = null;
+            _sleepTimer.Start();
+            UpdateSleepTimerButton();
+            _viewModel.ReportAudioStatus("Sleep timer will pause at the end of this chapter.");
+            return;
+        }
+
+        CancelSleepTimer();
+        _viewModel.ReportAudioStatus("Sleep timer cancelled.");
     }
 
     private void CancelSleepTimer()
     {
         _sleepTimer.Stop();
         _sleepTimerEndsAt = null;
+        _sleepAtPositionMilliseconds = null;
         _sleepTimerSelection = -1;
         if (SleepTimerButton is not null)
             SleepTimerButton.Content = "Sleep timer · Off";
@@ -175,6 +198,12 @@ public partial class MainView : UserControl
     {
         if (SleepTimerButton is null)
             return;
+
+        if (_sleepAtPositionMilliseconds is not null)
+        {
+            SleepTimerButton.Content = "Sleep timer · End of chapter";
+            return;
+        }
 
         if (_sleepTimerEndsAt is not { } endsAt)
         {
@@ -195,20 +224,37 @@ public partial class MainView : UserControl
 
     private async void SleepTimerTick(object? sender, EventArgs e)
     {
-        if (_sleepTimerEndsAt is not { } endsAt)
+        var shouldPause = false;
+        if (_sleepAtPositionMilliseconds is { } chapterEnd)
+        {
+            shouldPause = _localAudioPlayer is not null && _localAudioPlayer.PositionMilliseconds >= chapterEnd;
+            if (!shouldPause)
+            {
+                UpdateSleepTimerButton();
+                return;
+            }
+        }
+        else if (_sleepTimerEndsAt is { } endsAt)
+        {
+            if (DateTimeOffset.UtcNow < endsAt)
+            {
+                UpdateSleepTimerButton();
+                return;
+            }
+            shouldPause = true;
+        }
+        else
         {
             CancelSleepTimer();
             return;
         }
 
-        if (DateTimeOffset.UtcNow < endsAt)
-        {
-            UpdateSleepTimerButton();
+        if (!shouldPause)
             return;
-        }
 
         _sleepTimer.Stop();
         _sleepTimerEndsAt = null;
+        _sleepAtPositionMilliseconds = null;
         _sleepTimerSelection = -1;
         if (SleepTimerButton is not null)
             SleepTimerButton.Content = "Sleep timer · Off";
@@ -287,6 +333,8 @@ public partial class MainView : UserControl
     private async void MainViewUnloaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         _playbackProgressTimer.Stop();
+        _sleepTimer.Stop();
+        _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         if (_localAudioPlayer is null) return;
         try
