@@ -29,8 +29,7 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
-        _ = InitializeAndRestorePlaybackAsync();
+        Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
 
@@ -39,8 +38,15 @@ public partial class MainView : UserControl
         _viewModel = new MainViewModel(repository, downloadQueue, syncService);
         InitializeComponent();
         DataContext = _viewModel;
-        _ = _viewModel.InitializeAsync();
+        Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
+    }
+
+    private async void MainViewLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
+        _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
+        await InitializeAndRestorePlaybackAsync();
     }
 
     private async Task InitializeAndRestorePlaybackAsync()
