@@ -24,7 +24,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionPlay);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraFilePath, filePath);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
-        if (global::Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.O)
+        if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
             AppContext.StartForegroundService(intent);
         else
             AppContext.StartService(intent);
