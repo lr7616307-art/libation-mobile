@@ -99,13 +99,41 @@ public sealed class AudibleAccountAuthenticator(
     public Task DisconnectAsync(CancellationToken cancellationToken = default)
         => snapshotStore.ClearAsync(cancellationToken);
 
-    public Task<AccountSession> RefreshAsync(
+    public async Task<AccountSession> RefreshAsync(
         AccountSession currentSession, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(currentSession);
         cancellationToken.ThrowIfCancellationRequested();
-        throw new NotSupportedException(
-            "Use AudibleIdentityMaintainer for Audible token refresh so the complete identity remains consistent.");
+
+        var snapshot = await snapshotStore.LoadAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("No saved Audible identity is available. Sign in again.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var identity = AudibleIdentitySnapshotMapper.Restore(snapshot);
+        var maintainer = new AudibleIdentityMaintainer(
+            identity,
+            new Authorize(identity.Locale),
+            systemDateTime,
+            snapshotStore);
+
+        // This refreshes only when the access token has expired. The maintainer
+        // persists the complete identity before exposing the new token.
+        var accessToken = await maintainer.GetAccessTokenAsync().ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Audible did not provide an access token.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var refreshToken = identity.RefreshToken
+            ?? throw new InvalidOperationException("Audible did not provide a refresh token.");
+
+        var expiry = accessToken.Expires;
+        if (expiry.Kind != DateTimeKind.Utc)
+            expiry = DateTime.SpecifyKind(expiry, DateTimeKind.Utc);
+
+        return new AccountSession(
+            identity.AmazonAccountId ?? currentSession.AccountId,
+            accessToken.Reveal(),
+            refreshToken.Reveal(),
+            new DateTimeOffset(expiry));
     }
 
     private static AudibleIdentitySnapshot Capture(Identity identity)
