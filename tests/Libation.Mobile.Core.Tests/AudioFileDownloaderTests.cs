@@ -83,6 +83,54 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_RejectsTruncatedResponseAndKeepsPartialForRetry()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        var payload = new byte[] { 1, 2, 3 };
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            var content = new ByteArrayContent(payload);
+            content.Headers.ContentLength = 5;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.False(File.Exists(destination));
+        Assert.Equal(payload, await File.ReadAllBytesAsync(partial));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_RejectsResumeResponseStartingAtWrongOffset()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        await File.WriteAllBytesAsync(partial, new byte[] { 1, 2 });
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(new byte[] { 3, 4, 5 })
+            };
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(1, 3, 5);
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
     public async Task DownloadAsync_RejectsNonHttpsUrl()
     {
         using var client = new HttpClient(new StubHandler((_, _) =>
