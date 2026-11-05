@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Libation.Mobile.Core;
 using Libation.Mobile.UI.ViewModels;
 
@@ -11,6 +12,8 @@ public partial class MainView : UserControl
     private readonly MainViewModel _viewModel;
     private ILocalAudioPlayer? _localAudioPlayer;
     private string? _playingAudiobookId;
+    private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    private bool _isSavingPlaybackPosition;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
 
@@ -26,6 +29,7 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
+        _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
         _ = _viewModel.InitializeAsync();
         Unloaded += MainViewUnloaded;
     }
@@ -56,6 +60,7 @@ public partial class MainView : UserControl
         {
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id));
             _playingAudiobookId = book.Id;
+            _playbackProgressTimer.Start();
             _viewModel.ReportAudioStatus("Playing: " + book.Title);
         }
         catch (Exception)
@@ -70,6 +75,7 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Pause();
+            _playbackProgressTimer.Stop();
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
             _viewModel.ReportAudioStatus("Playback paused. Your position has been saved.");
         }
@@ -112,6 +118,8 @@ public partial class MainView : UserControl
 
     private async void MainViewUnloaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        _playbackProgressTimer.Stop();
+        _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         if (_localAudioPlayer is null) return;
         try
         {
@@ -127,6 +135,24 @@ public partial class MainView : UserControl
             _localAudioPlayer.Dispose();
             _localAudioPlayer = null;
             _playingAudiobookId = null;
+        }
+    }
+
+    private async void PlaybackProgressTimerTick(object? sender, EventArgs e)
+    {
+        if (_isSavingPlaybackPosition || _localAudioPlayer is null || _playingAudiobookId is null) return;
+        _isSavingPlaybackPosition = true;
+        try
+        {
+            await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+        }
+        catch (Exception)
+        {
+            // Progress checkpoints are best-effort; playback continues uninterrupted.
+        }
+        finally
+        {
+            _isSavingPlaybackPosition = false;
         }
     }
 
