@@ -60,7 +60,7 @@ public sealed class LibrarySyncService(
         // exist remotely. Removed remote IDs are intentionally not retained.
         var mergedProviderBooks = mapped.Select(remoteBook =>
             existingProviderBooks.TryGetValue(remoteBook.Id, out var localBook)
-                ? localBook with { CoverImageUrl = remoteBook.CoverImageUrl }
+                ? localBook with { CoverImageUrl = string.IsNullOrWhiteSpace(remoteBook.CoverImageUrl) ? localBook.CoverImageUrl : remoteBook.CoverImageUrl }
                 : remoteBook);
 
         var manual = existing.Where(book =>
