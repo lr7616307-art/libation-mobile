@@ -16,6 +16,12 @@ public sealed record Audiobook(
     public string Genre { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
 
+    [JsonIgnore]
+    public bool HasSeries => !string.IsNullOrWhiteSpace(Series);
+
+    [JsonIgnore]
+    public bool HasGenre => !string.IsNullOrWhiteSpace(Genre);
+
     public string? AudioFilePath { get; init; }
 
     /// <summary>Last known playback position in milliseconds for resuming local audio.</summary>
