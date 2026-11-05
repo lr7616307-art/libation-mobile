@@ -80,7 +80,7 @@ public sealed class CoverArtDownloadServiceTests
 
     private sealed class TemporaryDirectory : IDisposable
     {
-        public string Path { get; } = System.IO.Path.Combine(Path.GetTempPath(), "VorathCoverCacheTests", Guid.NewGuid().ToString("N"));
+        public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "VorathCoverCacheTests", Guid.NewGuid().ToString("N"));
         public void Dispose() { if (Directory.Exists(Path)) Directory.Delete(Path, true); }
     }
 }
