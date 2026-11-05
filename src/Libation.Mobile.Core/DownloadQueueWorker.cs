@@ -43,18 +43,21 @@ public sealed class DownloadQueueWorker
     private readonly AudioFileDownloader _downloader;
     private readonly IAuthorizedAudioDownloadSource _source;
     private readonly IAudioPostDownloadProcessor? _postDownloadProcessor;
+    private readonly ILibraryRepository? _libraryRepository;
     private readonly SemaphoreSlim _runGate = new(1, 1);
 
     public DownloadQueueWorker(
         IDownloadQueue queue,
         AudioFileDownloader downloader,
         IAuthorizedAudioDownloadSource source,
-        IAudioPostDownloadProcessor? postDownloadProcessor = null)
+        IAudioPostDownloadProcessor? postDownloadProcessor = null,
+        ILibraryRepository? libraryRepository = null)
     {
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         _downloader = downloader ?? throw new ArgumentNullException(nameof(downloader));
         _source = source ?? throw new ArgumentNullException(nameof(source));
         _postDownloadProcessor = postDownloadProcessor;
+        _libraryRepository = libraryRepository;
     }
 
     /// <summary>
@@ -107,16 +110,27 @@ public sealed class DownloadQueueWorker
                     cancellationToken);
 
                 // This hook is deliberately optional and runs only after a complete
-                // download. It keeps format-specific processing out of the downloader.
+                // download. Its output becomes the catalogue's playable local file.
+                var playablePath = result.FilePath;
                 if (_postDownloadProcessor is not null)
                 {
-                    var processedPath = await _postDownloadProcessor.ProcessAsync(
+                    playablePath = await _postDownloadProcessor.ProcessAsync(
                         result.FilePath, cancellationToken);
-                    if (string.IsNullOrWhiteSpace(processedPath) ||
-                        !File.Exists(processedPath) ||
-                        new FileInfo(processedPath).Length == 0)
+                    if (string.IsNullOrWhiteSpace(playablePath) ||
+                        !File.Exists(playablePath) ||
+                        new FileInfo(playablePath).Length == 0)
                         throw new InvalidDataException(
                             "The audio processing stage did not produce a valid output file.");
+                }
+
+                if (_libraryRepository is not null)
+                {
+                    var books = await _libraryRepository.GetBooksAsync(cancellationToken);
+                    var book = books.FirstOrDefault(x =>
+                        string.Equals(x.Id, item.AudiobookId, StringComparison.Ordinal));
+                    if (book is not null)
+                        await _libraryRepository.UpsertAsync(
+                            book with { AudioFilePath = playablePath }, cancellationToken);
                 }
 
                 await _queue.UpdateStatusAsync(
