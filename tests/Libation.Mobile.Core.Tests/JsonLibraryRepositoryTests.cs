@@ -33,6 +33,43 @@ public sealed class JsonLibraryRepositoryTests
     }
 
     [Fact]
+    public async Task ReplaceAllAndReload_PreservesChapterMarkers()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "library.json");
+        var repository = new JsonLibraryRepository(path);
+        var expected = new Audiobook("book-1", "Title", "Author", "Narrator", "4h", "Owned")
+        {
+            Chapters =
+            [
+                new("Prologue", 0),
+                new("The Journey", 125_000),
+                new("Afterword", 13_500_000)
+            ]
+        };
+
+        await repository.UpsertAsync(expected);
+        var actual = Assert.Single(await new JsonLibraryRepository(path).GetBooksAsync());
+
+        Assert.Equal(expected.Chapters, actual.Chapters);
+    }
+
+    [Fact]
+    public async Task GetBooks_WhenStoredCatalogueHasNoChapters_UsesEmptyChapterList()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "library.json");
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllTextAsync(path,
+            """[{"Id":"legacy","Title":"Old book","Author":"Author","Narrator":"","Length":"","Status":"Owned"}]""");
+
+        var actual = Assert.Single(await new JsonLibraryRepository(path).GetBooksAsync());
+
+        Assert.NotNull(actual.Chapters);
+        Assert.Empty(actual.Chapters);
+    }
+
+    [Fact]
     public async Task Upsert_ReplacesMatchingIdWithoutDuplicates()
     {
         using var directory = new TemporaryDirectory();
