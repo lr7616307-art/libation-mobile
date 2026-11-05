@@ -76,6 +76,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service
 
         StopPlayer();
         _title = Path.GetFileNameWithoutExtension(path);
+
+        // Android requires a service started with startForegroundService() to
+        // promote itself promptly. MediaPlayer.Prepare() can block while a
+        // large local audiobook is inspected, so promote before preparing it.
+        StartForeground(NotificationId, BuildNotification());
+
         _player = new MediaPlayer();
         _player.SetDataSource(path);
         _player.Prepare();
@@ -86,7 +92,6 @@ public sealed class AndroidLocalAudioPlaybackService : Service
             StopPlayback();
             StopSelf();
         };
-        StartForeground(NotificationId, BuildNotification());
         _player.Start();
         UpdateNotification();
     }
