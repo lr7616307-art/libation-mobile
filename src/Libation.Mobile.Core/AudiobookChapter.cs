@@ -13,8 +13,8 @@ public sealed record AudiobookChapter(string Title, long StartPositionMillisecon
         {
             var time = TimeSpan.FromMilliseconds(Math.Max(0, StartPositionMilliseconds));
             return time.TotalHours >= 1
-                ? time.ToString(@"h\\:mm\\:ss", CultureInfo.InvariantCulture)
-                : time.ToString(@"m\\:ss", CultureInfo.InvariantCulture);
+                ? time.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture)
+                : time.ToString(@"m\:ss", CultureInfo.InvariantCulture);
         }
     }
 }

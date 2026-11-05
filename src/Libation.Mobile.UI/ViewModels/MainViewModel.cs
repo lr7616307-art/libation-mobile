@@ -72,7 +72,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         string.IsNullOrWhiteSpace(SelectedBook.AudioFilePath) ? "Audio not imported on this device" : "Local audio is ready to play";
     public string SelectedBookResumeLabel => SelectedBook is null ? string.Empty :
         SelectedBook.PlaybackPositionMilliseconds > 0
-            ? $"Saved position: {TimeSpan.FromMilliseconds(SelectedBook.PlaybackPositionMilliseconds):h\\:mm\\:ss}"
+            ? $"Saved position: {TimeSpan.FromMilliseconds(SelectedBook.PlaybackPositionMilliseconds):h\:mm\:ss}"
             : "Not started yet";
     public void SelectBook(string audiobookId)
     {
@@ -288,7 +288,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (SelectedBook is null) { ErrorMessage = "Open an audiobook's details before adding a chapter."; return; }
         var title = NewChapterTitle.Trim();
         if (string.IsNullOrWhiteSpace(title)) { ErrorMessage = "Enter a chapter title."; return; }
-        if (!TimeSpan.TryParseExact(NewChapterStart.Trim(), [@"m\\:ss", @"mm\\:ss", @"h\\:mm\\:ss", @"hh\\:mm\\:ss"], CultureInfo.InvariantCulture, out var start)
+        if (!TimeSpan.TryParseExact(NewChapterStart.Trim(), [@"m\:ss", @"mm\:ss", @"h\:mm\:ss", @"hh\:mm\:ss"], CultureInfo.InvariantCulture, out var start)
             || start < TimeSpan.Zero || start.TotalMilliseconds > long.MaxValue)
         { ErrorMessage = "Enter a valid start time as mm:ss or hh:mm:ss."; return; }
         var startMilliseconds = (long)start.TotalMilliseconds;
