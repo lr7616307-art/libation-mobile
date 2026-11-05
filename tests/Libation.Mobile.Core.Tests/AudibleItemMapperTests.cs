@@ -7,7 +7,7 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleItemMapperTests
 {
     [Fact]
-    public void Map_UsesAuthorAndNarratorArraysAndPreservesTheirOrder()
+    public void Map_UsesAuthorAndNarratorArraysAndFormatsRuntime()
     {
         var item = new Item
         {
@@ -34,7 +34,7 @@ public sealed class AudibleItemMapperTests
         Assert.Equal("Example title: Subtitle", result.Title);
         Assert.Equal("Author One, Author Two", result.Author);
         Assert.Equal("Narrator One, Narrator Two", result.Narrator);
-        Assert.Equal("321", result.Length);
+        Assert.Equal("5h 21m", result.Length);
     }
 
     [Fact]
@@ -50,6 +50,7 @@ public sealed class AudibleItemMapperTests
 
         Assert.Equal("Unknown author", result.Author);
         Assert.Equal(string.Empty, result.Narrator);
+        Assert.Equal(string.Empty, result.Length);
     }
 
     [Fact]
@@ -86,6 +87,24 @@ public sealed class AudibleItemMapperTests
 
         Assert.Equal("Unknown author", result.Author);
         Assert.Equal(string.Empty, result.Narrator);
+    }
+
+    [Theory]
+    [InlineData(45, "45m")]
+    [InlineData(60, "1h")]
+    [InlineData(121, "2h 1m")]
+    [InlineData(0, "")]
+    [InlineData(-10, "")]
+    public void FormatRuntime_ProducesCompactDuration(double minutes, string expected)
+    {
+        Assert.Equal(expected, AudibleItemMapper.FormatRuntime(minutes));
+    }
+
+    [Fact]
+    public void FormatRuntime_RejectsMissingOrNonNumericValues()
+    {
+        Assert.Equal(string.Empty, AudibleItemMapper.FormatRuntime(null));
+        Assert.Equal(string.Empty, AudibleItemMapper.FormatRuntime("unknown"));
     }
 
     [Fact]
