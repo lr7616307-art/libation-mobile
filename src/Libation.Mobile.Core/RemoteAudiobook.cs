@@ -6,4 +6,5 @@ public sealed record RemoteAudiobook(string ProviderId, string Title, string Aut
     public string Series { get; init; } = string.Empty;
     public string Genre { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
+    public string CoverImageUrl { get; init; } = string.Empty;
 }

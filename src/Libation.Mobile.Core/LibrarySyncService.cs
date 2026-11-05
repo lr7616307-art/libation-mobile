@@ -44,7 +44,8 @@ public sealed class LibrarySyncService(
             {
                 Series = item.Series?.Trim() ?? string.Empty,
                 Genre = item.Genre?.Trim() ?? string.Empty,
-                Description = item.Description?.Trim() ?? string.Empty
+                Description = item.Description?.Trim() ?? string.Empty,
+                CoverImageUrl = NormalizeCoverUrl(item.CoverImageUrl)
             });
         }
 
@@ -59,7 +60,7 @@ public sealed class LibrarySyncService(
         // exist remotely. Removed remote IDs are intentionally not retained.
         var mergedProviderBooks = mapped.Select(remoteBook =>
             existingProviderBooks.TryGetValue(remoteBook.Id, out var localBook)
-                ? localBook
+                ? localBook with { CoverImageUrl = string.IsNullOrWhiteSpace(remoteBook.CoverImageUrl) ? localBook.CoverImageUrl : remoteBook.CoverImageUrl }
                 : remoteBook);
 
         var manual = existing.Where(book =>
@@ -70,5 +71,15 @@ public sealed class LibrarySyncService(
         cancellationToken.ThrowIfCancellationRequested();
         await repository.ReplaceAllAsync(merged, cancellationToken);
         return mapped.Count;
+    }
+
+    private static string NormalizeCoverUrl(string? value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps
+            || !string.Equals(uri.Host, "m.media-amazon.com", StringComparison.OrdinalIgnoreCase))
+            return string.Empty;
+
+        return uri.AbsoluteUri;
     }
 }

@@ -15,6 +15,9 @@ public sealed record Audiobook(
     public string Genre { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
 
+    /// <summary>HTTPS cover-art URL supplied by the catalogue provider; local imported artwork remains separate.</summary>
+    public string CoverImageUrl { get; init; } = string.Empty;
+
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>
     public IReadOnlyList<AudiobookChapter> Chapters { get; init; } = Array.Empty<AudiobookChapter>();
 
