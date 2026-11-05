@@ -4,6 +4,7 @@ namespace Libation.Mobile.Core;
 public interface ILocalAudioPlayer : IDisposable
 {
     bool IsPlaying { get; }
+    string? CurrentFilePath { get; }
     long PositionMilliseconds { get; }
     long DurationMilliseconds { get; }
     void Play(string filePath, long startPositionMilliseconds = 0);
