@@ -2,7 +2,7 @@ namespace Libation.Mobile.Android;
 
 internal sealed record PlaybackRecoverySnapshot(
     string FilePath, string Title, long PositionMilliseconds, long DurationMilliseconds,
-    float PlaybackSpeed, bool WasPlaying);
+    float PlaybackSpeed, bool WasPlaying, string? ArtworkPath = null);
 
 /// <summary>Small durable checkpoint stored in app-private Android preferences.</summary>
 internal static class PlaybackRecoveryStore
@@ -14,6 +14,7 @@ internal static class PlaybackRecoveryStore
     private const string DurationKey = "duration_ms";
     private const string SpeedKey = "speed";
     private const string WasPlayingKey = "was_playing";
+    private const string ArtworkPathKey = "artwork_path";
 
     public static PlaybackRecoverySnapshot? Load(global::Android.Content.Context context)
     {
@@ -26,7 +27,8 @@ internal static class PlaybackRecoveryStore
             preferences?.GetString(TitleKey, "Audiobook") ?? "Audiobook",
             Math.Max(0, preferences?.GetLong(PositionKey, 0) ?? 0),
             Math.Max(0, preferences?.GetLong(DurationKey, 0) ?? 0),
-            Math.Clamp(speed, 0.5f, 3f), preferences?.GetBoolean(WasPlayingKey, false) ?? false);
+            Math.Clamp(speed, 0.5f, 3f), preferences?.GetBoolean(WasPlayingKey, false) ?? false,
+            preferences?.GetString(ArtworkPathKey, null));
     }
 
     public static void Save(global::Android.Content.Context context, PlaybackRecoverySnapshot snapshot)
@@ -38,6 +40,7 @@ internal static class PlaybackRecoveryStore
         editor?.PutLong(DurationKey, Math.Max(0, snapshot.DurationMilliseconds));
         editor?.PutFloat(SpeedKey, Math.Clamp(snapshot.PlaybackSpeed, 0.5f, 3f));
         editor?.PutBoolean(WasPlayingKey, snapshot.WasPlaying);
+        editor?.PutString(ArtworkPathKey, snapshot.ArtworkPath);
         // Apply persists asynchronously so the five-second checkpoint never blocks
         // the main looper or causes audible playback stutter.
         editor?.Apply();
