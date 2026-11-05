@@ -15,6 +15,9 @@ public partial class MainView
     /// </summary>
     public static Func<ILibraryCatalogProvider>? PlatformLibraryCatalogProviderFactory { get; set; }
 
+    /// <summary>Creates the platform audio player before the shared view is shown.</summary>
+    public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
+
     public static MainView CreatePlatformView()
     {
         var view = new MainView();
