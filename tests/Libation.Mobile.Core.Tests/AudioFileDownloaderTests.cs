@@ -94,6 +94,60 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_RejectsPartialResponseWhenEntityTagIsMissing()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(destination + ".part", new byte[] { 1, 2 });
+        await File.WriteAllTextAsync(destination + ".part.validator", "etag:\"v1\"");
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(new byte[] { 3, 4 })
+            };
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(2, 3, 4);
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_RejectsPartialResponseWhenLastModifiedIsMissing()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(destination + ".part", new byte[] { 1, 2 });
+        await File.WriteAllTextAsync(destination + ".part.validator", "modified:Tue, 03 Nov 2026 10:00:00 GMT");
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(new byte[] { 3, 4 })
+            };
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(2, 3, 4);
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
     public async Task DownloadAsync_DiscardsPartialWithoutValidatorInsteadOfRiskingMixedContent()
     {
         using var directory = new TemporaryDirectory();
