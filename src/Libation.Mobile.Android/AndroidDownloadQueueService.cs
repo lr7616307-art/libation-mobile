@@ -200,8 +200,8 @@ public sealed class AndroidDownloadQueueService : Service
             .SetOngoing(true)
             .SetProgress(100, progress, indeterminate)
             .AddAction(new Notification.Action.Builder(
-                Android.Graphics.Drawables.Icon.CreateWithResource(this, Resource.Drawable.ic_download_pause),
-                "Pause",
+                global::Android.Graphics.Drawables.Icon.CreateWithResource(this, Resource.Drawable.ic_download_pause),
+                new Java.Lang.String("Pause"),
                 cancelPendingIntent).Build())
             .Build();
     }
