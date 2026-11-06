@@ -29,6 +29,8 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         var authenticator = new AudibleAccountAuthenticator(snapshots, new SystemDateTime());
         var connection = new AccountConnectionService(authenticator, new AccountSessionStore(secrets));
         var browser = new AndroidExternalBrowserLauncher(this);
+        var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var downloadQueue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
 
         MainView.PlatformSignInViewModelFactory =
             () => new AudibleSignInViewModel(connection, browser);
@@ -38,5 +40,10 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         MainView.PlatformLibraryCatalogProviderFactory =
             () => new SavedIdentityAudibleCatalogProvider(snapshots);
         MainView.PlatformLocalAudioPlayerFactory = () => new AndroidLocalAudioPlayer();
+
+        // One queue instance is shared by the UI and future foreground-service
+        // composition. MainViewModel.InitializeAsync recovers interrupted items
+        // from this same persisted queue when the app opens after process death.
+        MainView.PlatformDownloadQueueFactory = () => downloadQueue;
     }
 }
