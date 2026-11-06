@@ -17,6 +17,9 @@ public sealed record DownloadQueueItem(
     DateTimeOffset UpdatedAtUtc,
     string? ErrorMessage = null)
 {
+    public long BytesReceived { get; init; }
+    public long? TotalBytes { get; init; }
+
     [JsonIgnore]
     public string DisplayTitle { get; init; } = AudiobookId;
 
@@ -34,4 +37,9 @@ public sealed record DownloadQueueItem(
 
     [JsonIgnore]
     public bool CanRemove => Status != DownloadStatus.Downloading;
+
+    [JsonIgnore]
+    public double? ProgressPercentage => TotalBytes is > 0
+        ? Math.Clamp(BytesReceived * 100d / TotalBytes.Value, 0d, 100d)
+        : null;
 }
