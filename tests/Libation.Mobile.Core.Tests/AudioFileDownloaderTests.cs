@@ -367,6 +367,36 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_DiscardsPartialWithMalformedValidatorAndStartsFresh()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        var validator = partial + ".validator";
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(partial, new byte[] { 9, 9, 9 });
+        await File.WriteAllTextAsync(validator, "etag:not-a-valid-entity-tag");
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            Assert.Null(request.Headers.Range);
+            Assert.Null(request.Headers.IfRange);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3, 4 })
+            };
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        var result = await downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination);
+
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, await File.ReadAllBytesAsync(destination));
+        Assert.Equal(4, result.BytesReceived);
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(validator));
+    }
+
+    [Fact]
     public async Task DownloadAsync_DiscardsPartialWithoutValidatorInsteadOfRiskingMixedContent()
     {
         using var directory = new TemporaryDirectory();
