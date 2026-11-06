@@ -71,6 +71,11 @@ public sealed class DownloadQueueWorker
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        // A process restart can leave an item marked Downloading even though
+        // no worker is alive. Requeue those items before selecting new work;
+        // the downloader will validate and resume any retained partial file.
+        await RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
+
         var processed = 0;
         while (await ProcessNextAsync(progress, cancellationToken))
             processed++;
@@ -79,14 +84,9 @@ public sealed class DownloadQueueWorker
 
     public async Task<int> RecoverInterruptedDownloadsAsync(CancellationToken cancellationToken = default)
     {
-        var items = await _queue.GetItemsAsync(cancellationToken);
-        var recovered = 0;
-        foreach (var item in items.Where(x => x.Status == DownloadStatus.Downloading))
-        {
-            await _queue.UpdateStatusAsync(item.AudiobookId, DownloadStatus.Queued, cancellationToken: cancellationToken);
-            recovered++;
-        }
-        return recovered;
+        // Use the queue's single atomic recovery operation so multiple queue
+        // objects cannot independently claim the same interrupted item.
+        return await _queue.RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
