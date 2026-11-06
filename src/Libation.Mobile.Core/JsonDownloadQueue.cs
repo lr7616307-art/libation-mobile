@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace Libation.Mobile.Core;
@@ -12,13 +13,17 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         WriteIndented = true
     };
 
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileGates = new(StringComparer.Ordinal);
     private readonly string _filePath;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SemaphoreSlim _gate;
 
     public JsonDownloadQueue(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         _filePath = Path.GetFullPath(filePath);
+        // UI and foreground-service queue objects share one process-wide gate
+        // for this file, preventing concurrent recovery and metadata-write races.
+        _gate = FileGates.GetOrAdd(_filePath, static _ => new SemaphoreSlim(1, 1));
     }
 
     public async Task<IReadOnlyList<DownloadQueueItem>> GetItemsAsync(
