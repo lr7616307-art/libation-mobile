@@ -69,7 +69,17 @@ public sealed class AndroidDownloadQueueService : Service
         if (_runStarted)
             return StartCommandResult.NotSticky;
 
-        _controller = ControllerFactory?.Invoke();
+        try
+        {
+            _controller = ControllerFactory?.Invoke();
+        }
+        catch (Exception)
+        {
+            // A platform composition failure must not crash the Android process.
+            // Keep the service fail-closed and leave the persisted queue untouched.
+            _controller = null;
+        }
+
         if (_controller is null)
         {
             UpdateNotification(
