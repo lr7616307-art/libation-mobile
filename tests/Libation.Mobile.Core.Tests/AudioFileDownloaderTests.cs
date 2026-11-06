@@ -106,6 +106,38 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_CancellationKeepsPartialAndPreservesExistingDestination()
+    {
+        using var directory = new TemporaryDirectory();
+        Directory.CreateDirectory(directory.Path);
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        await File.WriteAllTextAsync(destination, "existing");
+        var payload = Enumerable.Range(0, 128 * 1024).Select(i => (byte)(i % 251)).ToArray();
+        using var cancellation = new CancellationTokenSource();
+        using var client = new HttpClient(new StubHandler((_, _) =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(payload)
+            }));
+        var downloader = new AudioFileDownloader(client);
+        var progress = new CancelAfterFirstProgress(cancellation);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"),
+            destination,
+            progress,
+            cancellation.Token));
+
+        Assert.Equal("existing", await File.ReadAllTextAsync(destination));
+        Assert.True(File.Exists(partial));
+        var savedPartial = await File.ReadAllBytesAsync(partial);
+        Assert.NotEmpty(savedPartial);
+        Assert.True(savedPartial.Length < payload.Length);
+        Assert.Equal(payload[..savedPartial.Length], savedPartial);
+    }
+
+    [Fact]
     public async Task DownloadAsync_RejectsTruncatedResponseAndKeepsPartialForRetry()
     {
         using var directory = new TemporaryDirectory();
@@ -244,6 +276,19 @@ public sealed class AudioFileDownloaderTests
     {
         public List<T> Values { get; } = [];
         public void Report(T value) => Values.Add(value);
+    }
+
+    private sealed class CancelAfterFirstProgress(CancellationTokenSource cancellation)
+        : IProgress<AudioDownloadProgress>
+    {
+        private bool _cancelled;
+
+        public void Report(AudioDownloadProgress value)
+        {
+            if (_cancelled) return;
+            _cancelled = true;
+            cancellation.Cancel();
+        }
     }
 
     private sealed class TemporaryDirectory : IDisposable
