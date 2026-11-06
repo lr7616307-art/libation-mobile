@@ -109,14 +109,14 @@ public sealed class AudioFileDownloader
             if (range?.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
                 throw new HttpRequestException("The server returned an invalid byte range for this download.");
 
-            if (range.Length is not long totalLength || totalLength <= rangeEnd)
+            if (range.Length is not long partialTotalLength || partialTotalLength <= rangeEnd)
                 throw new HttpRequestException("The server did not provide a verifiable total length for the partial download.");
 
             var segmentLength = rangeEnd - startingBytes + 1;
             if (responseLength is long declaredSegmentLength && declaredSegmentLength != segmentLength)
                 throw new HttpRequestException("The server's Content-Length does not match its byte range.");
 
-            expectedFinalLength = totalLength;
+            expectedFinalLength = partialTotalLength;
         }
 
         if (expectedFinalLength is long expected && expected > _maximumBytes)
