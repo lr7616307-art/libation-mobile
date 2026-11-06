@@ -8,6 +8,7 @@ namespace Libation.Mobile.Core;
 /// </summary>
 public sealed class AudioFileDownloader
 {
+    private const long DurableCheckpointInterval = 1024 * 1024;
     private readonly HttpClient _httpClient;
     private readonly long _maximumBytes;
 
