@@ -68,8 +68,8 @@ public sealed class AudioFileDownloader
         // of completion when its total length and representation validator both match.
         if (response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable &&
             existingBytes > 0 && savedValidator is { } completedValidator &&
-            response.Content.Headers.ContentRange is { HasLength: true, Length: long totalLength } &&
-            totalLength == existingBytes &&
+            response.Content.Headers.ContentRange is { HasLength: true, Length: long unsatisfiedRangeTotal } &&
+            unsatisfiedRangeTotal == existingBytes &&
             ResponseMatchesValidator(response, completedValidator))
         {
             cancellationToken.ThrowIfCancellationRequested();
