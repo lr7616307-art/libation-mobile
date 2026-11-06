@@ -43,6 +43,29 @@ public sealed class JsonDownloadQueueTests
     }
 
     [Fact]
+    public async Task RecoverInterruptedDownloads_RequeuesOnlyActiveItemsAndPreservesProgress()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(path);
+        await queue.EnqueueAsync("book-active");
+        await queue.UpdateStatusAsync("book-active", DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync("book-active", 2_048, 8_192);
+        await queue.EnqueueAsync("book-waiting");
+
+        var recovered = await queue.RecoverInterruptedDownloadsAsync();
+
+        Assert.Equal(1, recovered);
+        var items = await new JsonDownloadQueue(path).GetItemsAsync();
+        var active = Assert.Single(items.Where(item => item.AudiobookId == "book-active"));
+        Assert.Equal(DownloadStatus.Queued, active.Status);
+        Assert.Equal(2_048, active.BytesReceived);
+        Assert.Equal(8_192, active.TotalBytes);
+        Assert.Equal(25d, active.ProgressPercentage);
+        Assert.Equal(DownloadStatus.Queued, Assert.Single(items.Where(item => item.AudiobookId == "book-waiting")).Status);
+    }
+
+    [Fact]
     public async Task UpdateProgress_PersistsByteCountsAndPercentageAcrossQueueInstances()
     {
         using var directory = new TemporaryDirectory();

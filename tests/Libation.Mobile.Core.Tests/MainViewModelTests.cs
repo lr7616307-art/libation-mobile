@@ -7,6 +7,29 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task InitializeAsync_RecoversInterruptedDownloadQueueItems()
+    {
+        using var directory = new TemporaryDirectory();
+        var queuePath = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(queuePath);
+        await queue.EnqueueAsync("book-after-process-death");
+        await queue.UpdateStatusAsync("book-after-process-death", DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync("book-after-process-death", 4_096, 16_384);
+
+        var vm = new MainViewModel(
+            new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")),
+            new JsonDownloadQueue(queuePath));
+
+        await vm.InitializeAsync();
+
+        var item = Assert.Single(vm.QueueItems);
+        Assert.Equal(DownloadStatus.Queued, item.Status);
+        Assert.Equal(4_096, item.BytesReceived);
+        Assert.Equal(16_384, item.TotalBytes);
+        Assert.Equal(25d, item.ProgressPercentage);
+    }
+
+    [Fact]
     public async Task SyncLibraryAsync_WithoutProvider_ReportsNotConnected()
     {
         using var directory = new TemporaryDirectory();
