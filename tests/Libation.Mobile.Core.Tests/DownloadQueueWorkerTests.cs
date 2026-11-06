@@ -131,6 +131,65 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_RestartResumesPartialDownloadAndCompletesFile()
+    {
+        using var directory = new TemporaryDirectory();
+        var queuePath = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(queuePath);
+        await queue.EnqueueAsync("book-restart-resume");
+        var destination = Path.Combine(directory.Path, "book-restart-resume.m4b");
+        var payload = Enumerable.Range(0, 128 * 1024).Select(index => (byte)(index % 251)).ToArray();
+        using var cancellation = new CancellationTokenSource();
+        using (var interruptedClient = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new CancelAfterFirstReadStream(payload, cancellation))
+        })))
+        {
+            var interruptedWorker = new DownloadQueueWorker(
+                queue, new AudioFileDownloader(interruptedClient),
+                new StubSource(new Uri("https://provider.example/book-restart-resume"), destination));
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => interruptedWorker.ProcessNextAsync(cancellationToken: cancellation.Token));
+        }
+
+        var savedAfterInterruption = Assert.Single(await new JsonDownloadQueue(queuePath).GetItemsAsync());
+        var partialPath = destination + ".part";
+        var offset = new FileInfo(partialPath).Length;
+        Assert.Equal(DownloadStatus.Queued, savedAfterInterruption.Status);
+        Assert.True(offset > 0);
+        Assert.Equal(offset, savedAfterInterruption.BytesReceived);
+        Assert.True(offset < payload.Length);
+
+        var rangeWasRequested = false;
+        using var resumedClient = new HttpClient(new StubHandler(request =>
+        {
+            rangeWasRequested = true;
+            Assert.Equal(offset, request.Headers.Range?.Ranges.Single().From);
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(payload[(int)offset..])
+            };
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(offset, payload.Length - 1, payload.Length);
+            return response;
+        }));
+        var resumedWorker = new DownloadQueueWorker(
+            new JsonDownloadQueue(queuePath), new AudioFileDownloader(resumedClient),
+            new StubSource(new Uri("https://provider.example/book-restart-resume"), destination));
+
+        Assert.True(await resumedWorker.ProcessNextAsync());
+
+        Assert.True(rangeWasRequested);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(destination));
+        Assert.False(File.Exists(partialPath));
+        var completed = Assert.Single(await new JsonDownloadQueue(queuePath).GetItemsAsync());
+        Assert.Equal(DownloadStatus.Completed, completed.Status);
+        Assert.Equal(payload.LongLength, completed.BytesReceived);
+        Assert.Equal(payload.LongLength, completed.TotalBytes);
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_AttachesCompletedAudioToLocalCatalogue()
     {
         using var directory = new TemporaryDirectory();
