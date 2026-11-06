@@ -162,6 +162,30 @@ public sealed class DownloadQueueWorkerTests
         Assert.All(items, item => Assert.Equal(DownloadStatus.Queued, item.Status));
     }
 
+
+    [Fact]
+    public async Task ExecutionController_CancelStopsRunAndReleasesControllerForNextRun()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-controller");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        var source = new BlockingSource();
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+        var controller = new DownloadQueueExecutionController(worker);
+
+        var run = controller.RunAsync();
+        await source.Started;
+        Assert.True(controller.IsRunning);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => controller.RunAsync());
+
+        controller.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+
+        Assert.False(controller.IsRunning);
+        Assert.Equal(DownloadStatus.Queued, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
     [Fact]
     public async Task ProcessNextAsync_NoQueuedItemsReturnsFalse()
     {
@@ -288,6 +312,21 @@ public sealed class DownloadQueueWorkerTests
         var item = Assert.Single(await queue.GetItemsAsync());
         Assert.Equal(DownloadStatus.Failed, item.Status);
         Assert.Equal(payload, await File.ReadAllBytesAsync(sourcePath));
+    }
+
+
+    private sealed class BlockingSource : IAuthorizedAudioDownloadSource
+    {
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task Started => _started.Task;
+
+        public async Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            _started.TrySetResult();
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("The blocked source should only finish through cancellation.");
+        }
     }
 
     private sealed class FailFirstSource(string destinationPath) : IAuthorizedAudioDownloadSource
