@@ -10,17 +10,25 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
 
     public AndroidLocalAudioPlayer()
     {
-        // Rehydrate the last session when the app is opened after a process death
-        // or device restart. The saved play/pause state is respected.
+        // Rehydrate only when the Android playback service is not already
+        // alive. The service owns playback independently of this UI adapter;
+        // recreating the adapter (for example after navigating away and back)
+        // must not restart the same audiobook from an older checkpoint.
+        if (AndroidLocalAudioPlaybackService.Current is not null)
+            return;
+
+        // A null Current means the process/service is new (including after
+        // process death or device restart), so the durable snapshot can restore
+        // the last session while respecting its saved play/pause state.
         var snapshot = PlaybackRecoveryStore.Load(AppContext);
-        if (snapshot is not null)
-        {
-            var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionRestore);
-            if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
-                AppContext.StartForegroundService(intent);
-            else
-                AppContext.StartService(intent);
-        }
+        if (snapshot is null)
+            return;
+
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionRestore);
+        if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
+            AppContext.StartForegroundService(intent);
+        else
+            AppContext.StartService(intent);
     }
 
     private PlaybackRecoverySnapshot? Recovery => PlaybackRecoveryStore.Load(AppContext);
