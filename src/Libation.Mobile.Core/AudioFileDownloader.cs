@@ -63,6 +63,12 @@ public sealed class AudioFileDownloader
         using var response = await _httpClient.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
+        // Validate the final transport before handling any status code, including 416.
+        // Otherwise an insecure redirect could reach the completed-partial recovery path.
+        if (response.RequestMessage?.RequestUri is { } finalUri &&
+            !string.Equals(finalUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            throw new HttpRequestException("The download redirected to a non-HTTPS address.");
+
         // Recover the narrow crash window where the complete partial file was flushed
         // but the process stopped before the final atomic rename. A 416 is only proof
         // of completion when its total length and representation validator both match.
@@ -81,10 +87,6 @@ public sealed class AudioFileDownloader
 
         response.EnsureSuccessStatusCode();
 
-        // Never accept a provider redirect from HTTPS to an insecure transport.
-        if (response.RequestMessage?.RequestUri is { } finalUri &&
-            !string.Equals(finalUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-            throw new HttpRequestException("The download redirected to a non-HTTPS address.");
 
         var isPartialResponse = response.StatusCode == System.Net.HttpStatusCode.PartialContent;
         var append = existingBytes > 0 && isPartialResponse;
