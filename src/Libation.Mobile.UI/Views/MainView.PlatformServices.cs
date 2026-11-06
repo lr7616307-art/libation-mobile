@@ -15,6 +15,9 @@ public partial class MainView
     /// </summary>
     public static Func<ILibraryCatalogProvider>? PlatformLibraryCatalogProviderFactory { get; set; }
 
+    /// <summary>Supplies the process-wide persistent queue shared with Android services.</summary>
+    public static Func<IDownloadQueue>? PlatformDownloadQueueFactory { get; set; }
+
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
 
