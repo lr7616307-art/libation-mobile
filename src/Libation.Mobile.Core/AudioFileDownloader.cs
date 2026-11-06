@@ -8,6 +8,7 @@ namespace Libation.Mobile.Core;
 /// </summary>
 public sealed class AudioFileDownloader
 {
+    private const long DurableCheckpointInterval = 1024 * 1024;
     private readonly HttpClient _httpClient;
     private readonly long _maximumBytes;
 
@@ -138,15 +139,35 @@ public sealed class AudioFileDownloader
 
         var buffer = new byte[64 * 1024];
         long received = startingBytes;
-        while (true)
+        var nextDurableCheckpoint = (received / DurableCheckpointInterval + 1) * DurableCheckpointInterval;
+        try
         {
-            var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-            if (read == 0) break;
-            if (read > _maximumBytes - received)
-                throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
-            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            received += read;
-            progress?.Report(new AudioDownloadProgress(received, expectedFinalLength));
+            while (true)
+            {
+                var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+                if (read == 0) break;
+                if (read > _maximumBytes - received)
+                    throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
+                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                received += read;
+                progress?.Report(new AudioDownloadProgress(received, expectedFinalLength));
+
+                // Flush every MiB through the OS file buffers to stable storage. This
+                // bounds data loss after an abrupt process/device stop without forcing
+                // a disk sync for every 64 KiB network read.
+                if (received >= nextDurableCheckpoint)
+                {
+                    await FlushDurablyAsync(output);
+                    nextDurableCheckpoint = (received / DurableCheckpointInterval + 1) * DurableCheckpointInterval;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Preserve all bytes accepted by the file stream before returning control
+            // to the queue's cancellation/retry path.
+            await FlushDurablyAsync(output);
+            throw;
         }
 
         if (expectedFinalLength is long expectedBytes && received != expectedBytes)
@@ -165,6 +186,12 @@ public sealed class AudioFileDownloader
         if (File.Exists(validatorPath))
             File.Delete(validatorPath);
         return new AudioDownloadResult(fullPath, received);
+    }
+
+    private static async Task FlushDurablyAsync(FileStream output)
+    {
+        await output.FlushAsync(CancellationToken.None);
+        output.Flush(flushToDisk: true);
     }
 
     private readonly record struct ResumeValidator(
