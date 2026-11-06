@@ -83,6 +83,29 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_RejectsEmptySuccessfulResponseAndPreservesExistingDestination()
+    {
+        using var directory = new TemporaryDirectory();
+        Directory.CreateDirectory(directory.Path);
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        await File.WriteAllTextAsync(destination, "existing");
+        using var client = new HttpClient(new StubHandler((_, _) =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent([])
+            }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal("existing", await File.ReadAllTextAsync(destination));
+        Assert.True(File.Exists(partial));
+        Assert.Empty(await File.ReadAllBytesAsync(partial));
+    }
+
+    [Fact]
     public async Task DownloadAsync_RejectsTruncatedResponseAndKeepsPartialForRetry()
     {
         using var directory = new TemporaryDirectory();

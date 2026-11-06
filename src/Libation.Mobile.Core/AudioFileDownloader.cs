@@ -114,6 +114,11 @@ public sealed class AudioFileDownloader
             throw new InvalidDataException(
                 $"The download ended early or contained extra data. Expected {expectedBytes} bytes but received {received}.");
 
+        // A successful HTTP response is not necessarily a usable audiobook.
+        // Never publish a zero-byte file or mark an empty transfer as complete.
+        if (received == 0)
+            throw new InvalidDataException("The audio provider returned an empty download.");
+
         await output.FlushAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         output.Close();
