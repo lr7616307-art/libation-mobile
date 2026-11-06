@@ -265,13 +265,13 @@ public sealed class AudioFileDownloaderTests
         var payload = new byte[] { 1, 2, 3, 4, 5 };
         Directory.CreateDirectory(directory.Path);
         await File.WriteAllBytesAsync(partial, payload);
-        await File.WriteAllTextAsync(partial + ".validator", "etag:\\"stable-v1\\"");
+        await File.WriteAllTextAsync(partial + ".validator", "etag:\"stable-v1\"");
         using var client = new HttpClient(new StubHandler((request, _) =>
         {
             Assert.Equal(payload.Length, request.Headers.Range?.Ranges.Single().From);
-            Assert.Equal("\\"stable-v1\\"", request.Headers.IfRange?.EntityTag?.Tag);
+            Assert.Equal("\"stable-v1\"", request.Headers.IfRange?.EntityTag?.Tag);
             var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
-            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\\"stable-v1\\"");
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"stable-v1\"");
             return response;
         }));
         var downloader = new AudioFileDownloader(client);
