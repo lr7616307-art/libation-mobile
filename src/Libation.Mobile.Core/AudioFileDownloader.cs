@@ -62,6 +62,23 @@ public sealed class AudioFileDownloader
 
         using var response = await _httpClient.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        // Recover the narrow crash window where the complete partial file was flushed
+        // but the process stopped before the final atomic rename. A 416 is only proof
+        // of completion when its total length and representation validator both match.
+        if (response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable &&
+            existingBytes > 0 && savedValidator is { } completedValidator &&
+            response.Content.Headers.ContentRange is { HasLength: true, Length: long totalLength } &&
+            totalLength == existingBytes &&
+            ResponseMatchesValidator(response, completedValidator))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(partialPath, fullPath, overwrite: true);
+            if (File.Exists(validatorPath))
+                File.Delete(validatorPath);
+            return new AudioDownloadResult(fullPath, existingBytes);
+        }
+
         response.EnsureSuccessStatusCode();
 
         // Never accept a provider redirect from HTTPS to an insecure transport.
