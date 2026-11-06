@@ -193,14 +193,14 @@ public sealed class AndroidDownloadQueueService : Service
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
         return new Notification.Builder(this, ChannelId)
-            .SetSmallIcon(Resource.Mipmap.ic_launcher)
+            .SetSmallIcon(Resource.Drawable.ic_download_pause)
             .SetContentTitle("VØRATH downloads")
             .SetContentText(text)
             .SetOnlyAlertOnce(true)
             .SetOngoing(true)
             .SetProgress(100, progress, indeterminate)
             .AddAction(new Notification.Action.Builder(
-                0,
+                Android.Graphics.Drawables.Icon.CreateWithResource(this, Resource.Drawable.ic_download_pause),
                 "Pause",
                 cancelPendingIntent).Build())
             .Build();
