@@ -198,7 +198,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnMediaMetadataChanged(MediaMetadata? metadata) { }
     public void OnMetadata(Metadata? metadata) { }
     public void OnPlayWhenReadyChanged(bool playWhenReady, int reason) => UpdateNotification();
-    public void OnPositionDiscontinuity(PlayerPositionInfo? oldPosition, PlayerPositionInfo? newPosition, int reason) { }
+    public void OnPositionDiscontinuity(PlayerPositionInfo? oldPosition, PlayerPositionInfo? newPosition, int reason)
+    {
+        // Seek and media-position discontinuities can be followed by an abrupt
+        // process death. Persist the new position immediately instead of waiting
+        // for the next five-second periodic checkpoint.
+        SavePlaybackSnapshot();
+    }
     public void OnPlaybackParametersChanged(PlaybackParameters? parameters) { }
     public void OnPlaybackSuppressionReasonChanged(int reason) { }
     public void OnPlayerErrorChanged(PlaybackException? error) { }
