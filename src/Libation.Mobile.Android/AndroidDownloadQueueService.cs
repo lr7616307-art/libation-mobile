@@ -173,7 +173,7 @@ public sealed class AndroidDownloadQueueService : Service
             .SetOngoing(true)
             .SetProgress(100, progress, indeterminate)
             .AddAction(new Notification.Action.Builder(
-                null,
+                0,
                 "Pause",
                 cancelPendingIntent).Build())
             .Build();
