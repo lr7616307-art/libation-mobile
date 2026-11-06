@@ -61,10 +61,6 @@ public sealed class DownloadQueueWorker
     }
 
     /// <summary>
-    /// Processes the oldest queued item. Returns false when no work is queued.
-    /// Cancellation returns the item to Queued so it can safely be resumed later.
-    /// </summary>
-    /// <summary>
     /// Processes queued items one at a time until the queue is empty.
     /// Failed items are counted as attempted and do not prevent later items from running.
     /// Cancellation stops the batch and leaves unstarted items queued.
@@ -96,6 +92,10 @@ public sealed class DownloadQueueWorker
         public void Report(T value) => report(value);
     }
 
+    /// <summary>
+    /// Processes the oldest queued item. Returns false when no work is queued.
+    /// Cancellation returns the item to Queued so it can safely be resumed later.
+    /// </summary>
     public async Task<bool> ProcessNextAsync(
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
