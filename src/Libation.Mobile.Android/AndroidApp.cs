@@ -13,6 +13,9 @@ namespace Libation.Mobile.Android;
 [Application]
 public class AndroidApp : AvaloniaAndroidApplication<App>
 {
+    /// <summary>Process-wide queue shared with the UI and Android foreground-service host.</summary>
+    public static IDownloadQueue? PersistentDownloadQueue { get; private set; }
+
     protected AndroidApp(nint javaReference, JniHandleOwnership transfer)
         : base(javaReference, transfer)
     {
@@ -30,7 +33,7 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         var connection = new AccountConnectionService(authenticator, new AccountSessionStore(secrets));
         var browser = new AndroidExternalBrowserLauncher(this);
         var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var downloadQueue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
+        PersistentDownloadQueue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
 
         MainView.PlatformSignInViewModelFactory =
             () => new AudibleSignInViewModel(connection, browser);
@@ -44,6 +47,7 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         // One queue instance is shared by the UI and future foreground-service
         // composition. MainViewModel.InitializeAsync recovers interrupted items
         // from this same persisted queue when the app opens after process death.
-        MainView.PlatformDownloadQueueFactory = () => downloadQueue;
+        MainView.PlatformDownloadQueueFactory = () => PersistentDownloadQueue
+            ?? throw new InvalidOperationException("The Android download queue has not been initialized.");
     }
 }
