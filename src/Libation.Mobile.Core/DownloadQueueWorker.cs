@@ -1,3 +1,5 @@
+using System.Threading.Channels;
+
 namespace Libation.Mobile.Core;
 
 /// <summary>
@@ -92,6 +94,18 @@ public sealed class DownloadQueueWorker
         public void Report(T value) => report(value);
     }
 
+    private async Task PersistProgressAsync(
+        string audiobookId,
+        ChannelReader<(long BytesReceived, long? TotalBytes)> reader)
+    {
+        await foreach (var value in reader.ReadAllAsync().ConfigureAwait(false))
+        {
+            await _queue.UpdateProgressAsync(
+                audiobookId, value.BytesReceived, value.TotalBytes,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
     /// Processes the oldest queued item. Returns false when no work is queued.
     /// Cancellation returns the item to Queued so it can safely be resumed later.
@@ -121,17 +135,24 @@ public sealed class DownloadQueueWorker
                 if (target is null)
                     throw new InvalidOperationException("The audio provider returned no download target.");
 
+                // Persist progress asynchronously. Blocking on UpdateProgressAsync from
+                // the downloader's synchronous IProgress callback can deadlock when a
+                // platform synchronization context is captured by the queue store.
+                var progressChannel = Channel.CreateUnbounded<(long BytesReceived, long? TotalBytes)>(
+                    new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+                var progressPersistence = PersistProgressAsync(item.AudiobookId, progressChannel.Reader);
                 long lastPersistedBytes = 0;
+                AudioDownloadProgress? latestProgress = null;
                 var downloadProgress = new InlineProgress<AudioDownloadProgress>(value =>
                 {
-                    // Persist at most once per MiB (plus the final report) to avoid
-                    // rewriting the queue JSON for every 64 KiB network chunk.
+                    latestProgress = value;
+                    // Queue writes are coalesced to roughly one per MiB, not one per
+                    // network chunk. The consumer performs the writes without blocking
+                    // the download stream's progress callback.
                     if (value.BytesReceived - lastPersistedBytes >= 1024 * 1024 ||
                         (value.TotalBytes is long total && value.BytesReceived == total))
                     {
-                        _queue.UpdateProgressAsync(
-                            item.AudiobookId, value.BytesReceived, value.TotalBytes,
-                            CancellationToken.None).GetAwaiter().GetResult();
+                        progressChannel.Writer.TryWrite((value.BytesReceived, value.TotalBytes));
                         lastPersistedBytes = value.BytesReceived;
                     }
 
@@ -139,14 +160,25 @@ public sealed class DownloadQueueWorker
                         item.AudiobookId, value.BytesReceived, value.TotalBytes, value.Percentage));
                 });
 
-                var result = await _downloader.DownloadAsync(
-                    target.DownloadUri,
-                    target.DestinationPath,
-                    downloadProgress,
-                    cancellationToken);
-                await _queue.UpdateProgressAsync(
-                    item.AudiobookId, result.BytesReceived, result.BytesReceived,
-                    CancellationToken.None);
+                AudioDownloadResult result;
+                try
+                {
+                    result = await _downloader.DownloadAsync(
+                        target.DownloadUri,
+                        target.DestinationPath,
+                        downloadProgress,
+                        cancellationToken);
+                    latestProgress = new AudioDownloadProgress(result.BytesReceived, result.BytesReceived);
+                }
+                finally
+                {
+                    // Flush the last observed byte count on success or cancellation so
+                    // the persisted checkpoint stays close to the retained .part file.
+                    if (latestProgress is not null)
+                        progressChannel.Writer.TryWrite((latestProgress.BytesReceived, latestProgress.TotalBytes));
+                    progressChannel.Writer.TryComplete();
+                    await progressPersistence.ConfigureAwait(false);
+                }
 
                 // This hook is deliberately optional and runs only after a complete
                 // download. Its output becomes the catalogue's playable local file.
