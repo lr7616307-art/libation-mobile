@@ -101,6 +101,36 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_CancellationPersistsBytesWrittenToPartialFile()
+    {
+        using var directory = new TemporaryDirectory();
+        var queuePath = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(queuePath);
+        await queue.EnqueueAsync("book-partial");
+        using var cancellation = new CancellationTokenSource();
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new CancelAfterFirstReadStream(
+                Enumerable.Range(0, 128 * 1024).Select(index => (byte)(index % 251)).ToArray(),
+                cancellation))
+        }));
+        var destination = Path.Combine(directory.Path, "book-partial.m4b");
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book-partial"), destination));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => worker.ProcessNextAsync(cancellationToken: cancellation.Token));
+
+        var saved = Assert.Single(await new JsonDownloadQueue(queuePath).GetItemsAsync());
+        var partialPath = destination + ".part";
+        Assert.Equal(DownloadStatus.Queued, saved.Status);
+        Assert.True(File.Exists(partialPath));
+        Assert.True(saved.BytesReceived > 0);
+        Assert.Equal(new FileInfo(partialPath).Length, saved.BytesReceived);
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_AttachesCompletedAudioToLocalCatalogue()
     {
         using var directory = new TemporaryDirectory();
@@ -420,6 +450,42 @@ public sealed class DownloadQueueWorkerTests
         public Task<AuthorizedAudioDownload> ResolveAsync(
             string audiobookId, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("No authorized download URL is available.");
+    }
+
+    private sealed class CancelAfterFirstReadStream(byte[] payload, CancellationTokenSource cancellation) : Stream
+    {
+        private int _position;
+        private bool _cancelled;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => payload.Length;
+        public override long Position { get => _position; set => throw new NotSupportedException(); }
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = Math.Min(count, payload.Length - _position);
+            Array.Copy(payload, _position, buffer, offset, read);
+            _position += read;
+            return read;
+        }
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (_cancelled)
+                return ValueTask.FromCanceled<int>(cancellationToken);
+            var read = Math.Min(buffer.Length, payload.Length - _position);
+            payload.AsMemory(_position, read).CopyTo(buffer);
+            _position += read;
+            _cancelled = true;
+            cancellation.Cancel();
+            return ValueTask.FromResult(read);
+        }
     }
 
     private sealed class StubHandler(Func<HttpResponseMessage> response) : HttpMessageHandler
