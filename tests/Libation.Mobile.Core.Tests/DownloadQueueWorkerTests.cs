@@ -144,6 +144,25 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessAllAsync_CancellationKeepsCurrentAndUnstartedItemsQueued()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-current");
+        await queue.EnqueueAsync("book-pending");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        using var cancellation = new CancellationTokenSource();
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client), new CancellingSource(cancellation));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => worker.ProcessAllAsync(cancellationToken: cancellation.Token));
+
+        var items = await queue.GetItemsAsync();
+        Assert.All(items, item => Assert.Equal(DownloadStatus.Queued, item.Status));
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_NoQueuedItemsReturnsFalse()
     {
         using var directory = new TemporaryDirectory();
