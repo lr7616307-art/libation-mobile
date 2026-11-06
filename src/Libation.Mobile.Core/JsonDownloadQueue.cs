@@ -35,6 +35,32 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         }
     }
 
+    /// <summary>
+    /// Requeues items that were marked Downloading when the process stopped.
+    /// Partial files and saved byte counts remain intact for a later resume.
+    /// </summary>
+    public async Task<int> RecoverInterruptedDownloadsAsync(CancellationToken cancellationToken = default)
+    {
+        var recovered = 0;
+        await MutateAsync(items =>
+        {
+            for (var index = 0; index < items.Count; index++)
+            {
+                if (items[index].Status != DownloadStatus.Downloading)
+                    continue;
+
+                items[index] = items[index] with
+                {
+                    Status = DownloadStatus.Queued,
+                    UpdatedAtUtc = DateTimeOffset.UtcNow,
+                    ErrorMessage = null
+                };
+                recovered++;
+            }
+        }, cancellationToken);
+        return recovered;
+    }
+
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
