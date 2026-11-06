@@ -160,6 +160,7 @@ public sealed class AudioFileDownloaderTests
             new Uri("https://provider.example/audio"), destination));
 
         Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(partial));
+        Assert.Equal("etag:\"old-version\"", await File.ReadAllTextAsync(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
