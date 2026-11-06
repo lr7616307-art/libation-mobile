@@ -334,6 +334,33 @@ public sealed class AccountConnectionServiceTests
     }
 
     [Fact]
+    public async Task Disconnect_WaitsForInFlightStateReadAndPreventsStaleConnectedResultAfterLogout()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AccountSessionStore(secrets);
+        await store.SaveAsync(NewSession("acct-state-race", "access", "refresh"));
+        var authenticator = new FakeAuthenticator
+        {
+            BlockIdentityCheck = true
+        };
+        var service = new AccountConnectionService(authenticator, store);
+
+        var stateTask = service.GetStateAsync();
+        await authenticator.IdentityCheckStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var disconnectTask = service.DisconnectAsync();
+
+        Assert.False(disconnectTask.IsCompleted);
+        authenticator.AllowIdentityCheckToFinish.TrySetResult();
+
+        var state = await stateTask;
+        await disconnectTask;
+
+        Assert.Equal(AccountConnectionStatus.Connected, state.Status);
+        Assert.Null(await store.LoadAsync());
+        Assert.Equal(1, authenticator.DisconnectCount);
+    }
+
+    [Fact]
     public async Task Disconnect_ClearsSavedSessionAndPendingChallenge()
     {
         var secrets = new InMemorySecretStore();
@@ -395,6 +422,7 @@ public sealed class AccountConnectionServiceTests
         public int RefreshCount { get; private set; }
         public bool BlockRefresh { get; init; }
         public bool BlockComplete { get; init; }
+        public bool BlockIdentityCheck { get; init; }
         public TaskCompletionSource RefreshStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource AllowRefreshToFinish { get; } =
@@ -402,6 +430,10 @@ public sealed class AccountConnectionServiceTests
         public TaskCompletionSource CompleteStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource AllowCompleteToFinish { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource IdentityCheckStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AllowIdentityCheckToFinish { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool? RestorableIdentity { get; set; }
         public string NextChallengeId { get; set; } = "challenge-1";
@@ -429,8 +461,16 @@ public sealed class AccountConnectionServiceTests
             return completion ?? throw new InvalidOperationException("No fake completion result configured.");
         }
 
-        public Task<bool> HasRestorableIdentityAsync(CancellationToken cancellationToken = default)
-        { cancellationToken.ThrowIfCancellationRequested(); return Task.FromResult(RestorableIdentity ?? true); }
+        public async Task<bool> HasRestorableIdentityAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (BlockIdentityCheck)
+            {
+                IdentityCheckStarted.TrySetResult();
+                await AllowIdentityCheckToFinish.Task.WaitAsync(cancellationToken);
+            }
+            return RestorableIdentity ?? true;
+        }
 
         public Task DisconnectAsync(CancellationToken cancellationToken = default)
         {
