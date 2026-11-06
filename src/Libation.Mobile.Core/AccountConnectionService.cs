@@ -74,14 +74,21 @@ public sealed class AccountConnectionService(
 
     public async Task<AccountConnectionState> GetStateAsync(CancellationToken cancellationToken = default)
     {
-        var session = await sessions.LoadAsync(cancellationToken);
-        if (session is null) return new(AccountConnectionStatus.Disconnected, null, null);
+        await _signInGate.WaitAsync(cancellationToken);
+        try
+        {
+            var session = await sessions.LoadAsync(cancellationToken);
+            if (session is null) return new(AccountConnectionStatus.Disconnected, null, null);
 
-        // A generic session marker is insufficient for providers that also need a full identity.
-        if (!await authenticator.HasRestorableIdentityAsync(cancellationToken))
-            return new(AccountConnectionStatus.ReauthenticationRequired, session.AccountId, session.ExpiresAtUtc);
+            // Read the session and provider identity as one serialized snapshot.
+            // Otherwise a concurrent disconnect could clear credentials while this
+            // method is awaiting the provider and still return a stale Connected state.
+            if (!await authenticator.HasRestorableIdentityAsync(cancellationToken))
+                return new(AccountConnectionStatus.ReauthenticationRequired, session.AccountId, session.ExpiresAtUtc);
 
-        return ToState(session);
+            return ToState(session);
+        }
+        finally { _signInGate.Release(); }
     }
 
     public async Task<AccountConnectionState> RefreshAsync(CancellationToken cancellationToken = default)
