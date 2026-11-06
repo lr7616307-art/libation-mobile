@@ -94,6 +94,62 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_PromotesCompletePartialAfterRangeNotSatisfiableWhenValidatorMatches()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var payload = new byte[] { 1, 2, 3, 4, 5 };
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(destination + ".part", payload);
+        await File.WriteAllTextAsync(destination + ".part.validator", "etag:\"complete-v1\"");
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            Assert.Equal(payload.Length, request.Headers.Range?.Ranges.Single().From);
+            Assert.Equal("\"complete-v1\"", request.Headers.IfRange?.EntityTag?.Tag);
+            var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(payload.Length);
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"complete-v1\"");
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        var result = await downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination);
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(destination));
+        Assert.Equal(payload.Length, result.BytesReceived);
+        Assert.False(File.Exists(destination + ".part"));
+        Assert.False(File.Exists(destination + ".part.validator"));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_DoesNotPromoteCompletePartialWhenRangeValidatorDiffers()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var payload = new byte[] { 1, 2, 3, 4, 5 };
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(destination + ".part", payload);
+        await File.WriteAllTextAsync(destination + ".part.validator", "etag:\"old-version\"");
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(payload.Length);
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"new-version\"");
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
     public async Task DownloadAsync_RejectsPartialResponseWhenEntityTagIsMissing()
     {
         using var directory = new TemporaryDirectory();
