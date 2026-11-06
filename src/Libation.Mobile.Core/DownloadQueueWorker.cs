@@ -64,6 +64,21 @@ public sealed class DownloadQueueWorker
     /// Processes the oldest queued item. Returns false when no work is queued.
     /// Cancellation returns the item to Queued so it can safely be resumed later.
     /// </summary>
+    /// <summary>
+    /// Processes queued items one at a time until the queue is empty.
+    /// Failed items are counted as attempted and do not prevent later items from running.
+    /// Cancellation stops the batch and leaves unstarted items queued.
+    /// </summary>
+    public async Task<int> ProcessAllAsync(
+        IProgress<DownloadQueueProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var processed = 0;
+        while (await ProcessNextAsync(progress, cancellationToken))
+            processed++;
+        return processed;
+    }
+
     public async Task<int> RecoverInterruptedDownloadsAsync(CancellationToken cancellationToken = default)
     {
         var items = await _queue.GetItemsAsync(cancellationToken);
