@@ -140,9 +140,14 @@ public sealed class DownloadQueueWorkerTests
         var destination = Path.Combine(directory.Path, "book-restart-resume.m4b");
         var payload = Enumerable.Range(0, 128 * 1024).Select(index => (byte)(index % 251)).ToArray();
         using var cancellation = new CancellationTokenSource();
-        using (var interruptedClient = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        using (var interruptedClient = new HttpClient(new StubHandler(() =>
         {
-            Content = new StreamContent(new CancelAfterFirstReadStream(payload, cancellation))
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new CancelAfterFirstReadStream(payload, cancellation))
+            };
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"stable-book-v1\"");
+            return response;
         })))
         {
             var interruptedWorker = new DownloadQueueWorker(
@@ -170,6 +175,7 @@ public sealed class DownloadQueueWorkerTests
             {
                 Content = new ByteArrayContent(payload[(int)offset..])
             };
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"stable-book-v1\"");
             response.Content.Headers.ContentRange =
                 new System.Net.Http.Headers.ContentRangeHeaderValue(offset, payload.Length - 1, payload.Length);
             return response;
