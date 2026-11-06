@@ -126,7 +126,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var stored = await _repository.GetBooksAsync(cancellationToken);
             _allBooks = stored;
             ApplyFilter(_allBooks);
-            await _downloadQueue.RecoverInterruptedDownloadsAsync(cancellationToken);
             await ReloadQueueAsync(cancellationToken);
             LastSuccessfulSync = DateTimeOffset.UtcNow;
             SyncStatus = $"Sync complete. {count} audiobook metadata entr{(count == 1 ? "y" : "ies")} updated.";
@@ -206,6 +205,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var stored = await _repository.GetBooksAsync(cancellationToken);
             _allBooks = stored;
             ApplyFilter(_allBooks);
+            await _downloadQueue.RecoverInterruptedDownloadsAsync(cancellationToken);
             await ReloadQueueAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
