@@ -162,7 +162,7 @@ public sealed class DownloadQueueWorkerTests
         Assert.True(offset < payload.Length);
 
         var rangeWasRequested = false;
-        using var resumedClient = new HttpClient(new StubHandler(request =>
+        using var resumedClient = new HttpClient(new RequestAwareStubHandler(request =>
         {
             rangeWasRequested = true;
             Assert.Equal(offset, request.Headers.Range?.Ranges.Single().From);
@@ -548,6 +548,14 @@ public sealed class DownloadQueueWorkerTests
             _firstReadCompleted = true;
             return ValueTask.FromResult(read);
         }
+    }
+
+    private sealed class RequestAwareStubHandler(Func<HttpRequestMessage, HttpResponseMessage> response)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(response(request));
     }
 
     private sealed class StubHandler(Func<HttpResponseMessage> response) : HttpMessageHandler
