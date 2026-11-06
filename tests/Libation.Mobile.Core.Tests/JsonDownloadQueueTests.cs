@@ -43,6 +43,35 @@ public sealed class JsonDownloadQueueTests
     }
 
     [Fact]
+    public async Task UpdateProgress_PersistsByteCountsAndPercentageAcrossQueueInstances()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(path);
+        await queue.EnqueueAsync("book-progress");
+        await queue.UpdateStatusAsync("book-progress", DownloadStatus.Downloading);
+
+        await queue.UpdateProgressAsync("book-progress", 5_000, 10_000);
+
+        var restored = Assert.Single(await new JsonDownloadQueue(path).GetItemsAsync());
+        Assert.Equal(5_000, restored.BytesReceived);
+        Assert.Equal(10_000, restored.TotalBytes);
+        Assert.Equal(50d, restored.ProgressPercentage);
+        Assert.Equal(DownloadStatus.Downloading, restored.Status);
+    }
+
+    [Fact]
+    public async Task UpdateProgress_RejectsProgressOutsideDownloadingState()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-queued");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => queue.UpdateProgressAsync("book-queued", 10, 100));
+    }
+
+    [Fact]
     public async Task FailedItem_CanBeRetriedByEnqueueingAgain()
     {
         using var directory = new TemporaryDirectory();
