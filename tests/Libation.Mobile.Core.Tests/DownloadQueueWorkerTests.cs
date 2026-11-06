@@ -29,6 +29,28 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessAllAsync_DrainsQueuedItemsSequentially()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-1");
+        await queue.EnqueueAsync("book-2");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+        }));
+        var source = new ConcurrencyTrackingSource();
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        var processed = await worker.ProcessAllAsync();
+
+        Assert.Equal(2, processed);
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(1, source.MaximumConcurrentCalls);
+        Assert.All(await queue.GetItemsAsync(), item => Assert.Equal(DownloadStatus.Completed, item.Status));
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_PersistsFinalDownloadProgressOnQueueItem()
     {
         using var directory = new TemporaryDirectory();
