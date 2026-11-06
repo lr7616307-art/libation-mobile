@@ -29,6 +29,33 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_PersistsFinalDownloadProgressOnQueueItem()
+    {
+        using var directory = new TemporaryDirectory();
+        var queuePath = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(queuePath);
+        await queue.EnqueueAsync("book-progress-worker");
+        var payload = Enumerable.Range(0, 1_250_000).Select(index => (byte)(index % 251)).ToArray();
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload)
+        }));
+        var destination = Path.Combine(directory.Path, "book-progress.m4b");
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book-progress"), destination));
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        // Reopen the JSON queue to prove the worker persisted its final byte counts.
+        var item = Assert.Single(await new JsonDownloadQueue(queuePath).GetItemsAsync());
+        Assert.Equal(DownloadStatus.Completed, item.Status);
+        Assert.Equal(payload.LongLength, item.BytesReceived);
+        Assert.Equal(payload.LongLength, item.TotalBytes);
+        Assert.Equal(100d, item.ProgressPercentage);
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_AttachesCompletedAudioToLocalCatalogue()
     {
         using var directory = new TemporaryDirectory();
