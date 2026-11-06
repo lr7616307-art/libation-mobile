@@ -216,6 +216,9 @@ public sealed class JsonDownloadQueue : IDownloadQueue
             {
                 await JsonSerializer.SerializeAsync(stream, items, JsonOptions, cancellationToken);
                 await stream.FlushAsync(cancellationToken);
+                // Persist queue state before the atomic rename. This is important
+                // for restart recovery after a sudden process or device shutdown.
+                stream.Flush(flushToDisk: true);
             }
 
             File.Move(temporaryPath, _filePath, overwrite: true);
