@@ -104,7 +104,7 @@ public sealed class AndroidDownloadQueueService : Service
             var processed = await _controller!.RunAsync(progress);
             UpdateNotification($"Queue finished · {processed} item(s) processed", 100, indeterminate: false);
         }
-        catch (OperationCanceledException)
+        catch (System.OperationCanceledException)
         {
             UpdateNotification("Download queue paused", 0, indeterminate: false);
         }
