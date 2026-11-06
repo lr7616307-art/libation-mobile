@@ -76,6 +76,11 @@ public sealed class DownloadQueueWorker
         return recovered;
     }
 
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
+    }
+
     public async Task<bool> ProcessNextAsync(
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
@@ -101,13 +106,32 @@ public sealed class DownloadQueueWorker
                 if (target is null)
                     throw new InvalidOperationException("The audio provider returned no download target.");
 
+                long lastPersistedBytes = 0;
+                var downloadProgress = new InlineProgress<AudioDownloadProgress>(value =>
+                {
+                    // Persist at most once per MiB (plus the final report) to avoid
+                    // rewriting the queue JSON for every 64 KiB network chunk.
+                    if (value.BytesReceived - lastPersistedBytes >= 1024 * 1024 ||
+                        (value.TotalBytes is long total && value.BytesReceived == total))
+                    {
+                        _queue.UpdateProgressAsync(
+                            item.AudiobookId, value.BytesReceived, value.TotalBytes,
+                            CancellationToken.None).GetAwaiter().GetResult();
+                        lastPersistedBytes = value.BytesReceived;
+                    }
+
+                    progress?.Report(new DownloadQueueProgress(
+                        item.AudiobookId, value.BytesReceived, value.TotalBytes, value.Percentage));
+                });
+
                 var result = await _downloader.DownloadAsync(
                     target.DownloadUri,
                     target.DestinationPath,
-                    new Progress<AudioDownloadProgress>(value =>
-                        progress?.Report(new DownloadQueueProgress(
-                            item.AudiobookId, value.BytesReceived, value.TotalBytes, value.Percentage))),
+                    downloadProgress,
                     cancellationToken);
+                await _queue.UpdateProgressAsync(
+                    item.AudiobookId, result.BytesReceived, result.BytesReceived,
+                    CancellationToken.None);
 
                 // This hook is deliberately optional and runs only after a complete
                 // download. Its output becomes the catalogue's playable local file.
