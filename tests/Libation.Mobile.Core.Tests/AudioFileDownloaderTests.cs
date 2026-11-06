@@ -521,6 +521,35 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_CancellationDurablyCheckpointsAcceptedBytes()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        var payload = Enumerable.Range(0, 2 * 1024 * 1024).Select(i => (byte)(i % 251)).ToArray();
+        using var cancellation = new CancellationTokenSource();
+        using var client = new HttpClient(new StubHandler((_, _) =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(payload)
+            }));
+        var downloader = new AudioFileDownloader(client);
+        var progress = new CancelAfterBytesProgress(cancellation, 1024 * 1024);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"),
+            destination,
+            progress,
+            cancellation.Token));
+
+        Assert.True(File.Exists(partial));
+        var savedPartial = await File.ReadAllBytesAsync(partial);
+        Assert.True(savedPartial.Length >= 1024 * 1024);
+        Assert.Equal(payload[..savedPartial.Length], savedPartial);
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
     public async Task DownloadAsync_CancellationKeepsPartialAndPreservesExistingDestination()
     {
         using var directory = new TemporaryDirectory();
@@ -692,6 +721,17 @@ public sealed class AudioFileDownloaderTests
     {
         public List<T> Values { get; } = [];
         public void Report(T value) => Values.Add(value);
+    }
+
+    private sealed class CancelAfterBytesProgress(
+        CancellationTokenSource cancellation, long threshold)
+        : IProgress<AudioDownloadProgress>
+    {
+        public void Report(AudioDownloadProgress value)
+        {
+            if (value.BytesReceived >= threshold)
+                cancellation.Cancel();
+        }
     }
 
     private sealed class CancelAfterFirstProgress(CancellationTokenSource cancellation)
