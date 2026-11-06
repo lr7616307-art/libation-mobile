@@ -15,6 +15,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly CoverArtImportService? _coverArtImportService;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
+    private readonly SemaphoreSlim _queueRefreshGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
     private bool _isSyncing;
     private string _syncStatus = "Provider not connected. Audible library sync is not available yet.";
@@ -214,6 +215,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public Task ReloadAsync(CancellationToken cancellationToken = default) => InitializeAsync(cancellationToken);
+
+    /// <summary>Refreshes queue state written by the background download service.</summary>
+    public async Task RefreshQueueAsync(CancellationToken cancellationToken = default)
+    {
+        if (!await _queueRefreshGate.WaitAsync(0, cancellationToken))
+            return;
+
+        try
+        {
+            await ReloadQueueAsync(cancellationToken);
+        }
+        finally
+        {
+            _queueRefreshGate.Release();
+        }
+    }
 
     public void BeginEdit(string audiobookId)
     {
@@ -475,15 +492,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private async Task ReloadQueueAsync(CancellationToken cancellationToken)
     {
         var items = await _downloadQueue.GetItemsAsync(cancellationToken);
-        QueueItems.Clear();
-        foreach (var item in items)
+        var displayItems = items.Select(item =>
         {
             var book = _allBooks.FirstOrDefault(candidate => string.Equals(candidate.Id, item.AudiobookId, StringComparison.Ordinal));
-            QueueItems.Add(item with
+            return item with
             {
                 DisplayTitle = book?.Title ?? item.AudiobookId,
                 DisplayAuthor = book?.Author ?? string.Empty
-            });
+            };
+        }).ToArray();
+
+        // Avoid needless collection churn when a periodic refresh finds no changes.
+        if (!QueueItems.SequenceEqual(displayItems))
+        {
+            QueueItems.Clear();
+            foreach (var item in displayItems)
+                QueueItems.Add(item);
         }
         OnPropertyChanged(nameof(IsQueueEmpty));
         OnPropertyChanged(nameof(QueueCountLabel));

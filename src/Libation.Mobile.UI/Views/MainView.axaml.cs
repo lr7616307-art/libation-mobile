@@ -14,12 +14,14 @@ public partial class MainView : UserControl
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly DispatcherTimer _sleepTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DispatcherTimer _queueRefreshTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private DateTimeOffset? _sleepTimerEndsAt;
     private static readonly int[] SleepTimerMinutes = [15, 30, 45, 60];
     private int _sleepTimerSelection = -1;
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private bool _isRefreshingQueue;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
     private static readonly FilePickerFileType CoverImageFileType = new("Audiobook cover image") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"] };
@@ -55,7 +57,10 @@ public partial class MainView : UserControl
         _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _sleepTimer.Tick += SleepTimerTick;
+        _queueRefreshTimer.Tick -= QueueRefreshTimerTick;
+        _queueRefreshTimer.Tick += QueueRefreshTimerTick;
         await InitializeAndRestorePlaybackAsync();
+        UpdateQueueRefreshTimer();
     }
 
     private async Task InitializeAndRestorePlaybackAsync()
@@ -362,6 +367,8 @@ public partial class MainView : UserControl
     {
         _playbackProgressTimer.Stop();
         _sleepTimer.Stop();
+        _queueRefreshTimer.Stop();
+        _queueRefreshTimer.Tick -= QueueRefreshTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         if (_localAudioPlayer is null) return;
@@ -666,22 +673,60 @@ public partial class MainView : UserControl
         await _viewModel.ImportCoverArtAsync(book.Id, files[0].Name, stream);
     }
 
+    private void UpdateQueueRefreshTimer()
+    {
+        if (_viewModel.QueueItems.Count > 0)
+            _queueRefreshTimer.Start();
+        else
+            _queueRefreshTimer.Stop();
+    }
+
+    private async void QueueRefreshTimerTick(object? sender, EventArgs e)
+    {
+        if (_isRefreshingQueue)
+            return;
+
+        _isRefreshingQueue = true;
+        try
+        {
+            await _viewModel.RefreshQueueAsync();
+            UpdateQueueRefreshTimer();
+        }
+        catch (Exception)
+        {
+            // A transient storage read must not interrupt playback or the UI loop.
+        }
+        finally
+        {
+            _isRefreshingQueue = false;
+        }
+    }
+
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
+        {
             await _viewModel.EnqueueAsync(book.Id);
+            UpdateQueueRefreshTimer();
+        }
     }
 
     private async void RetryQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: DownloadQueueItem item } && item.Status == DownloadStatus.Failed)
+        {
             await _viewModel.RetryFailedAsync(item.AudiobookId);
+            UpdateQueueRefreshTimer();
+        }
     }
 
     private async void RemoveQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: DownloadQueueItem item })
+        {
             await _viewModel.RemoveFromQueueAsync(item.AudiobookId);
+            UpdateQueueRefreshTimer();
+        }
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);

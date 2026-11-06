@@ -30,6 +30,32 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task RefreshQueueAsync_ObservesProgressWrittenByBackgroundQueueWorker()
+    {
+        using var directory = new TemporaryDirectory();
+        var queuePath = Path.Combine(directory.Path, "queue.json");
+        var viewModel = new MainViewModel(
+            new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")),
+            new JsonDownloadQueue(queuePath));
+        await viewModel.InitializeAsync();
+
+        var backgroundQueue = new JsonDownloadQueue(queuePath);
+        await backgroundQueue.EnqueueAsync("background-book");
+        await viewModel.RefreshQueueAsync();
+        Assert.Equal(DownloadStatus.Queued, Assert.Single(viewModel.QueueItems).Status);
+
+        await backgroundQueue.UpdateStatusAsync("background-book", DownloadStatus.Downloading);
+        await backgroundQueue.UpdateProgressAsync("background-book", 8_192, 32_768);
+        await viewModel.RefreshQueueAsync();
+
+        var refreshed = Assert.Single(viewModel.QueueItems);
+        Assert.Equal(DownloadStatus.Downloading, refreshed.Status);
+        Assert.Equal(8_192, refreshed.BytesReceived);
+        Assert.Equal(32_768, refreshed.TotalBytes);
+        Assert.Equal(25d, refreshed.ProgressPercentage);
+    }
+
+    [Fact]
     public async Task SyncLibraryAsync_WithoutProvider_ReportsNotConnected()
     {
         using var directory = new TemporaryDirectory();
