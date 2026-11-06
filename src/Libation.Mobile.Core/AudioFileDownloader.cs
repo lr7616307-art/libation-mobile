@@ -187,14 +187,14 @@ public sealed class AudioFileDownloader
         HttpResponseMessage response, ResumeValidator saved)
     {
         if (saved.SerializedValue.StartsWith("etag:", StringComparison.Ordinal))
-            return response.Headers.ETag is null ||
-                string.Equals("etag:" + response.Headers.ETag, saved.SerializedValue, StringComparison.Ordinal);
-        if (saved.SerializedValue.StartsWith("modified:", StringComparison.Ordinal) &&
-            response.Content.Headers.LastModified is { } modified)
-            return string.Equals(
-                "modified:" + modified.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture),
-                saved.SerializedValue, StringComparison.Ordinal);
-        return true;
+            return response.Headers.ETag is { } entityTag &&
+                string.Equals("etag:" + entityTag, saved.SerializedValue, StringComparison.Ordinal);
+        if (saved.SerializedValue.StartsWith("modified:", StringComparison.Ordinal))
+            return response.Content.Headers.LastModified is { } modified &&
+                string.Equals(
+                    "modified:" + modified.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                    saved.SerializedValue, StringComparison.Ordinal);
+        return false;
     }
 
     private static async Task WriteValidatorAsync(
