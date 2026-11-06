@@ -36,18 +36,29 @@ public sealed class AudioFileDownloader
             ?? throw new ArgumentException("Destination must include a parent directory.", nameof(destinationPath));
         Directory.CreateDirectory(directory);
 
-        // A stable partial-file name allows a later worker run to continue the same transfer.
+        // Resume only when a strong validator is available. Without one, a refreshed
+        // provider URL could point at a different representation and silently splice
+        // two versions of an audiobook together.
         var partialPath = fullPath + ".part";
+        var validatorPath = partialPath + ".validator";
         var existingBytes = File.Exists(partialPath) ? new FileInfo(partialPath).Length : 0;
-        if (existingBytes > _maximumBytes)
+        var savedValidator = existingBytes > 0
+            ? await ReadValidatorAsync(validatorPath, cancellationToken)
+            : null;
+        if (existingBytes > _maximumBytes || (existingBytes > 0 && savedValidator is null))
         {
-            File.Delete(partialPath);
+            if (File.Exists(partialPath)) File.Delete(partialPath);
+            if (File.Exists(validatorPath)) File.Delete(validatorPath);
             existingBytes = 0;
+            savedValidator = null;
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, authorizedDownloadUri);
         if (existingBytes > 0)
+        {
             request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingBytes, null);
+            request.Headers.IfRange = savedValidator!.Value.Condition;
+        }
 
         using var response = await _httpClient.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
@@ -60,6 +71,15 @@ public sealed class AudioFileDownloader
 
         var isPartialResponse = response.StatusCode == System.Net.HttpStatusCode.PartialContent;
         var append = existingBytes > 0 && isPartialResponse;
+        if (append && savedValidator is { } priorValidator &&
+            !ResponseMatchesValidator(response, priorValidator))
+            throw new HttpRequestException("The server resumed a different audiobook representation.");
+
+        var responseValidator = TryGetValidator(response);
+        if (responseValidator is not null)
+            await WriteValidatorAsync(validatorPath, responseValidator.Value, cancellationToken);
+        else if (!append && File.Exists(validatorPath))
+            File.Delete(validatorPath);
         var startingBytes = append ? existingBytes : 0;
         var responseLength = response.Content.Headers.ContentLength;
         long? expectedFinalLength = responseLength is long length
@@ -123,7 +143,73 @@ public sealed class AudioFileDownloader
         cancellationToken.ThrowIfCancellationRequested();
         output.Close();
         File.Move(partialPath, fullPath, overwrite: true);
+        if (File.Exists(validatorPath))
+            File.Delete(validatorPath);
         return new AudioDownloadResult(fullPath, received);
+    }
+
+    private readonly record struct ResumeValidator(
+        System.Net.Http.Headers.RangeConditionHeaderValue Condition,
+        string SerializedValue);
+
+    private static async Task<ResumeValidator?> ReadValidatorAsync(
+        string path, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path)) return null;
+        var value = (await File.ReadAllTextAsync(path, cancellationToken)).Trim();
+        if (value.StartsWith("etag:", StringComparison.Ordinal) &&
+            System.Net.Http.Headers.EntityTagHeaderValue.TryParse(value[5..], out var entityTag) &&
+            entityTag is not null && !entityTag.IsWeak)
+            return new ResumeValidator(
+                new System.Net.Http.Headers.RangeConditionHeaderValue(entityTag), value);
+        if (value.StartsWith("modified:", StringComparison.Ordinal) &&
+            DateTimeOffset.TryParse(value[9..], System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var modified))
+            return new ResumeValidator(
+                new System.Net.Http.Headers.RangeConditionHeaderValue(modified), value);
+        return null;
+    }
+
+    private static ResumeValidator? TryGetValidator(HttpResponseMessage response)
+    {
+        var entityTag = response.Headers.ETag;
+        if (entityTag is not null && !entityTag.IsWeak)
+            return new ResumeValidator(
+                new System.Net.Http.Headers.RangeConditionHeaderValue(entityTag),
+                "etag:" + entityTag);
+        var modified = response.Content.Headers.LastModified;
+        return modified is null ? null : new ResumeValidator(
+            new System.Net.Http.Headers.RangeConditionHeaderValue(modified.Value),
+            "modified:" + modified.Value.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private static bool ResponseMatchesValidator(
+        HttpResponseMessage response, ResumeValidator saved)
+    {
+        if (saved.SerializedValue.StartsWith("etag:", StringComparison.Ordinal))
+            return response.Headers.ETag is null ||
+                string.Equals("etag:" + response.Headers.ETag, saved.SerializedValue, StringComparison.Ordinal);
+        if (saved.SerializedValue.StartsWith("modified:", StringComparison.Ordinal) &&
+            response.Content.Headers.LastModified is { } modified)
+            return string.Equals(
+                "modified:" + modified.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                saved.SerializedValue, StringComparison.Ordinal);
+        return true;
+    }
+
+    private static async Task WriteValidatorAsync(
+        string path, ResumeValidator validator, CancellationToken cancellationToken)
+    {
+        var temporaryPath = path + ".tmp";
+        try
+        {
+            await File.WriteAllTextAsync(temporaryPath, validator.SerializedValue, cancellationToken);
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+        }
     }
 }
 
