@@ -110,7 +110,8 @@ public sealed class AudioFileDownloader
         if (isPartialResponse)
         {
             var range = response.Content.Headers.ContentRange;
-            if (!string.Equals(range?.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
+            if (range is null ||
+                !string.Equals(range.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
                 range.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
                 throw new HttpRequestException("The server returned an invalid byte range for this download.");
 
