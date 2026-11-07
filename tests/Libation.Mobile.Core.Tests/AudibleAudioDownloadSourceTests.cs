@@ -8,11 +8,12 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleAudioDownloadSourceTests
 {
     [Theory]
-    [InlineData(DrmType.Mpeg, AudioProtectionKind.Unprotected)]
-    [InlineData(DrmType.Adrm, AudioProtectionKind.AudibleAdrm)]
-    [InlineData(DrmType.Widevine, AudioProtectionKind.Widevine)]
+    [InlineData(DrmType.Mpeg, AudioProtectionKind.Unprotected, ".mp3")]
+    [InlineData(DrmType.Adrm, AudioProtectionKind.AudibleAdrm, ".aaxc")]
+    [InlineData(DrmType.Widevine, AudioProtectionKind.Widevine, ".protected")]
+    [InlineData((DrmType)999, AudioProtectionKind.UnknownProtected, ".protected")]
     public async Task ResolveAsync_MapsGrantedLicenceAndUsesProviderUrl(
-        DrmType drmType, AudioProtectionKind expectedProtection)
+        DrmType drmType, AudioProtectionKind expectedProtection, string expectedExtension)
     {
         var directory = CreateTemporaryDirectory();
         try
@@ -24,7 +25,7 @@ public sealed class AudibleAudioDownloadSourceTests
 
             Assert.Equal(new Uri("https://cdn.example/audio"), result.DownloadUri);
             Assert.Equal(expectedProtection, result.Protection.Kind);
-            Assert.Equal(Path.Combine(directory, "B012345678.aaxc"), result.DestinationPath);
+            Assert.Equal(Path.Combine(directory, "B012345678" + expectedExtension), result.DestinationPath);
         }
         finally { Directory.Delete(directory, recursive: true); }
     }
