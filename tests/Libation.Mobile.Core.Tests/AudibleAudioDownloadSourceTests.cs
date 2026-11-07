@@ -29,6 +29,50 @@ public sealed class AudibleAudioDownloadSourceTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
+    [Fact]
+    public async Task ResolveAsync_PreservesNonSecretLicenceLifecycleMetadataInUtc()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var expires = new DateTimeOffset(2027, 1, 2, 3, 4, 5, TimeSpan.FromHours(2));
+            var refresh = expires.AddDays(-2);
+            var removal = expires.AddDays(30);
+            var license = CreateLicense(DrmType.Adrm, "https://cdn.example/audio");
+            license.AccessExpiryDate = expires;
+            license.RefreshDate = refresh;
+            license.RemovalDate = removal;
+            license.ContentMetadata!.ContentReference.ContentFormat = "AAXC";
+
+            var source = new AudibleAudioDownloadSource((_, _) => Task.FromResult(license), directory);
+            var result = await source.ResolveAsync("B012345678");
+
+            Assert.Equal(expires.ToUniversalTime(), result.Protection.LicenceExpiresAtUtc);
+            Assert.Equal(refresh.ToUniversalTime(), result.Protection.LicenceRefreshAtUtc);
+            Assert.Equal(removal.ToUniversalTime(), result.Protection.LicenceRemovalAtUtc);
+            Assert.Equal("AAXC", result.Protection.ContentType);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LeavesMissingLifecycleDatesNull()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var source = new AudibleAudioDownloadSource(
+                (_, _) => Task.FromResult(CreateLicense(DrmType.Adrm, "https://cdn.example/audio")),
+                directory);
+            var result = await source.ResolveAsync("B012345678");
+
+            Assert.Null(result.Protection.LicenceExpiresAtUtc);
+            Assert.Null(result.Protection.LicenceRefreshAtUtc);
+            Assert.Null(result.Protection.LicenceRemovalAtUtc);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [Theory]
     [InlineData("http://cdn.example/audio")]
     [InlineData("file:///private/audio")]
