@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using AudibleApi;
 using AudibleApi.Authorization;
 using AudibleApi.Common;
+using Dinah.Core;
 using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Audible;
@@ -78,11 +79,11 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         // responsible for authenticating and requesting the provider licence.
         // The official package does not accept a CancellationToken for this API call.
         var license = await _requestLicense(audiobookId, cancellationToken).ConfigureAwait(false);
-
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (license is null || !string.Equals(
-            license.StatusCode.ToString(), "Granted", StringComparison.OrdinalIgnoreCase))
+        if (license is null)
+            throw new InvalidOperationException("Audible returned no offline download licence.");
+        if (!string.Equals(license.StatusCode, "Granted", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Audible did not grant an offline download licence for this audiobook.");
 
         var offlineUrl = license.ContentMetadata?.ContentUrl?.OfflineUrl;
