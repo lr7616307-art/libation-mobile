@@ -89,6 +89,25 @@ public sealed class AudibleAudioDownloadSourceTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
+    [Theory]
+    [InlineData("B876543210")]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task ResolveAsync_RejectsLicenceForDifferentOrMissingAsin(string? licensedAsin)
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var license = CreateLicense(DrmType.Mpeg, "https://cdn.example/audio");
+            license.ContentMetadata!.ContentReference.Asin = licensedAsin!;
+            var source = new AudibleAudioDownloadSource((_, _) => Task.FromResult(license), directory);
+
+            await Assert.ThrowsAsync<InvalidDataException>(() => source.ResolveAsync("B012345678"));
+            Assert.Empty(Directory.GetFiles(directory));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [Fact]
     public async Task ResolveAsync_RejectsGrantedLicenceWithoutContentReference()
     {
