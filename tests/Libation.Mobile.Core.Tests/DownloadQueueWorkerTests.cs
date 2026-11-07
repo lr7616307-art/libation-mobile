@@ -62,6 +62,43 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_RejectsRefreshedProtectedLicenceBeforeRetryWithoutProcessor()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-becomes-protected");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return requestCount == 1
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+                };
+        }));
+        var destination = Path.Combine(directory.Path, "book-becomes-protected.aaxc");
+        var source = new RefreshingProtectionSource(
+            new Uri("https://provider.example/expired"),
+            new Uri("https://provider.example/refreshed"),
+            destination,
+            AudioProtectionDescriptor.Unprotected,
+            new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm));
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(1, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("AudibleAdrm", item.ErrorMessage);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_DoesNotRefreshMoreThanOnceWhenFreshUrlIsRejected()
     {
         using var directory = new TemporaryDirectory();
@@ -600,6 +637,29 @@ public sealed class DownloadQueueWorkerTests
             CallCount++;
             return Task.FromResult(new AuthorizedAudioDownload(
                 CallCount == 1 ? firstUri : refreshedUri, path));
+        }
+    }
+
+    private sealed class RefreshingProtectionSource(
+        Uri firstUri,
+        Uri refreshedUri,
+        string path,
+        AudioProtectionDescriptor firstProtection,
+        AudioProtectionDescriptor refreshedProtection) : IAuthorizedAudioDownloadSource
+    {
+        public int CallCount { get; private set; }
+
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(new AuthorizedAudioDownload(
+                CallCount == 1 ? firstUri : refreshedUri,
+                path)
+            {
+                Protection = CallCount == 1 ? firstProtection : refreshedProtection
+            });
         }
     }
 
