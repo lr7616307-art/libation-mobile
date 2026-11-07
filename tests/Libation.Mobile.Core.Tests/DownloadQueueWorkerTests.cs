@@ -587,7 +587,9 @@ public sealed class DownloadQueueWorkerTests
             destination,
             new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm));
 
-        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+        var incompatibleProcessor = new RecordingProcessor();
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client), source, incompatibleProcessor);
 
         Assert.True(await worker.ProcessNextAsync());
 
@@ -595,6 +597,7 @@ public sealed class DownloadQueueWorkerTests
         Assert.Equal(DownloadStatus.Failed, item.Status);
         Assert.Contains("AudibleAdrm", item.ErrorMessage);
         Assert.Equal(0, requestCount);
+        Assert.Null(incompatibleProcessor.InputPath);
         Assert.False(File.Exists(destination));
         Assert.False(File.Exists(destination + ".part"));
     }
@@ -613,7 +616,7 @@ public sealed class DownloadQueueWorkerTests
         var protection = new AudioProtectionDescriptor(
             AudioProtectionKind.Widevine, "audio/mp4",
             new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero));
-        var processor = new RecordingProcessor();
+        var processor = new RecordingProcessor(supportsProtectedMedia: true);
         var worker = new DownloadQueueWorker(
             queue, new AudioFileDownloader(client),
             new ProtectedStubSource(new Uri("https://provider.example/widevine-book"), destination, protection),
@@ -712,11 +715,14 @@ public sealed class DownloadQueueWorkerTests
         }
     }
 
-    private sealed class RecordingProcessor : IAudioPostDownloadProcessor
+    private sealed class RecordingProcessor(bool supportsProtectedMedia = false) : IAudioPostDownloadProcessor
     {
         public string? InputPath { get; private set; }
 
         public AudioProtectionDescriptor? Protection { get; private set; }
+
+        public bool CanProcess(AudioProtectionDescriptor protection)
+            => !protection.RequiresProtectedMediaPipeline || supportsProtectedMedia;
 
         public Task<string> ProcessAsync(
             string downloadedFilePath,
