@@ -13,6 +13,8 @@ namespace Libation.Mobile.Android;
 [Application]
 public class AndroidApp : AvaloniaAndroidApplication<App>
 {
+    private static readonly HttpClient DownloadHttpClient = new();
+
     /// <summary>Process-wide queue shared with the UI and Android foreground-service host.</summary>
     public static IDownloadQueue? PersistentDownloadQueue { get; private set; }
 
@@ -49,5 +51,28 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         // from this same persisted queue when the app opens after process death.
         MainView.PlatformDownloadQueueFactory = () => PersistentDownloadQueue
             ?? throw new InvalidOperationException("The Android download queue has not been initialized.");
+
+        // Resolve Audible credentials only when the user starts the queue. This
+        // keeps startup independent of network access and allows a fresh sign-in
+        // to be used without restarting the app.
+        var audibleDownloadDirectory = Path.Combine(dataDirectory, "audible-downloads");
+        var libraryRepository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
+        AndroidDownloadQueueService.ControllerFactory = async () =>
+        {
+            var source = await AudibleAudioDownloadSource.FromSavedIdentityAsync(
+                snapshots, audibleDownloadDirectory);
+            if (source is null)
+                return null;
+
+            var queue = PersistentDownloadQueue
+                ?? throw new InvalidOperationException("The Android download queue has not been initialized.");
+            var worker = new DownloadQueueWorker(
+                queue,
+                new AudioFileDownloader(DownloadHttpClient),
+                source,
+                libraryRepository: libraryRepository);
+            return new DownloadQueueExecutionController(worker);
+        };
+        MainView.PlatformDownloadQueueStartAction = () => AndroidDownloadQueueService.Start(this);
     }
 }

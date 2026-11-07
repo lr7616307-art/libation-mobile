@@ -25,7 +25,7 @@ public sealed class AndroidDownloadQueueService : Service
     /// Configured by the Android host when an authorized download source is available.
     /// Intentionally unset by default: the generic downloader cannot resolve Audible media.
     /// </summary>
-    public static Func<DownloadQueueExecutionController?>? ControllerFactory { get; set; }
+    public static Func<Task<DownloadQueueExecutionController?>>? ControllerFactory { get; set; }
 
     public static void Start(Context context)
     {
@@ -77,9 +77,17 @@ public sealed class AndroidDownloadQueueService : Service
         if (_runStarted)
             return StartCommandResult.NotSticky;
 
+        _runStarted = true;
+        _ = PrepareAndRunQueueAsync(startId);
+        return StartCommandResult.RedeliverIntent;
+    }
+
+    private async Task PrepareAndRunQueueAsync(int startId)
+    {
         try
         {
-            _controller = ControllerFactory?.Invoke();
+            _controller = await (ControllerFactory?.Invoke()
+                ?? Task.FromResult<DownloadQueueExecutionController?>(null));
         }
         catch (Exception)
         {
@@ -90,29 +98,24 @@ public sealed class AndroidDownloadQueueService : Service
 
         if (_controller is null)
         {
-            UpdateNotification(
-                "Download provider unavailable",
-                0,
-                indeterminate: false);
+            UpdateNotification("Download provider unavailable", 0, indeterminate: false);
+            _runStarted = false;
             StopForegroundAndRemoveNotification();
             StopSelf(startId);
-            return StartCommandResult.NotSticky;
+            return;
         }
 
-        // A service instance can be recreated or receive duplicate start intents.
-        // Keep a process-wide guard so only one foreground service instance owns
-        // queue execution at a time.
+        // Keep a process-wide guard so only one service instance owns queue execution.
         if (Interlocked.CompareExchange(ref _processRunActive, 1, 0) != 0)
         {
             _controller = null;
+            _runStarted = false;
             StopForegroundAndRemoveNotification();
             StopSelf(startId);
-            return StartCommandResult.NotSticky;
+            return;
         }
 
-        _runStarted = true;
-        _ = RunQueueAsync(startId);
-        return StartCommandResult.RedeliverIntent;
+        await RunQueueAsync(startId);
     }
 
     private async Task RunQueueAsync(int startId)
