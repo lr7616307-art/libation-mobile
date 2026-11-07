@@ -239,12 +239,12 @@ public sealed class AudioFileDownloader
         }
     }
 
-    private static bool IsRedirect(HttpStatusCode statusCode)
-        => statusCode is HttpStatusCode.MovedPermanently
-            or HttpStatusCode.Redirect
-            or HttpStatusCode.RedirectMethod
-            or HttpStatusCode.TemporaryRedirect
-            or HttpStatusCode.PermanentRedirect;
+    private static bool IsRedirect(System.Net.HttpStatusCode statusCode)
+        => statusCode is System.Net.HttpStatusCode.MovedPermanently
+            or System.Net.HttpStatusCode.Redirect
+            or System.Net.System.Net.HttpStatusCode.RedirectMethod
+            or System.Net.HttpStatusCode.TemporaryRedirect
+            or System.Net.HttpStatusCode.PermanentRedirect;
 
     private static async Task FlushDurablyAsync(FileStream output)
     {
