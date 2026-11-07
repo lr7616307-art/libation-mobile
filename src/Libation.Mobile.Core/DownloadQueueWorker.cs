@@ -105,6 +105,13 @@ public sealed class DownloadQueueWorker
         return await _queue.RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    private static void EnsureHttpsDownloadUri(Uri downloadUri, string description)
+    {
+        if (!downloadUri.IsAbsoluteUri ||
+            !string.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"The {description} download URL must use HTTPS.");
+    }
+
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
     {
         public void Report(T value) => report(value);
@@ -150,6 +157,8 @@ public sealed class DownloadQueueWorker
                 var target = await _source.ResolveAsync(item.AudiobookId, cancellationToken);
                 if (target is null)
                     throw new InvalidOperationException("The audio provider returned no download target.");
+
+                EnsureHttpsDownloadUri(target.DownloadUri, "provider-issued");
 
                 // Do not spend bandwidth or storage on protected bytes that this
                 // app cannot process. A compatible, authorized processor must be
@@ -208,6 +217,8 @@ public sealed class DownloadQueueWorker
                         if (refreshedTarget is null)
                             throw new InvalidOperationException(
                                 "The audio provider returned no refreshed download target.");
+
+                        EnsureHttpsDownloadUri(refreshedTarget.DownloadUri, "refreshed provider-issued");
 
                         if (!string.Equals(
                             Path.GetFullPath(refreshedTarget.DestinationPath),
