@@ -688,7 +688,7 @@ public sealed class AudioFileDownloaderTests
         {
             calls++;
             Assert.Equal(2, request.Headers.Range?.Ranges.Single().From);
-            Assert.Equal("\\"v1\\"", request.Headers.IfRange?.EntityTag?.Tag);
+            Assert.Equal("\"v1\"", request.Headers.IfRange?.EntityTag?.Tag);
             if (calls == 1)
             {
                 var redirect = new HttpResponseMessage(HttpStatusCode.TemporaryRedirect);
@@ -702,7 +702,7 @@ public sealed class AudioFileDownloaderTests
             };
             response.Content.Headers.ContentRange =
                 new System.Net.Http.Headers.ContentRangeHeaderValue(2, 4, 5);
-            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\\"v1\\"");
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"v1\"");
             return response;
         }));
         var downloader = new AudioFileDownloader(client);
