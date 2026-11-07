@@ -1,0 +1,88 @@
+using System.Net;
+using Libation.Mobile.Core;
+using Xunit;
+
+namespace Libation.Mobile.Core.Tests;
+
+public sealed class AudioFileDownloaderRangeUnitTests
+{
+    [Fact]
+    public async Task DownloadAsync_RejectsPartialResponseWithNonByteRangeUnit()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(partial, [1, 2]);
+        await File.WriteAllTextAsync(partial + ".validator", "etag:\"v1\"");
+
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent([3, 4, 5])
+            };
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue("items", 2, 4, 5);
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"v1\"");
+            return response;
+        }));
+
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_DoesNotPromotePartialFromNonByteUnsatisfiedRange()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        var payload = new byte[] { 1, 2, 3, 4, 5 };
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(partial, payload);
+        await File.WriteAllTextAsync(partial + ".validator", "etag:\"v1\"");
+
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue("items", payload.Length);
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"v1\"");
+            return response;
+        }));
+
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(destination));
+    }
+
+    private sealed class StubHandler(Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> response)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(response(request, cancellationToken));
+    }
+
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        public string Path { get; } = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "LibationMobileRangeTests", Guid.NewGuid().ToString("N"));
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+                Directory.Delete(Path, recursive: true);
+        }
+    }
+}
