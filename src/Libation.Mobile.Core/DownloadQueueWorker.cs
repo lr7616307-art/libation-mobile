@@ -143,6 +143,13 @@ public sealed class DownloadQueueWorker
                 if (target is null)
                     throw new InvalidOperationException("The audio provider returned no download target.");
 
+                // Do not spend bandwidth or storage on protected bytes that this
+                // app cannot process. A compatible, authorized processor must be
+                // present before the first network request is made.
+                if (target.Protection.RequiresProtectedMediaPipeline && _postDownloadProcessor is null)
+                    throw new NotSupportedException(
+                        $"The audiobook uses {target.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
+
                 // Persist progress asynchronously. Blocking on UpdateProgressAsync from
                 // the downloader's synchronous IProgress callback can deadlock when a
                 // platform synchronization context is captured by the queue store.
@@ -218,13 +225,6 @@ public sealed class DownloadQueueWorker
                     progressChannel.Writer.TryComplete();
                     await progressPersistence.ConfigureAwait(false);
                 }
-
-                // Protected bytes must never be published as a playable audiobook.
-                // Until an authorized ADRM/Widevine processor is installed, fail closed
-                // rather than attaching encrypted media to the local catalogue.
-                if (target.Protection.RequiresProtectedMediaPipeline && _postDownloadProcessor is null)
-                    throw new NotSupportedException(
-                        $"The downloaded audiobook uses {target.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
 
                 // This hook is deliberately optional for unprotected media and runs
                 // only after a complete download. Its output becomes the playable file.
