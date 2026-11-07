@@ -110,6 +110,11 @@ public sealed class DownloadQueueWorker
         if (!downloadUri.IsAbsoluteUri ||
             !string.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"The {description} download URL must use HTTPS.");
+
+        // Provider URLs are bearer-like capabilities. Reject embedded URI credentials
+        // so they cannot be interpreted as HTTP authentication or leak through diagnostics.
+        if (!string.IsNullOrEmpty(downloadUri.UserInfo))
+            throw new InvalidDataException($"The {description} download URL must not contain embedded credentials.");
     }
 
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
