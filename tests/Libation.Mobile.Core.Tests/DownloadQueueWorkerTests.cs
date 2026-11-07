@@ -29,6 +29,66 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_RejectsNonHttpsProviderUrlBeforeNetworkTransfer()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-insecure-url");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+            };
+        }));
+        var destination = Path.Combine(directory.Path, "book-insecure.m4b");
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("http://provider.example/book"), destination));
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(0, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("HTTPS", item.ErrorMessage ?? string.Empty);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_RejectsNonHttpsRefreshedUrlBeforeRetry()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-insecure-refreshed-url");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.Forbidden);
+        }));
+        var destination = Path.Combine(directory.Path, "book-insecure-refreshed.m4b");
+        var source = new RefreshingStubSource(
+            new Uri("https://provider.example/expired"),
+            new Uri("http://provider.example/refreshed"),
+            destination);
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(1, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("HTTPS", item.ErrorMessage ?? string.Empty);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_RefreshesProviderUrlOnceAfterUnauthorizedResponse()
     {
         using var directory = new TemporaryDirectory();
