@@ -20,12 +20,13 @@ public sealed class AndroidDownloadQueueService : Service
     private static int _processRunActive;
     private DownloadQueueExecutionController? _controller;
     private bool _runStarted;
+    private CancellationTokenSource? _runCancellation;
 
     /// <summary>
     /// Configured by the Android host when an authorized download source is available.
     /// Intentionally unset by default: the generic downloader cannot resolve Audible media.
     /// </summary>
-    public static Func<Task<DownloadQueueExecutionController?>>? ControllerFactory { get; set; }
+    public static Func<CancellationToken, Task<DownloadQueueExecutionController?>>? ControllerFactory { get; set; }
 
     public static void Start(Context context)
     {
@@ -65,6 +66,7 @@ public sealed class AndroidDownloadQueueService : Service
                 NotificationId,
                 BuildNotification("Pausing download queue", 0, indeterminate: true));
 
+            _runCancellation?.Cancel();
             _controller?.Cancel();
             StopIfIdle(startId);
             return StartCommandResult.NotSticky;
@@ -78,16 +80,29 @@ public sealed class AndroidDownloadQueueService : Service
             return StartCommandResult.NotSticky;
 
         _runStarted = true;
-        _ = PrepareAndRunQueueAsync(startId);
+        _runCancellation = new CancellationTokenSource();
+        _ = PrepareAndRunQueueAsync(startId, _runCancellation.Token);
         return StartCommandResult.RedeliverIntent;
     }
 
-    private async Task PrepareAndRunQueueAsync(int startId)
+    private async Task PrepareAndRunQueueAsync(int startId, CancellationToken cancellationToken)
     {
         try
         {
-            _controller = await (ControllerFactory?.Invoke()
+            _controller = await (ControllerFactory?.Invoke(cancellationToken)
                 ?? Task.FromResult<DownloadQueueExecutionController?>(null));
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (System.OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _controller = null;
+            _runStarted = false;
+            UpdateNotification("Download queue paused", 0, indeterminate: false);
+            _runCancellation?.Dispose();
+            _runCancellation = null;
+            StopForegroundAndRemoveNotification();
+            StopSelf(startId);
+            return;
         }
         catch (Exception)
         {
@@ -100,6 +115,8 @@ public sealed class AndroidDownloadQueueService : Service
         {
             UpdateNotification("Download provider unavailable", 0, indeterminate: false);
             _runStarted = false;
+            _runCancellation?.Dispose();
+            _runCancellation = null;
             StopForegroundAndRemoveNotification();
             StopSelf(startId);
             return;
@@ -110,15 +127,17 @@ public sealed class AndroidDownloadQueueService : Service
         {
             _controller = null;
             _runStarted = false;
+            _runCancellation?.Dispose();
+            _runCancellation = null;
             StopForegroundAndRemoveNotification();
             StopSelf(startId);
             return;
         }
 
-        await RunQueueAsync(startId);
+        await RunQueueAsync(startId, cancellationToken);
     }
 
-    private async Task RunQueueAsync(int startId)
+    private async Task RunQueueAsync(int startId, CancellationToken cancellationToken)
     {
         try
         {
@@ -133,7 +152,7 @@ public sealed class AndroidDownloadQueueService : Service
                     indeterminate: value.TotalBytes is null or 0);
             });
 
-            var processed = await _controller!.RunAsync(progress);
+            var processed = await _controller!.RunAsync(progress, cancellationToken);
             UpdateNotification($"Queue finished · {processed} item(s) processed", 100, indeterminate: false);
         }
         catch (System.OperationCanceledException)
@@ -148,6 +167,8 @@ public sealed class AndroidDownloadQueueService : Service
         {
             _controller = null;
             _runStarted = false;
+            _runCancellation?.Dispose();
+            _runCancellation = null;
             Interlocked.Exchange(ref _processRunActive, 0);
             StopForegroundAndRemoveNotification();
             StopSelf(startId);
@@ -158,6 +179,7 @@ public sealed class AndroidDownloadQueueService : Service
     {
         // If Android tears down this service, the worker's cancellation path
         // returns the active item to Queued and preserves its partial .part file.
+        _runCancellation?.Cancel();
         _controller?.Cancel();
         base.OnDestroy();
     }

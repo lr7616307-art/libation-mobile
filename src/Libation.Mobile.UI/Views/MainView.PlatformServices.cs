@@ -21,6 +21,9 @@ public partial class MainView
     /// <summary>Starts the platform-owned queue runner after new work is persisted.</summary>
     public static Action? PlatformDownloadQueueStartAction { get; set; }
 
+    /// <summary>Gracefully pauses the platform-owned queue runner.</summary>
+    public static Action? PlatformDownloadQueuePauseAction { get; set; }
+
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
 
