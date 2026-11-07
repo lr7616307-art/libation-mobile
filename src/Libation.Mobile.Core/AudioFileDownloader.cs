@@ -9,6 +9,7 @@ namespace Libation.Mobile.Core;
 public sealed class AudioFileDownloader
 {
     private const long DurableCheckpointInterval = 1024 * 1024;
+    private const int MaximumRedirects = 5;
     private readonly HttpClient _httpClient;
     private readonly long _maximumBytes;
 
@@ -29,8 +30,9 @@ public sealed class AudioFileDownloader
         ArgumentNullException.ThrowIfNull(authorizedDownloadUri);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
         if (!authorizedDownloadUri.IsAbsoluteUri ||
-            !string.Equals(authorizedDownloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Only absolute HTTPS download URLs are accepted.", nameof(authorizedDownloadUri));
+            !string.Equals(authorizedDownloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrEmpty(authorizedDownloadUri.UserInfo))
+            throw new ArgumentException("Only absolute HTTPS download URLs without embedded credentials are accepted.", nameof(authorizedDownloadUri));
 
         var fullPath = Path.GetFullPath(destinationPath);
         var directory = Path.GetDirectoryName(fullPath)
@@ -54,15 +56,8 @@ public sealed class AudioFileDownloader
             savedValidator = null;
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, authorizedDownloadUri);
-        if (existingBytes > 0)
-        {
-            request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingBytes, null);
-            request.Headers.IfRange = savedValidator!.Value.Condition;
-        }
-
-        using var response = await _httpClient.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await SendFollowingSafeRedirectsAsync(
+            authorizedDownloadUri, existingBytes, savedValidator, cancellationToken);
 
         // Validate the final transport before handling any status code, including 416.
         // Otherwise an insecure redirect could reach the completed-partial recovery path.
@@ -75,7 +70,8 @@ public sealed class AudioFileDownloader
         // of completion when its total length and representation validator both match.
         if (response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable &&
             existingBytes > 0 && savedValidator is { } completedValidator &&
-            response.Content.Headers.ContentRange is { HasLength: true, Length: long unsatisfiedRangeTotal } &&
+            response.Content.Headers.ContentRange is { HasLength: true, Length: long unsatisfiedRangeTotal } unsatisfiedRange &&
+            string.Equals(unsatisfiedRange.Unit, "bytes", StringComparison.OrdinalIgnoreCase) &&
             unsatisfiedRangeTotal == existingBytes &&
             ResponseMatchesValidator(response, completedValidator))
         {
@@ -109,7 +105,9 @@ public sealed class AudioFileDownloader
         if (isPartialResponse)
         {
             var range = response.Content.Headers.ContentRange;
-            if (range?.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
+            if (range is null ||
+                !string.Equals(range.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
+                range.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
                 throw new HttpRequestException("The server returned an invalid byte range for this download.");
 
             if (range.Length is not long partialTotalLength || partialTotalLength <= rangeEnd)
@@ -162,10 +160,11 @@ public sealed class AudioFileDownloader
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch
         {
-            // Preserve all bytes accepted by the file stream before returning control
-            // to the queue's cancellation/retry path.
+            // Preserve all bytes accepted by the file stream when a transfer is
+            // cancelled or the response stream fails. Dispose alone only guarantees
+            // a normal close; force a durable checkpoint before the queue retries.
             await FlushDurablyAsync(output);
             throw;
         }
@@ -187,6 +186,66 @@ public sealed class AudioFileDownloader
             File.Delete(validatorPath);
         return new AudioDownloadResult(fullPath, received);
     }
+
+    private async Task<HttpResponseMessage> SendFollowingSafeRedirectsAsync(
+        Uri initialUri,
+        long existingBytes,
+        ResumeValidator? savedValidator,
+        CancellationToken cancellationToken)
+    {
+        var currentUri = initialUri;
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var redirectCount = 0; ; redirectCount++)
+        {
+            if (!visited.Add(currentUri.AbsoluteUri))
+                throw new HttpRequestException("The download provider returned a redirect loop.");
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
+            if (existingBytes > 0)
+            {
+                request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingBytes, null);
+                request.Headers.IfRange = savedValidator!.Value.Condition;
+            }
+
+            var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!IsRedirect(response.StatusCode))
+                return response;
+
+            var location = response.Headers.Location;
+            if (location is null)
+            {
+                response.Dispose();
+                throw new HttpRequestException("The download provider returned a redirect without a Location header.");
+            }
+
+            if (redirectCount >= MaximumRedirects)
+            {
+                response.Dispose();
+                throw new HttpRequestException("The download provider exceeded the maximum number of redirects.");
+            }
+
+            var nextUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
+            if (!nextUri.IsAbsoluteUri ||
+                !string.Equals(nextUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                !string.IsNullOrEmpty(nextUri.UserInfo))
+            {
+                response.Dispose();
+                throw new HttpRequestException("The download redirect target must be HTTPS and must not contain embedded credentials.");
+            }
+
+            response.Dispose();
+            currentUri = nextUri;
+        }
+    }
+
+    private static bool IsRedirect(System.Net.HttpStatusCode statusCode)
+        => statusCode is System.Net.HttpStatusCode.MovedPermanently
+            or System.Net.HttpStatusCode.Redirect
+            or System.Net.HttpStatusCode.RedirectMethod
+            or System.Net.HttpStatusCode.TemporaryRedirect
+            or System.Net.HttpStatusCode.PermanentRedirect;
 
     private static async Task FlushDurablyAsync(FileStream output)
     {

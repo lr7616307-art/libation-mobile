@@ -29,6 +29,258 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_RejectsNonHttpsProviderUrlBeforeNetworkTransfer()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-insecure-url");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+            };
+        }));
+        var destination = Path.Combine(directory.Path, "book-insecure.m4b");
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("http://provider.example/book"), destination));
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(0, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("HTTPS", item.ErrorMessage ?? string.Empty);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Theory]
+    [InlineData("https://user:password@provider.example/book")]
+    [InlineData("https://token@provider.example/book")]
+    public async Task ProcessNextAsync_RejectsCredentialBearingProviderUrlBeforeNetworkTransfer(string url)
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-embedded-credentials");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+            };
+        }));
+        var destination = Path.Combine(directory.Path, "book-embedded-credentials.m4b");
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri(url), destination));
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(0, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("embedded credentials", item.ErrorMessage ?? string.Empty);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_RejectsCredentialBearingRefreshedUrlBeforeRetry()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-embedded-refreshed-credentials");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.Forbidden);
+        }));
+        var destination = Path.Combine(directory.Path, "book-embedded-refreshed-credentials.m4b");
+        var source = new RefreshingStubSource(
+            new Uri("https://provider.example/expired"),
+            new Uri("https://token@provider.example/refreshed"),
+            destination);
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(1, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("embedded credentials", item.ErrorMessage ?? string.Empty);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_RejectsNonHttpsRefreshedUrlBeforeRetry()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-insecure-refreshed-url");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.Forbidden);
+        }));
+        var destination = Path.Combine(directory.Path, "book-insecure-refreshed.m4b");
+        var source = new RefreshingStubSource(
+            new Uri("https://provider.example/expired"),
+            new Uri("http://provider.example/refreshed"),
+            destination);
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(1, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("HTTPS", item.ErrorMessage ?? string.Empty);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_RefreshesProviderUrlOnceAfterUnauthorizedResponse()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-expired-url");
+        var requestCount = 0;
+        var payload = new byte[] { 6, 7, 8, 9 };
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return requestCount == 1
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(payload)
+                };
+        }));
+        var destination = Path.Combine(directory.Path, "book-expired-url.m4b");
+        var source = new RefreshingStubSource(
+            new Uri("https://provider.example/expired"),
+            new Uri("https://provider.example/refreshed"),
+            destination);
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(2, requestCount);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(destination));
+        Assert.Equal(DownloadStatus.Completed, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_RejectsRefreshedProtectedLicenceBeforeRetryWithoutProcessor()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-becomes-protected");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return requestCount == 1
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+                };
+        }));
+        var destination = Path.Combine(directory.Path, "book-becomes-protected.aaxc");
+        var source = new RefreshingProtectionSource(
+            new Uri("https://provider.example/expired"),
+            new Uri("https://provider.example/refreshed"),
+            destination,
+            AudioProtectionDescriptor.Unprotected,
+            new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm));
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(1, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("AudibleAdrm", item.ErrorMessage);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_DoesNotRefreshMoreThanOnceWhenFreshUrlIsRejected()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-still-forbidden");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.Forbidden);
+        }));
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var source = new RefreshingStubSource(
+            new Uri("https://provider.example/expired"),
+            new Uri("https://provider.example/still-forbidden"),
+            destination);
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(2, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.True(item.CanRetry);
+        Assert.Contains("403", item.ErrorMessage ?? string.Empty);
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_RejectsRefreshedTargetWithDifferentDestination()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-changed-destination");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        }));
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var source = new ChangingDestinationSource(
+            new Uri("https://provider.example/expired"),
+            destination,
+            Path.Combine(directory.Path, "different-book.m4b"));
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(1, requestCount);
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("destination", item.ErrorMessage ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(Path.Combine(directory.Path, "different-book.m4b")));
+    }
+
+    [Fact]
     public async Task ProcessAllAsync_DrainsQueuedItemsSequentially()
     {
         using var directory = new TemporaryDirectory();
@@ -48,6 +300,32 @@ public sealed class DownloadQueueWorkerTests
         Assert.Equal(2, source.CallCount);
         Assert.Equal(1, source.MaximumConcurrentCalls);
         Assert.All(await queue.GetItemsAsync(), item => Assert.Equal(DownloadStatus.Completed, item.Status));
+    }
+
+    [Fact]
+    public async Task ProcessAllAsync_RecoversInterruptedItemsBeforeStartingQueue()
+    {
+        using var directory = new TemporaryDirectory();
+        var queuePath = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(queuePath);
+        await queue.EnqueueAsync("book-interrupted");
+        await queue.UpdateStatusAsync("book-interrupted", DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync("book-interrupted", 2_048, 8_192);
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 1, 2, 3, 4 })
+        }));
+        var destination = Path.Combine(directory.Path, "book-interrupted.m4b");
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book-interrupted"), destination));
+
+        var processed = await worker.ProcessAllAsync();
+
+        Assert.Equal(1, processed);
+        var recovered = Assert.Single(await new JsonDownloadQueue(queuePath).GetItemsAsync());
+        Assert.Equal(DownloadStatus.Completed, recovered.Status);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, await File.ReadAllBytesAsync(destination));
     }
 
     [Fact]
@@ -410,6 +688,129 @@ public sealed class DownloadQueueWorkerTests
     }
 
 
+    [Fact]
+    public async Task ProcessNextAsync_ProtectedDownloadWithoutCompatiblePipelineFailsBeforeNetworkTransfer()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("protected-book");
+        var destination = Path.Combine(directory.Path, "protected-book.aaxc");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 3, 2, 1 })
+            };
+        }));
+        var source = new ProtectedStubSource(
+            new Uri("https://provider.example/protected-book"),
+            destination,
+            new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm));
+
+        var incompatibleProcessor = new RecordingProcessor();
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client), source, incompatibleProcessor);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("AudibleAdrm", item.ErrorMessage);
+        Assert.Equal(0, requestCount);
+        Assert.Null(incompatibleProcessor.InputPath);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_PassesProtectionMetadataToAuthorizedProcessor()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("widevine-book");
+        var destination = Path.Combine(directory.Path, "widevine-book.m4a");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 5, 4, 3 })
+        }));
+        var protection = new AudioProtectionDescriptor(
+            AudioProtectionKind.Widevine, "audio/mp4",
+            new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero));
+        var processor = new RecordingProcessor(supportsProtectedMedia: true);
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new ProtectedStubSource(new Uri("https://provider.example/widevine-book"), destination, protection),
+            processor);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(protection, processor.Protection);
+        Assert.Equal(DownloadStatus.Completed, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
+    private sealed class RefreshingStubSource(Uri firstUri, Uri refreshedUri, string path)
+        : IAuthorizedAudioDownloadSource
+    {
+        public int CallCount { get; private set; }
+
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(new AuthorizedAudioDownload(
+                CallCount == 1 ? firstUri : refreshedUri, path));
+        }
+    }
+
+    private sealed class RefreshingProtectionSource(
+        Uri firstUri,
+        Uri refreshedUri,
+        string path,
+        AudioProtectionDescriptor firstProtection,
+        AudioProtectionDescriptor refreshedProtection) : IAuthorizedAudioDownloadSource
+    {
+        public int CallCount { get; private set; }
+
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(new AuthorizedAudioDownload(
+                CallCount == 1 ? firstUri : refreshedUri,
+                path)
+            {
+                Protection = CallCount == 1 ? firstProtection : refreshedProtection
+            });
+        }
+    }
+
+    private sealed class ChangingDestinationSource(Uri uri, string originalPath, string changedPath)
+        : IAuthorizedAudioDownloadSource
+    {
+        public int CallCount { get; private set; }
+
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(new AuthorizedAudioDownload(
+                uri, CallCount == 1 ? originalPath : changedPath));
+        }
+    }
+
+    private sealed class ProtectedStubSource(
+        Uri uri, string path, AudioProtectionDescriptor protection) : IAuthorizedAudioDownloadSource
+    {
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new AuthorizedAudioDownload(uri, path) { Protection = protection });
+    }
+
     private sealed class BlockingSource : IAuthorizedAudioDownloadSource
     {
         private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -436,20 +837,32 @@ public sealed class DownloadQueueWorkerTests
         }
     }
 
-    private sealed class RecordingProcessor : IAudioPostDownloadProcessor
+    private sealed class RecordingProcessor(bool supportsProtectedMedia = false) : IAudioPostDownloadProcessor
     {
         public string? InputPath { get; private set; }
 
-        public Task<string> ProcessAsync(string downloadedFilePath, CancellationToken cancellationToken = default)
+        public AudioProtectionDescriptor? Protection { get; private set; }
+
+        public bool CanProcess(AudioProtectionDescriptor protection)
+            => !protection.RequiresProtectedMediaPipeline || supportsProtectedMedia;
+
+        public Task<string> ProcessAsync(
+            string downloadedFilePath,
+            AudioProtectionDescriptor protection,
+            CancellationToken cancellationToken = default)
         {
             InputPath = downloadedFilePath;
+            Protection = protection;
             return Task.FromResult(downloadedFilePath);
         }
     }
 
     private sealed class ThrowingProcessor : IAudioPostDownloadProcessor
     {
-        public Task<string> ProcessAsync(string downloadedFilePath, CancellationToken cancellationToken = default)
+        public Task<string> ProcessAsync(
+            string downloadedFilePath,
+            AudioProtectionDescriptor protection,
+            CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Audio processing failed.");
     }
 

@@ -30,7 +30,8 @@ public partial class MainView : UserControl
     {
         var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
-        var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
+        var queue = PlatformDownloadQueueFactory?.Invoke()
+            ?? new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
@@ -702,11 +703,18 @@ public partial class MainView : UserControl
         }
     }
 
+    private void PauseQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => PlatformDownloadQueuePauseAction?.Invoke();
+
+    private void ResumeQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => PlatformDownloadQueueStartAction?.Invoke();
+
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
         {
             await _viewModel.EnqueueAsync(book.Id);
+            PlatformDownloadQueueStartAction?.Invoke();
             UpdateQueueRefreshTimer();
         }
     }
@@ -716,6 +724,7 @@ public partial class MainView : UserControl
         if (sender is Button { DataContext: DownloadQueueItem item } && item.Status == DownloadStatus.Failed)
         {
             await _viewModel.RetryFailedAsync(item.AudiobookId);
+            PlatformDownloadQueueStartAction?.Invoke();
             UpdateQueueRefreshTimer();
         }
     }

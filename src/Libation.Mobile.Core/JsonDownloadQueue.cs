@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace Libation.Mobile.Core;
@@ -12,13 +13,18 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         WriteIndented = true
     };
 
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileGates = new(StringComparer.Ordinal);
     private readonly string _filePath;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SemaphoreSlim _gate;
 
     public JsonDownloadQueue(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         _filePath = Path.GetFullPath(filePath);
+        // Multiple queue objects can be created by the UI and Android service
+        // for the same file. Serialize all their mutations through one process-wide
+        // gate so two recovery passes cannot both claim the same interrupted item.
+        _gate = FileGates.GetOrAdd(_filePath, static _ => new SemaphoreSlim(1, 1));
     }
 
     public async Task<IReadOnlyList<DownloadQueueItem>> GetItemsAsync(

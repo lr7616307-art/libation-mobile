@@ -157,7 +157,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
         if (intent.GetBooleanExtra(ExtraAutoPlay, true))
             _player.Play();
-        SavePlaybackSnapshot();
+        // ExoPlayer prepares asynchronously. Reading CurrentPosition immediately
+        // after Play() can still return zero and overwrite the resume point we
+        // just restored. Persist the requested seek position and intended play
+        // state first; periodic checkpoints replace these values once the
+        // decoder reports its real position and duration.
+        PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
+            path, _title, position, 0, _playbackSpeed,
+            intent.GetBooleanExtra(ExtraAutoPlay, true)));
         UpdateNotification();
     }
 
