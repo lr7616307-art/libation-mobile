@@ -676,6 +676,65 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_PreservesRangeValidatorAcrossHttpsRedirect()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(destination + ".part", new byte[] { 1, 2 });
+        await File.WriteAllTextAsync(destination + ".part.validator", "etag:\\"v1\\"");
+        var calls = 0;
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            calls++;
+            Assert.Equal(2, request.Headers.Range?.Ranges.Single().From);
+            Assert.Equal("\\"v1\\"", request.Headers.IfRange?.EntityTag?.Tag);
+            if (calls == 1)
+            {
+                var redirect = new HttpResponseMessage(HttpStatusCode.TemporaryRedirect);
+                redirect.Headers.Location = new Uri("https://cdn.example/audio");
+                return redirect;
+            }
+
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(new byte[] { 3, 4, 5 })
+            };
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(2, 4, 5);
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\\"v1\\"");
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await downloader.DownloadAsync(new Uri("https://provider.example/audio"), destination);
+
+        Assert.Equal(2, calls);
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, await File.ReadAllBytesAsync(destination));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_EnforcesMaximumRedirectCount()
+    {
+        using var directory = new TemporaryDirectory();
+        var calls = 0;
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            calls++;
+            var redirect = new HttpResponseMessage(HttpStatusCode.Redirect);
+            redirect.Headers.Location = new Uri($"https://cdn.example/audio/{calls}");
+            return redirect;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"),
+            Path.Combine(directory.Path, "book.m4b")));
+
+        Assert.Equal(6, calls);
+    }
+
+    [Fact]
     public async Task DownloadAsync_RejectsHttpsToHttpRedirectBeforeFollowingIt()
     {
         using var directory = new TemporaryDirectory();
