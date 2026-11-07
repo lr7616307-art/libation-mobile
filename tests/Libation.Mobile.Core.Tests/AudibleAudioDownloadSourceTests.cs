@@ -87,6 +87,18 @@ public sealed class AudibleAudioDownloadSourceTests
         DrmType = drmType,
         ContentMetadata = new ContentMetadata
         {
+            ChapterInfo = new ChapterInfo(),
+            ContentReference = new ContentReference
+            {
+                Acr = "",
+                Asin = "B012345678",
+                Codec = "",
+                ContentFormat = "",
+                Marketplace = "",
+                Sku = "",
+                Tempo = "",
+                Version = ""
+            },
             ContentUrl = new ContentUrl { OfflineUrl = offlineUrl }
         }
     };
