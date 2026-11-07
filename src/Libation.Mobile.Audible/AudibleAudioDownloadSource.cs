@@ -14,12 +14,24 @@ namespace Libation.Mobile.Audible;
 public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 {
     private static readonly Regex AsinPattern = new("^[A-Za-z0-9]{10}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-    private readonly Api _api;
+    private readonly Func<string, CancellationToken, Task<ContentLicense>> _requestLicense;
     private readonly string _downloadDirectory;
 
     public AudibleAudioDownloadSource(Api api, string downloadDirectory)
     {
-        _api = api ?? throw new ArgumentNullException(nameof(api));
+        ArgumentNullException.ThrowIfNull(api);
+        _requestLicense = (asin, _) => api.GetDownloadLicenseAsync(
+            asin, DownloadQuality.High, ChapterTitlesType.Tree, DrmType.Adrm);
+        ArgumentException.ThrowIfNullOrWhiteSpace(downloadDirectory);
+        _downloadDirectory = Path.GetFullPath(downloadDirectory);
+    }
+
+    /// <summary>Injectable licence boundary for deterministic tests; production uses AudibleApi above.</summary>
+    public AudibleAudioDownloadSource(
+        Func<string, CancellationToken, Task<ContentLicense>> requestLicense,
+        string downloadDirectory)
+    {
+        _requestLicense = requestLicense ?? throw new ArgumentNullException(nameof(requestLicense));
         ArgumentException.ThrowIfNullOrWhiteSpace(downloadDirectory);
         _downloadDirectory = Path.GetFullPath(downloadDirectory);
     }
@@ -64,11 +76,8 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         // ADRM is explicitly requested because this app does not yet have a
         // supported Widevine CDM/player integration. AudibleApi remains
         // responsible for authenticating and requesting the provider licence.
-        var license = await _api.GetDownloadLicenseAsync(
-            audiobookId,
-            DownloadQuality.High,
-            ChapterTitlesType.Tree,
-            DrmType.Adrm).ConfigureAwait(false);
+        // The official package does not accept a CancellationToken for this API call.
+        var license = await _requestLicense(audiobookId, cancellationToken).ConfigureAwait(false);
 
         cancellationToken.ThrowIfCancellationRequested();
 
