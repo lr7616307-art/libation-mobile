@@ -35,6 +35,14 @@ public sealed record DownloadQueueProgress(
 public interface IAudioPostDownloadProcessor
 {
     /// <summary>
+    /// Indicates whether this processor has an authorized implementation for the
+    /// supplied protection type. Existing processors remain valid for unprotected
+    /// media, but must explicitly opt in before receiving protected media.
+    /// </summary>
+    bool CanProcess(AudioProtectionDescriptor protection)
+        => !protection.RequiresProtectedMediaPipeline;
+
+    /// <summary>
     /// Processes a completed download and returns the path of the resulting audio file.
     /// Implementations must leave the input file intact if processing fails.
     /// </summary>
@@ -146,7 +154,8 @@ public sealed class DownloadQueueWorker
                 // Do not spend bandwidth or storage on protected bytes that this
                 // app cannot process. A compatible, authorized processor must be
                 // present before the first network request is made.
-                if (target.Protection.RequiresProtectedMediaPipeline && _postDownloadProcessor is null)
+                if (target.Protection.RequiresProtectedMediaPipeline &&
+                    (_postDownloadProcessor is null || !_postDownloadProcessor.CanProcess(target.Protection)))
                     throw new NotSupportedException(
                         $"The audiobook uses {target.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
 
@@ -212,7 +221,7 @@ public sealed class DownloadQueueWorker
                         // Revalidate before retrying so protected bytes are never fetched
                         // without a compatible authorized processor.
                         if (refreshedTarget.Protection.RequiresProtectedMediaPipeline &&
-                            _postDownloadProcessor is null)
+                            (_postDownloadProcessor is null || !_postDownloadProcessor.CanProcess(refreshedTarget.Protection)))
                             throw new NotSupportedException(
                                 $"The refreshed audiobook licence uses {refreshedTarget.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
 
