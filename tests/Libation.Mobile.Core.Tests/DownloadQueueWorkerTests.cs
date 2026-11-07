@@ -436,6 +436,66 @@ public sealed class DownloadQueueWorkerTests
     }
 
 
+    [Fact]
+    public async Task ProcessNextAsync_ProtectedDownloadWithoutCompatiblePipelineIsNotMarkedCompleted()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("protected-book");
+        var destination = Path.Combine(directory.Path, "protected-book.aaxc");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 3, 2, 1 })
+        }));
+        var source = new ProtectedStubSource(
+            new Uri("https://provider.example/protected-book"),
+            destination,
+            new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm));
+
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("AudibleAdrm", item.ErrorMessage);
+        Assert.True(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_PassesProtectionMetadataToAuthorizedProcessor()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("widevine-book");
+        var destination = Path.Combine(directory.Path, "widevine-book.m4a");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 5, 4, 3 })
+        }));
+        var protection = new AudioProtectionDescriptor(
+            AudioProtectionKind.Widevine, "audio/mp4",
+            new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero));
+        var processor = new RecordingProcessor();
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new ProtectedStubSource(new Uri("https://provider.example/widevine-book"), destination, protection),
+            processor);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(protection, processor.Protection);
+        Assert.Equal(DownloadStatus.Completed, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
+    private sealed class ProtectedStubSource(
+        Uri uri, string path, AudioProtectionDescriptor protection) : IAuthorizedAudioDownloadSource
+    {
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new AuthorizedAudioDownload(uri, path) { Protection = protection });
+    }
+
     private sealed class BlockingSource : IAuthorizedAudioDownloadSource
     {
         private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -466,16 +526,25 @@ public sealed class DownloadQueueWorkerTests
     {
         public string? InputPath { get; private set; }
 
-        public Task<string> ProcessAsync(string downloadedFilePath, CancellationToken cancellationToken = default)
+        public AudioProtectionDescriptor? Protection { get; private set; }
+
+        public Task<string> ProcessAsync(
+            string downloadedFilePath,
+            AudioProtectionDescriptor protection,
+            CancellationToken cancellationToken = default)
         {
             InputPath = downloadedFilePath;
+            Protection = protection;
             return Task.FromResult(downloadedFilePath);
         }
     }
 
     private sealed class ThrowingProcessor : IAudioPostDownloadProcessor
     {
-        public Task<string> ProcessAsync(string downloadedFilePath, CancellationToken cancellationToken = default)
+        public Task<string> ProcessAsync(
+            string downloadedFilePath,
+            AudioProtectionDescriptor protection,
+            CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("Audio processing failed.");
     }
 
