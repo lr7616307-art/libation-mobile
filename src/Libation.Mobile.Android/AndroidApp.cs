@@ -57,10 +57,10 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         // to be used without restarting the app.
         var audibleDownloadDirectory = Path.Combine(dataDirectory, "audible-downloads");
         var libraryRepository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
-        AndroidDownloadQueueService.ControllerFactory = async () =>
+        AndroidDownloadQueueService.ControllerFactory = async cancellationToken =>
         {
             var source = await AudibleAudioDownloadSource.FromSavedIdentityAsync(
-                snapshots, audibleDownloadDirectory);
+                snapshots, audibleDownloadDirectory, cancellationToken);
             if (source is null)
                 return null;
 
@@ -74,5 +74,6 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
             return new DownloadQueueExecutionController(worker);
         };
         MainView.PlatformDownloadQueueStartAction = () => AndroidDownloadQueueService.Start(this);
+        MainView.PlatformDownloadQueuePauseAction = () => AndroidDownloadQueueService.Cancel(this);
     }
 }
