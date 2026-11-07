@@ -12,7 +12,14 @@ public interface IAuthorizedAudioDownloadSource
         string audiobookId, CancellationToken cancellationToken = default);
 }
 
-public sealed record AuthorizedAudioDownload(Uri DownloadUri, string DestinationPath);
+public sealed record AuthorizedAudioDownload(Uri DownloadUri, string DestinationPath)
+{
+    /// <summary>
+    /// Protection metadata returned with the provider-issued licence. Defaults to
+    /// unprotected for existing non-DRM providers and test sources.
+    /// </summary>
+    public AudioProtectionDescriptor Protection { get; init; } = AudioProtectionDescriptor.Unprotected;
+}
 
 public sealed record DownloadQueueProgress(
     string AudiobookId,
@@ -33,6 +40,7 @@ public interface IAudioPostDownloadProcessor
     /// </summary>
     Task<string> ProcessAsync(
         string downloadedFilePath,
+        AudioProtectionDescriptor protection,
         CancellationToken cancellationToken = default);
 }
 
@@ -180,13 +188,20 @@ public sealed class DownloadQueueWorker
                     await progressPersistence.ConfigureAwait(false);
                 }
 
-                // This hook is deliberately optional and runs only after a complete
-                // download. Its output becomes the catalogue's playable local file.
+                // Protected bytes must never be published as a playable audiobook.
+                // Until an authorized ADRM/Widevine processor is installed, fail closed
+                // rather than attaching encrypted media to the local catalogue.
+                if (target.Protection.RequiresProtectedMediaPipeline && _postDownloadProcessor is null)
+                    throw new NotSupportedException(
+                        $"The downloaded audiobook uses {target.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
+
+                // This hook is deliberately optional for unprotected media and runs
+                // only after a complete download. Its output becomes the playable file.
                 var playablePath = result.FilePath;
                 if (_postDownloadProcessor is not null)
                 {
                     playablePath = await _postDownloadProcessor.ProcessAsync(
-                        result.FilePath, cancellationToken);
+                        result.FilePath, target.Protection, cancellationToken);
                     if (string.IsNullOrWhiteSpace(playablePath) ||
                         !File.Exists(playablePath) ||
                         new FileInfo(playablePath).Length == 0)
