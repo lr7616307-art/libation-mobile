@@ -160,10 +160,11 @@ public sealed class AudioFileDownloader
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch
         {
-            // Preserve all bytes accepted by the file stream before returning control
-            // to the queue's cancellation/retry path.
+            // Preserve all bytes accepted by the file stream when a transfer is
+            // cancelled or the response stream fails. Dispose alone only guarantees
+            // a normal close; force a durable checkpoint before the queue retries.
             await FlushDurablyAsync(output);
             throw;
         }
