@@ -51,6 +51,32 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessAllAsync_RecoversInterruptedItemsBeforeStartingQueue()
+    {
+        using var directory = new TemporaryDirectory();
+        var queuePath = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(queuePath);
+        await queue.EnqueueAsync("book-interrupted");
+        await queue.UpdateStatusAsync("book-interrupted", DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync("book-interrupted", 2_048, 8_192);
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 1, 2, 3, 4 })
+        }));
+        var destination = Path.Combine(directory.Path, "book-interrupted.m4b");
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book-interrupted"), destination));
+
+        var processed = await worker.ProcessAllAsync();
+
+        Assert.Equal(1, processed);
+        var recovered = Assert.Single(await new JsonDownloadQueue(queuePath).GetItemsAsync());
+        Assert.Equal(DownloadStatus.Completed, recovered.Status);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, await File.ReadAllBytesAsync(destination));
+    }
+
+    [Fact]
     public async Task ProcessAllAsync_ContinuesAfterAnItemFails()
     {
         using var directory = new TemporaryDirectory();
