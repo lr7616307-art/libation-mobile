@@ -29,6 +29,39 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_RefreshesProviderUrlOnceAfterUnauthorizedResponse()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-expired-url");
+        var requestCount = 0;
+        var payload = new byte[] { 6, 7, 8, 9 };
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return requestCount == 1
+                ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(payload)
+                };
+        }));
+        var destination = Path.Combine(directory.Path, "book-expired-url.m4b");
+        var source = new RefreshingStubSource(
+            new Uri("https://provider.example/expired"),
+            new Uri("https://provider.example/refreshed"),
+            destination);
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(2, source.CallCount);
+        Assert.Equal(2, requestCount);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(destination));
+        Assert.Equal(DownloadStatus.Completed, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
+    [Fact]
     public async Task ProcessAllAsync_DrainsQueuedItemsSequentially()
     {
         using var directory = new TemporaryDirectory();
@@ -486,6 +519,21 @@ public sealed class DownloadQueueWorkerTests
 
         Assert.Equal(protection, processor.Protection);
         Assert.Equal(DownloadStatus.Completed, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
+    private sealed class RefreshingStubSource(Uri firstUri, Uri refreshedUri, string path)
+        : IAuthorizedAudioDownloadSource
+    {
+        public int CallCount { get; private set; }
+
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(new AuthorizedAudioDownload(
+                CallCount == 1 ? firstUri : refreshedUri, path));
+        }
     }
 
     private sealed class ProtectedStubSource(
