@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using Libation.Mobile.Core;
 using Xunit;
 
@@ -22,9 +23,9 @@ public sealed class AudioFileDownloaderRangeUnitTests
             {
                 Content = new ByteArrayContent([3, 4, 5])
             };
-            response.Content.Headers.ContentRange =
-                new System.Net.Http.Headers.ContentRangeHeaderValue("items", 2, 4, 5);
-            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"v1\"");
+            Assert.True(ContentRangeHeaderValue.TryParse("items 2-4/5", out var range));
+            response.Content.Headers.ContentRange = range;
+            response.Headers.ETag = new EntityTagHeaderValue("\"v1\"");
             return response;
         }));
 
@@ -51,9 +52,9 @@ public sealed class AudioFileDownloaderRangeUnitTests
         using var client = new HttpClient(new StubHandler((_, _) =>
         {
             var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
-            response.Content.Headers.ContentRange =
-                new System.Net.Http.Headers.ContentRangeHeaderValue("items", payload.Length);
-            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"v1\"");
+            Assert.True(ContentRangeHeaderValue.TryParse($"items */{payload.Length}", out var range));
+            response.Content.Headers.ContentRange = range;
+            response.Headers.ETag = new EntityTagHeaderValue("\"v1\"");
             return response;
         }));
 
