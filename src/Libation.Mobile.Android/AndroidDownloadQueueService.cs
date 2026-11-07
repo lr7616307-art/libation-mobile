@@ -93,7 +93,7 @@ public sealed class AndroidDownloadQueueService : Service
                 ?? Task.FromResult<DownloadQueueExecutionController?>(null));
             cancellationToken.ThrowIfCancellationRequested();
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (System.OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             _controller = null;
             _runStarted = false;
