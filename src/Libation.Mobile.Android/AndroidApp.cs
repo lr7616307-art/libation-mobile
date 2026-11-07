@@ -13,7 +13,12 @@ namespace Libation.Mobile.Android;
 [Application]
 public class AndroidApp : AvaloniaAndroidApplication<App>
 {
-    private static readonly HttpClient DownloadHttpClient = new();
+    private static readonly HttpClient DownloadHttpClient = new(new HttpClientHandler
+    {
+        // AudioFileDownloader validates each hop itself so an HTTPS URL can never
+        // be followed to HTTP before the application gets a chance to reject it.
+        AllowAutoRedirect = false
+    });
 
     /// <summary>Process-wide queue shared with the UI and Android foreground-service host.</summary>
     public static IDownloadQueue? PersistentDownloadQueue { get; private set; }
