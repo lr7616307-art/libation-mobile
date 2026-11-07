@@ -530,15 +530,20 @@ public sealed class DownloadQueueWorkerTests
 
 
     [Fact]
-    public async Task ProcessNextAsync_ProtectedDownloadWithoutCompatiblePipelineIsNotMarkedCompleted()
+    public async Task ProcessNextAsync_ProtectedDownloadWithoutCompatiblePipelineFailsBeforeNetworkTransfer()
     {
         using var directory = new TemporaryDirectory();
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
         await queue.EnqueueAsync("protected-book");
         var destination = Path.Combine(directory.Path, "protected-book.aaxc");
-        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
         {
-            Content = new ByteArrayContent(new byte[] { 3, 2, 1 })
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 3, 2, 1 })
+            };
         }));
         var source = new ProtectedStubSource(
             new Uri("https://provider.example/protected-book"),
@@ -552,7 +557,9 @@ public sealed class DownloadQueueWorkerTests
         var item = Assert.Single(await queue.GetItemsAsync());
         Assert.Equal(DownloadStatus.Failed, item.Status);
         Assert.Contains("AudibleAdrm", item.ErrorMessage);
-        Assert.True(File.Exists(destination));
+        Assert.Equal(0, requestCount);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
     }
 
     [Fact]
