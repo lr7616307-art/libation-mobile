@@ -35,6 +35,13 @@ public sealed record DownloadQueueProgress(
 public interface IAudioPostDownloadProcessor
 {
     /// <summary>
+    /// Returns true only when this implementation has an authorized processing
+    /// path for the supplied protection mode. Protected downloads are rejected
+    /// before transfer unless this returns true.
+    /// </summary>
+    bool CanProcess(AudioProtectionDescriptor protection);
+
+    /// <summary>
     /// Processes a completed download and returns the path of the resulting audio file.
     /// Implementations must leave the input file intact if processing fails.
     /// </summary>
@@ -146,7 +153,8 @@ public sealed class DownloadQueueWorker
                 // Do not spend bandwidth or storage on protected bytes that this
                 // app cannot process. A compatible, authorized processor must be
                 // present before the first network request is made.
-                if (target.Protection.RequiresProtectedMediaPipeline && _postDownloadProcessor is null)
+                if (target.Protection.RequiresProtectedMediaPipeline &&
+                    (_postDownloadProcessor is null || !_postDownloadProcessor.CanProcess(target.Protection)))
                     throw new NotSupportedException(
                         $"The audiobook uses {target.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
 
@@ -212,7 +220,7 @@ public sealed class DownloadQueueWorker
                         // Revalidate before retrying so protected bytes are never fetched
                         // without a compatible authorized processor.
                         if (refreshedTarget.Protection.RequiresProtectedMediaPipeline &&
-                            _postDownloadProcessor is null)
+                            (_postDownloadProcessor is null || !_postDownloadProcessor.CanProcess(refreshedTarget.Protection)))
                             throw new NotSupportedException(
                                 $"The refreshed audiobook licence uses {refreshedTarget.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
 
@@ -238,7 +246,8 @@ public sealed class DownloadQueueWorker
                 // This hook is deliberately optional for unprotected media and runs
                 // only after a complete download. Its output becomes the playable file.
                 var playablePath = result.FilePath;
-                if (_postDownloadProcessor is not null)
+                if (_postDownloadProcessor is not null &&
+                    _postDownloadProcessor.CanProcess(target.Protection))
                 {
                     playablePath = await _postDownloadProcessor.ProcessAsync(
                         result.FilePath, target.Protection, cancellationToken);

@@ -62,7 +62,7 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
-    public async Task ProcessNextAsync_RejectsRefreshedProtectedLicenceBeforeRetryWithoutProcessor()
+    public async Task ProcessNextAsync_RejectsRefreshedProtectedLicenceBeforeRetryWithoutCompatibleProcessor()
     {
         using var directory = new TemporaryDirectory();
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
@@ -85,7 +85,8 @@ public sealed class DownloadQueueWorkerTests
             destination,
             AudioProtectionDescriptor.Unprotected,
             new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm));
-        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client), source, new IncompatibleProcessor());
 
         Assert.True(await worker.ProcessNextAsync());
 
@@ -600,6 +601,40 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_ProtectedDownloadWithIncompatibleProcessorFailsBeforeTransfer()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("unsupported-protected-book");
+        var destination = Path.Combine(directory.Path, "unsupported-protected-book.aaxc");
+        var requestCount = 0;
+        using var client = new HttpClient(new StubHandler(() =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+            };
+        }));
+        var protection = new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm);
+        var source = new ProtectedStubSource(
+            new Uri("https://provider.example/unsupported-protected-book"),
+            destination,
+            protection);
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client), source, new IncompatibleProcessor());
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("AudibleAdrm", item.ErrorMessage);
+        Assert.Equal(0, requestCount);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_PassesProtectionMetadataToAuthorizedProcessor()
     {
         using var directory = new TemporaryDirectory();
@@ -712,8 +747,21 @@ public sealed class DownloadQueueWorkerTests
         }
     }
 
+    private sealed class IncompatibleProcessor : IAudioPostDownloadProcessor
+    {
+        public bool CanProcess(AudioProtectionDescriptor protection) => false;
+
+        public Task<string> ProcessAsync(
+            string downloadedFilePath,
+            AudioProtectionDescriptor protection,
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("This processor must not be invoked for unsupported protection.");
+    }
+
     private sealed class RecordingProcessor : IAudioPostDownloadProcessor
     {
+        public bool CanProcess(AudioProtectionDescriptor protection) => true;
+
         public string? InputPath { get; private set; }
 
         public AudioProtectionDescriptor? Protection { get; private set; }
@@ -731,6 +779,8 @@ public sealed class DownloadQueueWorkerTests
 
     private sealed class ThrowingProcessor : IAudioPostDownloadProcessor
     {
+        public bool CanProcess(AudioProtectionDescriptor protection) => true;
+
         public Task<string> ProcessAsync(
             string downloadedFilePath,
             AudioProtectionDescriptor protection,
