@@ -97,6 +97,9 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         var contentReference = contentMetadata.ContentReference
             ?? throw new InvalidDataException("Audible granted the licence without a content reference.");
 
+        if (!string.Equals(contentReference.Asin, audiobookId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Audible returned a download licence for a different audiobook.");
+
         var contentType = contentReference.ContentFormat;
         var protectionKind = license.DrmType.ToString() switch
         {
