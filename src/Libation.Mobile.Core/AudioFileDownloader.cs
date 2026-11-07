@@ -242,7 +242,7 @@ public sealed class AudioFileDownloader
     private static bool IsRedirect(System.Net.HttpStatusCode statusCode)
         => statusCode is System.Net.HttpStatusCode.MovedPermanently
             or System.Net.HttpStatusCode.Redirect
-            or System.Net.System.Net.HttpStatusCode.RedirectMethod
+            or System.Net.HttpStatusCode.RedirectMethod
             or System.Net.HttpStatusCode.TemporaryRedirect
             or System.Net.HttpStatusCode.PermanentRedirect;
 
