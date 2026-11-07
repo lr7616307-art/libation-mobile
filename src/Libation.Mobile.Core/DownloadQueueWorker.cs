@@ -171,11 +171,42 @@ public sealed class DownloadQueueWorker
                 AudioDownloadResult result;
                 try
                 {
-                    result = await _downloader.DownloadAsync(
-                        target.DownloadUri,
-                        target.DestinationPath,
-                        downloadProgress,
-                        cancellationToken);
+                    try
+                    {
+                        result = await _downloader.DownloadAsync(
+                            target.DownloadUri,
+                            target.DestinationPath,
+                            downloadProgress,
+                            cancellationToken);
+                    }
+                    catch (HttpRequestException exception) when (
+                        exception.StatusCode is System.Net.HttpStatusCode.Unauthorized or
+                            System.Net.HttpStatusCode.Forbidden)
+                    {
+                        // Provider download URLs can expire independently of the
+                        // purchased title. Request one fresh authorized licence and
+                        // retry once; never loop indefinitely on rejected credentials.
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var refreshedTarget = await _source.ResolveAsync(
+                            item.AudiobookId, cancellationToken).ConfigureAwait(false);
+                        if (refreshedTarget is null)
+                            throw new InvalidOperationException(
+                                "The audio provider returned no refreshed download target.");
+
+                        if (!string.Equals(
+                            Path.GetFullPath(refreshedTarget.DestinationPath),
+                            Path.GetFullPath(target.DestinationPath),
+                            StringComparison.Ordinal))
+                            throw new InvalidDataException(
+                                "The refreshed download target changed the audiobook destination.");
+
+                        target = refreshedTarget;
+                        result = await _downloader.DownloadAsync(
+                            target.DownloadUri,
+                            target.DestinationPath,
+                            downloadProgress,
+                            cancellationToken);
+                    }
                     latestProgress = new AudioDownloadProgress(result.BytesReceived, result.BytesReceived);
                 }
                 finally
