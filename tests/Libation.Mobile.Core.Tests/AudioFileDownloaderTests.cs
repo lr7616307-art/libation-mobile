@@ -682,7 +682,7 @@ public sealed class AudioFileDownloaderTests
         var destination = Path.Combine(directory.Path, "book.m4b");
         Directory.CreateDirectory(directory.Path);
         await File.WriteAllBytesAsync(destination + ".part", new byte[] { 1, 2 });
-        await File.WriteAllTextAsync(destination + ".part.validator", "etag:\\"v1\\"");
+        await File.WriteAllTextAsync(destination + ".part.validator", "etag:\"v1\"");
         var calls = 0;
         using var client = new HttpClient(new StubHandler((request, _) =>
         {
