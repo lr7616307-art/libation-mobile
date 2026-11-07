@@ -108,9 +108,21 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             ToOptionalUtc(license.RefreshDate),
             ToOptionalUtc(license.RemovalDate));
 
+        // The provider can grant an unencrypted MPEG representation even when
+        // ADRM was requested. Keep the on-disk extension aligned with the
+        // granted representation; never label MPEG bytes as an AAXC container.
+        // Unknown protected formats get a neutral extension until a dedicated
+        // authorized processor understands their container.
+        var extension = license.DrmType switch
+        {
+            DrmType.Mpeg => ".mp3",
+            DrmType.Adrm => ".aaxc",
+            _ => ".protected"
+        };
+
         // ASIN validation above prevents path traversal. Keep the original
         // provider bytes separate from any future processed/playable output.
-        var destinationPath = Path.Combine(_downloadDirectory, audiobookId.ToUpperInvariant() + ".aaxc");
+        var destinationPath = Path.Combine(_downloadDirectory, audiobookId.ToUpperInvariant() + extension);
         return new AuthorizedAudioDownload(downloadUri, destinationPath)
         {
             Protection = protection
