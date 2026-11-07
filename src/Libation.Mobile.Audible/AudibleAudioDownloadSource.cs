@@ -92,7 +92,12 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             !string.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Audible returned no valid HTTPS offline download URL.");
 
-        var contentType = license.ContentMetadata?.ContentReference?.ContentFormat;
+        var contentMetadata = license.ContentMetadata
+            ?? throw new InvalidDataException("Audible granted the licence without content metadata.");
+        var contentReference = contentMetadata.ContentReference
+            ?? throw new InvalidDataException("Audible granted the licence without a content reference.");
+
+        var contentType = contentReference.ContentFormat;
         var protectionKind = license.DrmType.ToString() switch
         {
             "Mpeg" => AudioProtectionKind.Unprotected,
