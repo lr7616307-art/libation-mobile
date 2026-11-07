@@ -708,6 +708,7 @@ public partial class MainView : UserControl
         if (sender is Button { DataContext: Audiobook book })
         {
             await _viewModel.EnqueueAsync(book.Id);
+            PlatformDownloadQueueStartAction?.Invoke();
             UpdateQueueRefreshTimer();
         }
     }
@@ -717,6 +718,7 @@ public partial class MainView : UserControl
         if (sender is Button { DataContext: DownloadQueueItem item } && item.Status == DownloadStatus.Failed)
         {
             await _viewModel.RetryFailedAsync(item.AudiobookId);
+            PlatformDownloadQueueStartAction?.Invoke();
             UpdateQueueRefreshTimer();
         }
     }
