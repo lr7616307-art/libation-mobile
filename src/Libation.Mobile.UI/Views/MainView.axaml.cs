@@ -703,6 +703,12 @@ public partial class MainView : UserControl
         }
     }
 
+    private void PauseQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => PlatformDownloadQueuePauseAction?.Invoke();
+
+    private void ResumeQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => PlatformDownloadQueueStartAction?.Invoke();
+
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
