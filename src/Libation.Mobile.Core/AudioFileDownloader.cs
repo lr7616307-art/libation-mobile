@@ -75,7 +75,8 @@ public sealed class AudioFileDownloader
         // of completion when its total length and representation validator both match.
         if (response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable &&
             existingBytes > 0 && savedValidator is { } completedValidator &&
-            response.Content.Headers.ContentRange is { HasLength: true, Length: long unsatisfiedRangeTotal } &&
+            response.Content.Headers.ContentRange is { HasLength: true, Length: long unsatisfiedRangeTotal } unsatisfiedRange &&
+            string.Equals(unsatisfiedRange.Unit, "bytes", StringComparison.OrdinalIgnoreCase) &&
             unsatisfiedRangeTotal == existingBytes &&
             ResponseMatchesValidator(response, completedValidator))
         {
@@ -109,7 +110,9 @@ public sealed class AudioFileDownloader
         if (isPartialResponse)
         {
             var range = response.Content.Headers.ContentRange;
-            if (range?.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
+            if (range is null ||
+                !string.Equals(range.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
+                range.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
                 throw new HttpRequestException("The server returned an invalid byte range for this download.");
 
             if (range.Length is not long partialTotalLength || partialTotalLength <= rangeEnd)
