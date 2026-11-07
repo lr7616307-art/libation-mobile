@@ -92,13 +92,21 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             !string.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Audible returned no valid HTTPS offline download URL.");
 
-        var protection = license.DrmType.ToString() switch
+        var contentType = license.ContentMetadata?.ContentReference?.ContentFormat;
+        var protectionKind = license.DrmType.ToString() switch
         {
-            "Mpeg" => AudioProtectionDescriptor.Unprotected,
-            "Adrm" => new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm),
-            "Widevine" => new AudioProtectionDescriptor(AudioProtectionKind.Widevine),
-            _ => new AudioProtectionDescriptor(AudioProtectionKind.UnknownProtected)
+            "Mpeg" => AudioProtectionKind.Unprotected,
+            "Adrm" => AudioProtectionKind.AudibleAdrm,
+            "Widevine" => AudioProtectionKind.Widevine,
+            _ => AudioProtectionKind.UnknownProtected
         };
+
+        var protection = new AudioProtectionDescriptor(
+            protectionKind,
+            string.IsNullOrWhiteSpace(contentType) ? null : contentType,
+            ToOptionalUtc(license.AccessExpiryDate),
+            ToOptionalUtc(license.RefreshDate),
+            ToOptionalUtc(license.RemovalDate));
 
         // ASIN validation above prevents path traversal. Keep the original
         // provider bytes separate from any future processed/playable output.
@@ -108,4 +116,7 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             Protection = protection
         };
     }
+
+    private static DateTimeOffset? ToOptionalUtc(DateTimeOffset value) =>
+        value == default ? null : value.ToUniversalTime();
 }
