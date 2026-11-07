@@ -207,6 +207,15 @@ public sealed class DownloadQueueWorker
                             throw new InvalidDataException(
                                 "The refreshed download target changed the audiobook destination.");
 
+                        // A refreshed licence is authoritative and may carry
+                        // different protection metadata from the expired URL's licence.
+                        // Revalidate before retrying so protected bytes are never fetched
+                        // without a compatible authorized processor.
+                        if (refreshedTarget.Protection.RequiresProtectedMediaPipeline &&
+                            _postDownloadProcessor is null)
+                            throw new NotSupportedException(
+                                $"The refreshed audiobook licence uses {refreshedTarget.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
+
                         target = refreshedTarget;
                         result = await _downloader.DownloadAsync(
                             target.DownloadUri,
