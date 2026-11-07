@@ -73,6 +73,36 @@ public sealed class AudibleAudioDownloadSourceTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
+    [Fact]
+    public async Task ResolveAsync_RejectsGrantedLicenceWithoutContentMetadata()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var license = CreateLicense(DrmType.Adrm, "https://cdn.example/audio");
+            license.ContentMetadata = null;
+            var source = new AudibleAudioDownloadSource((_, _) => Task.FromResult(license), directory);
+
+            await Assert.ThrowsAsync<InvalidDataException>(() => source.ResolveAsync("B012345678"));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ResolveAsync_RejectsGrantedLicenceWithoutContentReference()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var license = CreateLicense(DrmType.Adrm, "https://cdn.example/audio");
+            license.ContentMetadata!.ContentReference = null!;
+            var source = new AudibleAudioDownloadSource((_, _) => Task.FromResult(license), directory);
+
+            await Assert.ThrowsAsync<InvalidDataException>(() => source.ResolveAsync("B012345678"));
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     [Theory]
     [InlineData("http://cdn.example/audio")]
     [InlineData("file:///private/audio")]
