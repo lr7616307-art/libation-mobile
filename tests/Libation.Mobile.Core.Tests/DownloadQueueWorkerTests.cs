@@ -663,6 +663,31 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_SkipsProcessorThatDoesNotSupportUnprotectedMedia()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-unprocessed");
+        var payload = new byte[] { 2, 4, 6 };
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload)
+        }));
+        var destination = Path.Combine(directory.Path, "book-unprocessed.m4b");
+        var processor = new IncompatibleProcessor();
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book-unprocessed"), destination),
+            processor);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(destination));
+        Assert.Equal(DownloadStatus.Completed, Assert.Single(await queue.GetItemsAsync()).Status);
+        Assert.False(processor.WasInvoked);
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_PostProcessorFailureMarksItemFailedAndKeepsDownloadedFile()
     {
         using var directory = new TemporaryDirectory();
@@ -834,6 +859,22 @@ public sealed class DownloadQueueWorkerTests
                 throw new InvalidOperationException("Provider temporarily unavailable.");
             return Task.FromResult(new AuthorizedAudioDownload(
                 new Uri("https://provider.example/" + audiobookId), destinationPath));
+        }
+    }
+
+    private sealed class IncompatibleProcessor : IAudioPostDownloadProcessor
+    {
+        public bool WasInvoked { get; private set; }
+
+        public bool CanProcess(AudioProtectionDescriptor protection) => false;
+
+        public Task<string> ProcessAsync(
+            string downloadedFilePath,
+            AudioProtectionDescriptor protection,
+            CancellationToken cancellationToken = default)
+        {
+            WasInvoked = true;
+            throw new InvalidOperationException("Unsupported processor must not be invoked.");
         }
     }
 
