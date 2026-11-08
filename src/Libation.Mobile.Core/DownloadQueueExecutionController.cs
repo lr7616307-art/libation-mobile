@@ -44,7 +44,20 @@ public sealed class DownloadQueueExecutionController
     {
         CancellationTokenSource? active;
         lock (_sync) active = _activeRun;
-        active?.Cancel();
+        if (active is null)
+            return;
+
+        // RunCoreAsync may finish and dispose the source after the lock is
+        // released but before Cancel() reaches it. Completion already means
+        // there is nothing left to cancel, so treat that race as a no-op.
+        try
+        {
+            active.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The active run completed between reading the reference and cancelling it.
+        }
     }
 
     private async Task<int> RunCoreAsync(
