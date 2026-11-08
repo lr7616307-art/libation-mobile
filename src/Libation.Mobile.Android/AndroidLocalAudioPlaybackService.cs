@@ -81,7 +81,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     break;
                 case ActionResume:
                     if (_player is not null && !_player.IsPlaying) _player.Play();
-                    SavePlaybackSnapshot(durable: true);
+                    SavePlaybackSnapshot(durable: true, wasPlayingOverride: true);
                     UpdateNotification();
                     break;
                 case ActionSeek:
@@ -300,13 +300,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             if (_sleepTimerRunnable is not null) _checkpointHandler?.PostDelayed(_sleepTimerRunnable, 1_000);
         }
     }
-    private void SavePlaybackSnapshot(bool durable = false)
+    private void SavePlaybackSnapshot(bool durable = false, bool? wasPlayingOverride = null)
     {
         if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         try
         {
             PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
-                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying), durable);
+                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, wasPlayingOverride ?? _player.IsPlaying), durable);
         }
         catch (Exception) { /* A checkpoint must never interrupt audio playback. */ }
     }
