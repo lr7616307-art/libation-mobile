@@ -111,7 +111,7 @@ public sealed class AudioFileDownloaderRangeUnitTests
         var partial = destination + ".part";
         Directory.CreateDirectory(directory.Path);
         await File.WriteAllBytesAsync(partial, [1, 2, 3]);
-        await File.WriteAllTextAsync(partial + ".validator", "etag:\\"v1\\"");
+        await File.WriteAllTextAsync(partial + ".validator", "etag:\"v1\"");
 
         using var client = new HttpClient(new StubHandler((request, _) =>
         {
@@ -119,7 +119,7 @@ public sealed class AudioFileDownloaderRangeUnitTests
             var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
             Assert.True(ContentRangeHeaderValue.TryParse("bytes */2", out var range));
             response.Content.Headers.ContentRange = range;
-            response.Headers.ETag = new EntityTagHeaderValue("\\"v2\\"");
+            response.Headers.ETag = new EntityTagHeaderValue("\"v2\"");
             return response;
         }));
 
