@@ -101,10 +101,6 @@ public sealed class AudioFileDownloader
         }
 
         var responseValidator = TryGetValidator(response);
-        if (responseValidator is not null)
-            await WriteValidatorAsync(validatorPath, responseValidator.Value, cancellationToken);
-        else if (!append && File.Exists(validatorPath))
-            File.Delete(validatorPath);
         var startingBytes = append ? existingBytes : 0;
         var responseLength = response.Content.Headers.ContentLength;
         long? expectedFinalLength = responseLength is long length
@@ -143,6 +139,15 @@ public sealed class AudioFileDownloader
             useAsync: true);
         if (append)
             output.Seek(0, SeekOrigin.End);
+
+        // For a fresh 200 response, FileMode.Create has now truncated any old
+        // partial bytes. Persist the new validator only after that truncation:
+        // a crash between these operations must never pair old bytes with the
+        // new representation's validator and resume by splicing two versions.
+        if (responseValidator is not null)
+            await WriteValidatorAsync(validatorPath, responseValidator.Value, cancellationToken);
+        else if (!append && File.Exists(validatorPath))
+            File.Delete(validatorPath);
 
         var buffer = new byte[64 * 1024];
         long received = startingBytes;
