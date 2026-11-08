@@ -263,7 +263,8 @@ public sealed class DownloadQueueWorker
                 // This hook is deliberately optional for unprotected media and runs
                 // only after a complete download. Its output becomes the playable file.
                 var playablePath = result.FilePath;
-                if (_postDownloadProcessor is not null)
+                if (_postDownloadProcessor is not null &&
+                    _postDownloadProcessor.CanProcess(target.Protection))
                 {
                     playablePath = await _postDownloadProcessor.ProcessAsync(
                         result.FilePath, target.Protection, cancellationToken);
