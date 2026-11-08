@@ -280,7 +280,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(payload, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -308,7 +309,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(payload, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -338,7 +340,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(payload, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -364,7 +367,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(payload, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
