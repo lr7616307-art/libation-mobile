@@ -87,15 +87,28 @@ public sealed class DownloadQueueWorker
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        // A process restart can leave an item marked Downloading even though
-        // no worker is alive. Requeue those items before selecting new work;
-        // the downloader will validate and resume any retained partial file.
-        await RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
+        // Serialize recovery with all work performed by this worker. If a
+        // concurrent ProcessNextAsync were already active, recovering first
+        // would requeue its live item and make its eventual Completed transition
+        // invalid. Keep the gate for the entire batch, using the private core
+        // method below to avoid reacquiring it for each item.
+        await _runGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // A process restart can leave an item marked Downloading even though
+            // no worker is alive. Requeue those items before selecting new work;
+            // the downloader will validate and resume any retained partial file.
+            await RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
 
-        var processed = 0;
-        while (await ProcessNextAsync(progress, cancellationToken))
-            processed++;
-        return processed;
+            var processed = 0;
+            while (await ProcessNextCoreAsync(progress, cancellationToken).ConfigureAwait(false))
+                processed++;
+            return processed;
+        }
+        finally
+        {
+            _runGate.Release();
+        }
     }
 
     public async Task<int> RecoverInterruptedDownloadsAsync(CancellationToken cancellationToken = default)
@@ -142,9 +155,21 @@ public sealed class DownloadQueueWorker
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        await _runGate.WaitAsync(cancellationToken);
+        await _runGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            return await ProcessNextCoreAsync(progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _runGate.Release();
+        }
+    }
+
+    private async Task<bool> ProcessNextCoreAsync(
+        IProgress<DownloadQueueProgress>? progress,
+        CancellationToken cancellationToken)
+    {
             var item = (await _queue.GetItemsAsync(cancellationToken))
                 .Where(x => x.Status == DownloadStatus.Queued)
                 .OrderBy(x => x.AddedAtUtc)
@@ -305,10 +330,5 @@ public sealed class DownloadQueueWorker
                     cancellationToken: CancellationToken.None);
                 return true;
             }
-        }
-        finally
-        {
-            _runGate.Release();
-        }
     }
 }
