@@ -187,7 +187,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public void OnPlayerError(PlaybackException? error)
     {
-        StopPlayback();
+        // Decoder and I/O errors can be transient (for example, storage becoming
+        // temporarily unavailable). Capture the last known position before
+        // releasing ExoPlayer, but retain the recovery snapshot so the next app
+        // launch can retry instead of silently losing the listening session.
+        SavePlaybackSnapshot(durable: true);
+        StopPlayback(clearRecovery: false);
         StopSelf();
     }
 
