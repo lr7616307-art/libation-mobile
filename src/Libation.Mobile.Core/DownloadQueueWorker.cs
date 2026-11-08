@@ -62,7 +62,9 @@ public sealed class DownloadQueueWorker
     private readonly IAuthorizedAudioDownloadSource _source;
     private readonly IAudioPostDownloadProcessor? _postDownloadProcessor;
     private readonly ILibraryRepository? _libraryRepository;
-    private readonly SemaphoreSlim _runGate = new(1, 1);
+    // A process-wide gate coordinates separate worker instances that share the same
+    // persisted queue. Recovery must never requeue an item owned by another worker.
+    private static readonly SemaphoreSlim ProcessRunGate = new(1, 1);
 
     public DownloadQueueWorker(
         IDownloadQueue queue,
@@ -92,13 +94,13 @@ public sealed class DownloadQueueWorker
         // would requeue its live item and make its eventual Completed transition
         // invalid. Keep the gate for the entire batch, using the private core
         // method below to avoid reacquiring it for each item.
-        await _runGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await ProcessRunGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // A process restart can leave an item marked Downloading even though
             // no worker is alive. Requeue those items before selecting new work;
             // the downloader will validate and resume any retained partial file.
-            await RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
+            await _queue.RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
 
             var processed = 0;
             while (await ProcessNextCoreAsync(progress, cancellationToken).ConfigureAwait(false))
@@ -107,15 +109,23 @@ public sealed class DownloadQueueWorker
         }
         finally
         {
-            _runGate.Release();
+            ProcessRunGate.Release();
         }
     }
 
     public async Task<int> RecoverInterruptedDownloadsAsync(CancellationToken cancellationToken = default)
     {
-        // Use the queue's single atomic recovery operation so multiple queue
-        // objects cannot independently claim the same interrupted item.
-        return await _queue.RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
+        // Explicit recovery must coordinate with every worker instance too;
+        // otherwise it could requeue an item another instance is downloading.
+        await ProcessRunGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await _queue.RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ProcessRunGate.Release();
+        }
     }
 
     private static void EnsureHttpsDownloadUri(Uri downloadUri, string description)
@@ -155,14 +165,14 @@ public sealed class DownloadQueueWorker
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        await _runGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await ProcessRunGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return await ProcessNextCoreAsync(progress, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            _runGate.Release();
+            ProcessRunGate.Release();
         }
     }
 
