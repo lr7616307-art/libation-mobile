@@ -63,7 +63,8 @@ public sealed class AudioFileDownloaderRangeUnitTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(payload, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
