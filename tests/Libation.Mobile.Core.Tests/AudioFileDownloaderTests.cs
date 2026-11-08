@@ -159,8 +159,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(partial));
-        Assert.Equal("etag:\"old-version\"", await File.ReadAllTextAsync(partial + ".validator"));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -391,7 +391,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(destination + ".part"));
+        Assert.False(File.Exists(destination + ".part.validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -418,7 +419,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(destination + ".part"));
+        Assert.False(File.Exists(destination + ".part.validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -627,7 +629,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
