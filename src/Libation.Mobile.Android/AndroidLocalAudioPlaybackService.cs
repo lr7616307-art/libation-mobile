@@ -100,7 +100,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     break;
                 case ActionSetSpeed:
                     SetPlaybackSpeed(intent.GetFloatExtra(ExtraSpeed, 1f));
-                    SavePlaybackSnapshot();
+                    // Playback speed is an explicit user setting. Flush it with
+                    // the current position so a sudden shutdown does not revert
+                    // the listener's chosen speed on the next recovery.
+                    SavePlaybackSnapshot(durable: true);
                     break;
                 case ActionRestore:
                     RestoreSavedPlayback();
