@@ -303,6 +303,37 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessAllAsync_DoesNotRecoverAnItemBeingProcessedBySameWorker()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-live");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+        }));
+        var source = new GateableSource(Path.Combine(directory.Path, "book-live.m4b"));
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        var activeDownload = worker.ProcessNextAsync();
+        await source.Started;
+        var concurrentBatch = worker.ProcessAllAsync();
+
+        // Give the batch a chance to reach its recovery stage. It must wait for
+        // the active item rather than requeueing it while its source is resolving.
+        await Task.Delay(50);
+        Assert.Equal(DownloadStatus.Downloading, Assert.Single(await queue.GetItemsAsync()).Status);
+
+        source.Release();
+        Assert.True(await activeDownload);
+        Assert.Equal(0, await concurrentBatch);
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Completed, item.Status);
+        Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(source.DestinationPath));
+    }
+
+    [Fact]
     public async Task ProcessAllAsync_RecoversInterruptedItemsBeforeStartingQueue()
     {
         using var directory = new TemporaryDirectory();
@@ -834,6 +865,27 @@ public sealed class DownloadQueueWorkerTests
         public Task<AuthorizedAudioDownload> ResolveAsync(
             string audiobookId, CancellationToken cancellationToken = default)
             => Task.FromResult(new AuthorizedAudioDownload(uri, path) { Protection = protection });
+    }
+
+    private sealed class GateableSource(string destinationPath) : IAuthorizedAudioDownloadSource
+    {
+        private readonly TaskCompletionSource _started =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Started => _started.Task;
+        public string DestinationPath => destinationPath;
+        public void Release() => _release.TrySetResult();
+
+        public async Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            _started.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return new AuthorizedAudioDownload(
+                new Uri("https://provider.example/" + audiobookId), destinationPath);
+        }
     }
 
     private sealed class BlockingSource : IAuthorizedAudioDownloadSource
