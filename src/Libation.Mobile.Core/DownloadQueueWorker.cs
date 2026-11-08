@@ -165,14 +165,14 @@ public sealed class DownloadQueueWorker
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        await _runGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await ProcessRunGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return await ProcessNextCoreAsync(progress, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            _runGate.Release();
+            ProcessRunGate.Release();
         }
     }
 
