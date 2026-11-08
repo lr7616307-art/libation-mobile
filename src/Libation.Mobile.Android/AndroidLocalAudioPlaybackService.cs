@@ -275,7 +275,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var editor = GetSharedPreferences("vorath_sleep_timer", FileCreationMode.Private)?.Edit();
         editor?.PutLong("deadline_utc_ticks", _sleepDeadlineUtcTicks ?? 0);
         editor?.PutLong("chapter_position_ms", _sleepChapterPositionMilliseconds ?? -1);
-        editor?.Apply();
+        // Setting, cancelling, or expiring a sleep timer is an explicit state
+        // transition. Flush it before returning so process death cannot restore
+        // a timer the listener already cancelled or allow a cancelled timer to
+        // unexpectedly pause playback later.
+        editor?.Commit();
     }
 
     private void ClearSleepTimer()
