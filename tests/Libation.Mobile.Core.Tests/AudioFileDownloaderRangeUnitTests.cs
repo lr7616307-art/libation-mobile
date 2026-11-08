@@ -103,6 +103,37 @@ public sealed class AudioFileDownloaderRangeUnitTests
         Assert.False(File.Exists(destination));
     }
 
+    [Fact]
+    public async Task DownloadAsync_DiscardsPartialWhen416DoesNotMatchSavedValidator()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(partial, [1, 2, 3]);
+        await File.WriteAllTextAsync(partial + ".validator", "etag:\\"v1\\"");
+
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            Assert.Equal(3, request.Headers.Range?.Ranges.Single().From);
+            var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
+            Assert.True(ContentRangeHeaderValue.TryParse("bytes */2", out var range));
+            response.Content.Headers.ContentRange = range;
+            response.Headers.ETag = new EntityTagHeaderValue("\\"v2\\"");
+            return response;
+        }));
+
+        var downloader = new AudioFileDownloader(client);
+
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Contains("stale partial download was discarded", exception.Message);
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
+        Assert.False(File.Exists(destination));
+    }
+
     private sealed class StubHandler(Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> response)
         : HttpMessageHandler
     {
