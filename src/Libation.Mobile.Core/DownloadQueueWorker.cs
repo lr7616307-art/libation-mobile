@@ -170,17 +170,11 @@ public sealed class DownloadQueueWorker
         IProgress<DownloadQueueProgress>? progress,
         CancellationToken cancellationToken)
     {
-            var item = (await _queue.GetItemsAsync(cancellationToken))
-                .Where(x => x.Status == DownloadStatus.Queued)
-                .OrderBy(x => x.AddedAtUtc)
-                .FirstOrDefault();
-
+            // Selection and transition must be atomic across distinct worker
+            // instances, not merely protected by this worker's local run gate.
+            var item = await _queue.TryClaimNextAsync(cancellationToken).ConfigureAwait(false);
             if (item is null)
                 return false;
-
-            await _queue.UpdateStatusAsync(
-                item.AudiobookId, DownloadStatus.Downloading,
-                cancellationToken: cancellationToken);
 
             try
             {

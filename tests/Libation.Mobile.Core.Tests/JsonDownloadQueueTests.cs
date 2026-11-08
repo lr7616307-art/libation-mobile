@@ -88,6 +88,26 @@ public sealed class JsonDownloadQueueTests
     }
 
     [Fact]
+    public async Task TryClaimNext_ConcurrentQueueInstancesClaimAnItemOnlyOnce()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "queue.json");
+        var firstQueue = new JsonDownloadQueue(path);
+        var secondQueue = new JsonDownloadQueue(path);
+        await firstQueue.EnqueueAsync("book-1");
+        await firstQueue.EnqueueAsync("book-2");
+
+        var claims = await Task.WhenAll(
+            firstQueue.TryClaimNextAsync(),
+            secondQueue.TryClaimNextAsync());
+
+        Assert.All(claims, Assert.NotNull);
+        Assert.Equal(2, claims.Select(item => item!.AudiobookId).Distinct(StringComparer.Ordinal).Count());
+        Assert.All(await firstQueue.GetItemsAsync(), item => Assert.Equal(DownloadStatus.Downloading, item.Status));
+        Assert.Null(await secondQueue.TryClaimNextAsync());
+    }
+
+    [Fact]
     public async Task UpdateProgress_PersistsByteCountsAndPercentageAcrossQueueInstances()
     {
         using var directory = new TemporaryDirectory();

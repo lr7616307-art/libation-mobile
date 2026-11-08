@@ -67,6 +67,43 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         return recovered;
     }
 
+    /// <summary>
+    /// Atomically transitions the oldest queued item to Downloading. The shared
+    /// file gate makes selection and claim one indivisible operation across all
+    /// queue instances in this process.
+    /// </summary>
+    public async Task<DownloadQueueItem?> TryClaimNextAsync(CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var items = (await ReadItemsAsync(cancellationToken).ConfigureAwait(false)).ToList();
+            var index = items
+                .Select((item, itemIndex) => (item, itemIndex))
+                .Where(entry => entry.item.Status == DownloadStatus.Queued)
+                .OrderBy(entry => entry.item.AddedAtUtc)
+                .Select(entry => entry.itemIndex)
+                .FirstOrDefault(-1);
+
+            if (index < 0)
+                return null;
+
+            var claimed = items[index] with
+            {
+                Status = DownloadStatus.Downloading,
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+                ErrorMessage = null
+            };
+            items[index] = claimed;
+            await WriteItemsAsync(items, cancellationToken).ConfigureAwait(false);
+            return claimed;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
