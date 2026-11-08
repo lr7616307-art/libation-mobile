@@ -89,7 +89,16 @@ public sealed class AudioFileDownloader
         var append = existingBytes > 0 && isPartialResponse;
         if (append && savedValidator is { } priorValidator &&
             !ResponseMatchesValidator(response, priorValidator))
-            throw new HttpRequestException("The server resumed a different audiobook representation.");
+        {
+            // The retained bytes belong to a different representation. Keeping
+            // them would make every later retry send the same stale If-Range
+            // validator and fail again. Discard both pieces of resume state so
+            // the next attempt starts from byte zero with a fresh response.
+            if (File.Exists(partialPath)) File.Delete(partialPath);
+            if (File.Exists(validatorPath)) File.Delete(validatorPath);
+            throw new HttpRequestException(
+                "The server resumed a different audiobook representation. The stale partial download was discarded; retry to start again.");
+        }
 
         var responseValidator = TryGetValidator(response);
         if (responseValidator is not null)
