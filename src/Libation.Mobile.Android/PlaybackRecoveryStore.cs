@@ -45,5 +45,11 @@ internal static class PlaybackRecoveryStore
     }
 
     public static void Clear(global::Android.Content.Context context)
-        => context.GetSharedPreferences(PreferencesName, global::Android.Content.FileCreationMode.Private)?.Edit()?.Clear()?.Apply();
+    {
+        // Clearing a completed or invalid session is a state transition just
+        // as important as saving a pause. Flush it synchronously so a process
+        // death cannot resurrect an audiobook that was already cleared.
+        context.GetSharedPreferences(PreferencesName, global::Android.Content.FileCreationMode.Private)
+            ?.Edit()?.Clear()?.Commit();
+    }
 }
