@@ -29,7 +29,7 @@ internal static class PlaybackRecoveryStore
             Math.Clamp(speed, 0.5f, 3f), preferences?.GetBoolean(WasPlayingKey, false) ?? false);
     }
 
-    public static void Save(global::Android.Content.Context context, PlaybackRecoverySnapshot snapshot)
+    public static void Save(global::Android.Content.Context context, PlaybackRecoverySnapshot snapshot, bool flushImmediately = false)
     {
         var editor = context.GetSharedPreferences(PreferencesName, global::Android.Content.FileCreationMode.Private)?.Edit();
         editor?.PutString(FilePathKey, snapshot.FilePath);
@@ -38,9 +38,10 @@ internal static class PlaybackRecoveryStore
         editor?.PutLong(DurationKey, Math.Max(0, snapshot.DurationMilliseconds));
         editor?.PutFloat(SpeedKey, Math.Clamp(snapshot.PlaybackSpeed, 0.5f, 3f));
         editor?.PutBoolean(WasPlayingKey, snapshot.WasPlaying);
-        // Apply persists asynchronously so the five-second checkpoint never blocks
-        // the main looper or causes audible playback stutter.
-        editor?.Apply();
+        // Periodic checkpoints stay asynchronous to avoid playback stutter. Explicit
+        // user actions and lifecycle shutdowns can request a synchronous disk flush.
+        if (flushImmediately) editor?.Commit();
+        else editor?.Apply();
     }
 
     public static void Clear(global::Android.Content.Context context)
