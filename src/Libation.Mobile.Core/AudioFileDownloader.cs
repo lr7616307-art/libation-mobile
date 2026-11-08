@@ -82,6 +82,18 @@ public sealed class AudioFileDownloader
             return new AudioDownloadResult(fullPath, existingBytes);
         }
 
+        if (response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable && existingBytes > 0)
+        {
+            // A 416 that did not satisfy the exact completed-file proof above
+            // means the saved offset/validator cannot safely describe this
+            // representation. Retaining it would resend the same unsatisfiable
+            // range on every retry, so discard the resume state and restart next time.
+            if (File.Exists(partialPath)) File.Delete(partialPath);
+            if (File.Exists(validatorPath)) File.Delete(validatorPath);
+            throw new HttpRequestException(
+                "The server rejected the saved download range. The stale partial download was discarded; retry to start again.");
+        }
+
         response.EnsureSuccessStatusCode();
 
 
