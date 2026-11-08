@@ -16,7 +16,11 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
     private readonly IAuthorize authorize;
     private readonly ISystemDateTime systemDateTime;
     private readonly AudibleIdentitySnapshotStore snapshotStore;
-    private readonly SemaphoreSlim gate = new(1, 1);
+
+    // Catalogue sync, playback downloads, and account refresh can each create
+    // their own API/maintainer from the same saved identity. Serialize refresh
+    // across all those instances so rotating credentials cannot race.
+    private static readonly SemaphoreSlim RefreshGate = new(1, 1);
 
     public AudibleIdentityMaintainer(
         Identity identity,
@@ -59,9 +63,38 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
 
     private async Task EnsureFreshAsync()
     {
-        await gate.WaitAsync().ConfigureAwait(false);
+        if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
+            return;
+
+        await RefreshGate.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
+                return;
+
+            // Another API/maintainer instance may have refreshed the same account
+            // while this instance was waiting. Reload the encrypted snapshot before
+            // using a refresh token; never submit a stale credential after a peer
+            // has already committed a newer identity.
+            var latestSnapshot = await snapshotStore.LoadAsync().ConfigureAwait(false)
+                ?? throw new InvalidOperationException("The saved Audible identity is unavailable. Sign in again.");
+            var latestIdentity = AudibleIdentitySnapshotMapper.Restore(latestSnapshot);
+            if (!string.Equals(identity.AmazonAccountId, latestIdentity.AmazonAccountId, StringComparison.Ordinal) ||
+                !string.Equals(identity.Locale.Name, latestIdentity.Locale.Name, StringComparison.Ordinal))
+                throw new InvalidOperationException("The saved Audible account changed during token refresh. Reconnect the account.");
+
+            identity.Update(
+                latestIdentity.PrivateKey,
+                latestIdentity.AdpToken,
+                latestIdentity.ExistingAccessToken,
+                latestIdentity.RefreshToken,
+                latestIdentity.Cookies,
+                latestIdentity.DeviceSerialNumber,
+                latestIdentity.DeviceType,
+                latestIdentity.AmazonAccountId,
+                latestIdentity.DeviceName,
+                latestIdentity.StoreAuthenticationCookie);
+
             if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
                 return;
 
@@ -79,15 +112,11 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
             }
             catch (OperationCanceledException)
             {
-                // Cancellation is not a storage failure. Restore the prior in-memory token
-                // and preserve the caller's cancellation signal.
                 identity.Update(previousToken);
                 throw;
             }
             catch (Exception persistenceException)
             {
-                // The new token is not considered committed. Restore the in-memory token so
-                // subsequent callers cannot use a credential that was not durably saved.
                 identity.Update(previousToken);
                 throw new InvalidOperationException(
                     "The refreshed Audible session could not be securely saved.", persistenceException);
@@ -95,7 +124,7 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
         }
         finally
         {
-            gate.Release();
+            RefreshGate.Release();
         }
     }
 
