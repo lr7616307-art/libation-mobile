@@ -37,6 +37,27 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
             throw new ArgumentException("A complete restored Audible identity is required.", nameof(identity));
     }
 
+    /// <summary>
+    /// Removes the saved identity while holding the same process-wide gate used
+    /// by token refresh. This prevents an in-flight refresh from recreating a
+    /// credential snapshot after the user disconnects.
+    /// </summary>
+    public static async Task ClearSavedIdentityAsync(
+        AudibleIdentitySnapshotStore snapshotStore,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshotStore);
+        await RefreshGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await snapshotStore.ClearAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            RefreshGate.Release();
+        }
+    }
+
     public ISystemDateTime SystemDateTime => systemDateTime;
     public Locale Locale => identity.Locale;
     public string? DeviceSerialNumber => identity.DeviceSerialNumber;
