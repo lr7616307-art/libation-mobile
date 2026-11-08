@@ -334,6 +334,42 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessAllAsync_SeparateWorkerCannotRecoverAnotherWorkersActiveItem()
+    {
+        using var directory = new TemporaryDirectory();
+        var queuePath = Path.Combine(directory.Path, "queue.json");
+        var firstQueue = new JsonDownloadQueue(queuePath);
+        var secondQueue = new JsonDownloadQueue(queuePath);
+        await firstQueue.EnqueueAsync("book-live");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+        }));
+        var source = new GateableSource(Path.Combine(directory.Path, "book-live.m4b"));
+        var firstWorker = new DownloadQueueWorker(firstQueue, new AudioFileDownloader(client), source);
+        var secondWorker = new DownloadQueueWorker(
+            secondQueue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/unused"), Path.Combine(directory.Path, "unused.m4b")));
+
+        var activeDownload = firstWorker.ProcessNextAsync();
+        await source.Started;
+        var concurrentBatch = secondWorker.ProcessAllAsync();
+
+        // The second worker must wait before recovery; it cannot reset the live claim.
+        await Task.Delay(50);
+        Assert.Equal(DownloadStatus.Downloading, Assert.Single(await secondQueue.GetItemsAsync()).Status);
+
+        source.Release();
+        Assert.True(await activeDownload);
+        Assert.Equal(0, await concurrentBatch);
+
+        var item = Assert.Single(await secondQueue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Completed, item.Status);
+        Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(source.DestinationPath));
+        Assert.False(File.Exists(Path.Combine(directory.Path, "unused.m4b")));
+    }
+
+    [Fact]
     public async Task ProcessAllAsync_RecoversInterruptedItemsBeforeStartingQueue()
     {
         using var directory = new TemporaryDirectory();
