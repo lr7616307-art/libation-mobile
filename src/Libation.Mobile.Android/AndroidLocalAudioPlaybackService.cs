@@ -318,7 +318,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         try
         {
             PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
-                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, wasPlayingOverride ?? _player.IsPlaying), durable);
+                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed,
+                // IsPlaying is false while buffering or temporarily suppressed.
+                // PlayWhenReady records the listener's intent, so recovery can
+                // resume a session that was meant to be playing before shutdown.
+                wasPlayingOverride ?? _player.PlayWhenReady), durable);
         }
         catch (Exception) { /* A checkpoint must never interrupt audio playback. */ }
     }
