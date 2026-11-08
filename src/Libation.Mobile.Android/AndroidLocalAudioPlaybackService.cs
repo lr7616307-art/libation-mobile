@@ -76,12 +76,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     break;
                 case ActionPause:
                     if (_player?.IsPlaying == true) _player.Pause();
-                    SavePlaybackSnapshot();
+                    SavePlaybackSnapshot(durable: true);
                     UpdateNotification();
                     break;
                 case ActionResume:
                     if (_player is not null && !_player.IsPlaying) _player.Play();
-                    SavePlaybackSnapshot();
+                    SavePlaybackSnapshot(durable: true);
                     UpdateNotification();
                     break;
                 case ActionSeek:
@@ -89,7 +89,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     {
                         var target = Math.Clamp(intent.GetLongExtra(ExtraPosition, 0), 0, int.MaxValue);
                         _player.SeekTo((int)target);
-                        SavePlaybackSnapshot();
+                        SavePlaybackSnapshot(durable: true);
                     }
                     break;
                 case ActionRewind:
@@ -164,7 +164,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         // decoder reports its real position and duration.
         PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
             path, _title, position, 0, _playbackSpeed,
-            intent.GetBooleanExtra(ExtraAutoPlay, true)));
+            intent.GetBooleanExtra(ExtraAutoPlay, true)), flushImmediately: true);
         UpdateNotification();
     }
 
@@ -210,7 +210,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         // Seek and media-position discontinuities can be followed by an abrupt
         // process death. Persist the new position immediately instead of waiting
         // for the next five-second periodic checkpoint.
-        SavePlaybackSnapshot();
+        SavePlaybackSnapshot(durable: true);
     }
     public void OnPlaybackParametersChanged(PlaybackParameters? parameters) { }
     public void OnPlaybackSuppressionReasonChanged(int reason) { }
@@ -289,7 +289,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             if (deadlineReached || chapterReached)
             {
                 if (_player?.IsPlaying == true) _player.Pause();
-                SavePlaybackSnapshot();
+                SavePlaybackSnapshot(durable: true);
                 ClearSleepTimer();
                 UpdateNotification();
             }
@@ -300,13 +300,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             if (_sleepTimerRunnable is not null) _checkpointHandler?.PostDelayed(_sleepTimerRunnable, 1_000);
         }
     }
-    private void SavePlaybackSnapshot()
+    private void SavePlaybackSnapshot(bool durable = false)
     {
         if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         try
         {
             PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
-                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying));
+                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying), durable);
         }
         catch (Exception) { /* A checkpoint must never interrupt audio playback. */ }
     }
@@ -419,13 +419,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public override void OnTaskRemoved(Intent? rootIntent)
     {
-        SavePlaybackSnapshot();
+        SavePlaybackSnapshot(durable: true);
         base.OnTaskRemoved(rootIntent);
     }
 
     public override void OnDestroy()
     {
-        SavePlaybackSnapshot();
+        SavePlaybackSnapshot(durable: true);
         if (_checkpointRunnable is not null)
             _checkpointHandler?.RemoveCallbacks(_checkpointRunnable);
         if (_sleepTimerRunnable is not null)
