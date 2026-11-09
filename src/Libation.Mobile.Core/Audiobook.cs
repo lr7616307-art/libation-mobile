@@ -36,6 +36,18 @@ public sealed record Audiobook(
     /// <summary>Last known playback position in milliseconds for resuming local audio.</summary>
     public long PlaybackPositionMilliseconds { get; init; }
 
+    /// <summary>Provider catalogue entries currently have no verified full-audiobook download source.</summary>
+    [JsonIgnore]
+    public bool IsProviderCatalogueEntry => Id.StartsWith("provider:", StringComparison.Ordinal);
+
+    [JsonIgnore]
+    public bool CanQueueDownload => !IsProviderCatalogueEntry;
+
+    [JsonIgnore]
+    public string DownloadActionLabel => IsProviderCatalogueEntry
+        ? "Audible download unavailable"
+        : "Add to queue";
+
     [JsonIgnore]
     public bool CanDelete => !string.Equals(Status, "Demo", StringComparison.Ordinal);
 }
