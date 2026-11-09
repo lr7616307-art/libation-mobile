@@ -1,6 +1,6 @@
 # Audible identity snapshot format
 
-**Status:** The snapshot DTO, strict serializer, secret-store persistence wrapper, AudibleApi restore mapper, serialized refresh maintainer, and an opt-in identity lifecycle coordinator are implemented. Live Audible sign-in integration, application-wide coordinator wiring, and Android runtime validation remain incomplete.
+**Status:** The snapshot DTO, strict serializer, secret-store persistence wrapper, AudibleApi restore mapper, serialized refresh maintainer, and an opt-in identity lifecycle coordinator are implemented. Live Audible sign-in integration, shared coordinator wiring across sign-in, refresh, disconnect, and restored API sessions is implemented through the identity-store instance; Android runtime validation remains incomplete.
 
 ## Scope
 
@@ -60,7 +60,7 @@ The envelope is intentionally app-owned rather than serializing the upstream Ide
 2. `AudibleIdentityMaintainer` serializes token refresh and waits for snapshot persistence before returning a refreshed token. If persistence fails, it restores the previous in-memory access token and reports a safe error.
 3. `AudibleIdentityLifecycleCoordinator` serializes identity creation/replacement, refresh commits, and clearing. A newer login/replacement or clear increments a generation so older in-flight results cannot be committed as current.
 4. Disconnect invalidates pending work immediately, waits for the active operation, clears the snapshot, and makes that maintainer instance reject later credential requests. If clearing fails, the instance is not marked disconnected.
-5. The coordinator is opt-in. Application composition must inject the same coordinator instance into the login/replacement flow and every maintainer for the same account. The app-wide sign-in/replacement composition is not wired to it yet; separate coordinator instances do not coordinate.
+5. `AudibleIdentitySnapshotStore` owns one lifecycle coordinator. The Audible authenticator uses it for sign-in completion and disconnect; every token maintainer created from that store uses the same instance. The Android host passes the same store to sign-in and saved-identity library restoration. Independently constructed store instances do not coordinate, so app composition must continue reusing the same store instance for one account.
 6. The pinned AudibleApi refresh call has no cancellation-token overload, so an already-running remote refresh cannot be cancelled by this adapter. A disconnect still invalidates its result before the snapshot can be committed.
 7. Never use async-void persistence from a synchronous identity event. Own an explicit awaited update/persist boundary.
 8. On restore, invalid encrypted data or unsupported schema requires re-authentication. Never log exception payloads, tokens, cookies, keys, or serialized envelopes.
@@ -73,10 +73,10 @@ The envelope is intentionally app-owned rather than serializing the upstream Ide
 - [ ] Add mapping tests for every field, duplicate cookies, exact access-token expiry, missing required values, and invalid key/token material.
 - [x] Add secret-store wrapper tests for serialized round-trip, invalid/unsupported payload, cryptographic failure, storage failure, and clear. Tests use a fake ISecretStore; Android Keystore encryption is not exercised by these unit tests. Atomic replacement guarantees are not established by the ISecretStore interface and must not be assumed.
 - [x] Add lifecycle tests for superseded login, clear racing with login, refresh invalidation during commit, cancellation, save failure, and disconnect racing with refresh.
-- [ ] Wire one shared lifecycle coordinator into the app's sign-in/replacement composition and all maintainers for that account.
+- [x] Wire one store-scoped lifecycle coordinator into sign-in completion, disconnect, and all maintainers created from the app's shared identity store.
 - [x] Verify the actual AudibleApi 14.1.2 public constructors and update/event semantics before writing the adapter.
 - [x] Add a restore mapper that validates the snapshot, resolves the locale, reconstructs AudibleApi value objects, and calls `Identity.Update(...)` without network access.
-- [x] Add an opt-in lifecycle coordinator and route refresh/disconnect through it; application-wide login/replacement wiring remains outstanding.
+- [x] Add a store-scoped lifecycle coordinator and route sign-in completion, refresh commits, and disconnect through it.
 - [ ] Build ARMv7 and ARM64; then perform physical Android 10 tests before claiming runtime support.
 
 ## Current implementation boundary\n\n`ISecretStore` documents encryption at rest. The Android implementation uses Android Keystore AES-256-GCM and commits ciphertext to app-private SharedPreferences. The abstraction exposes no transaction or compare-and-swap contract; this wrapper makes one SetAsync call for replacement but does not claim cross-implementation atomicity. A future lifecycle coordinator must await SaveAsync explicitly; this class does not subscribe to synchronous identity events.\n\n## Explicit non-goals
