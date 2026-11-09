@@ -33,7 +33,7 @@ public partial class MainView : UserControl
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
-        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory), new CoverArtImportService(Path.Combine(dataDirectory, "covers")), syncStateStore);
+        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory), new CoverArtImportService(Path.Combine(dataDirectory, "covers")), syncStateStore, PlatformWidevineDiagnosticFactory);
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
@@ -596,6 +596,9 @@ public partial class MainView : UserControl
 
     private async void SyncLibraryClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => await _viewModel.SyncLibraryAsync();
+
+    private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.ProbeWidevine();
 
     private void ShowDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
