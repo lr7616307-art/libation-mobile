@@ -485,6 +485,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
+        if (audiobookId.StartsWith("provider:", StringComparison.Ordinal))
+        {
+            ErrorMessage = "Direct Audible downloads are not supported yet. Use the official Audible app for protected titles.";
+            return;
+        }
+
         try { await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken); await ReloadQueueAsync(cancellationToken); ErrorMessage = string.Empty; }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { ErrorMessage = "Could not update the local download queue."; }
