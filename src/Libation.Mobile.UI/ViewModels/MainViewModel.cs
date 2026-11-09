@@ -205,7 +205,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
     public string QueueSummaryLabel => $"{QueueItems.Count(x => x.Status == DownloadStatus.Queued)} queued · {QueueItems.Count(x => x.Status == DownloadStatus.Downloading)} downloading · {QueueItems.Count(x => x.Status == DownloadStatus.Completed)} completed · {QueueItems.Count(x => x.Status == DownloadStatus.Failed)} failed";
     public string EmptyMessage => Books.Count > 0 ? string.Empty :
-        _allBooks.Count == 0 ? "Your local catalogue is empty." : "No matching audiobooks. Try another title, author or narrator."
+        _allBooks.Count == 0 ? "Your local catalogue is empty." : "No matching audiobooks. Try another title, author or narrator.";
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
