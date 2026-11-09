@@ -38,5 +38,12 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         MainView.PlatformLibraryCatalogProviderFactory =
             () => new SavedIdentityAudibleCatalogProvider(snapshots);
         MainView.PlatformLocalAudioPlayerFactory = () => new AndroidLocalAudioPlayer();
+        MainView.PlatformWidevineDiagnosticFactory = () =>
+        {
+            var result = new AndroidWidevineCapabilityProbe().Probe();
+            return result.IsSupported
+                ? $"Widevine supported. Security level: {result.SecurityLevel ?? "not reported"}. {result.Diagnostic}"
+                : $"Widevine not available. {result.Diagnostic}";
+        };
     }
 }

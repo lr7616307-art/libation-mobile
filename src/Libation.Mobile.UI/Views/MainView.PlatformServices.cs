@@ -15,6 +15,9 @@ public partial class MainView
     /// </summary>
     public static Func<ILibraryCatalogProvider>? PlatformLibraryCatalogProviderFactory { get; set; }
 
+    /// <summary>Runs a non-invasive, platform-specific Widevine capability diagnostic.</summary>
+    public static Func<string>? PlatformWidevineDiagnosticFactory { get; set; }
+
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
 
