@@ -51,6 +51,29 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessAllAsync_ContinuesAfterAnItemFails()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-fails");
+        await queue.EnqueueAsync("book-succeeds");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+        }));
+        var source = new FailFirstSource(Path.Combine(directory.Path, "book.m4b"));
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        var processed = await worker.ProcessAllAsync();
+
+        Assert.Equal(2, processed);
+        var items = await queue.GetItemsAsync();
+        Assert.Equal(DownloadStatus.Failed, Assert.Single(items.Where(x => x.AudiobookId == "book-fails")).Status);
+        Assert.Equal(DownloadStatus.Completed, Assert.Single(items.Where(x => x.AudiobookId == "book-succeeds")).Status);
+        Assert.True(File.Exists(Path.Combine(directory.Path, "book.m4b")));
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_PersistsFinalDownloadProgressOnQueueItem()
     {
         using var directory = new TemporaryDirectory();
@@ -246,6 +269,18 @@ public sealed class DownloadQueueWorkerTests
         var item = Assert.Single(await queue.GetItemsAsync());
         Assert.Equal(DownloadStatus.Failed, item.Status);
         Assert.Equal(payload, await File.ReadAllBytesAsync(sourcePath));
+    }
+
+    private sealed class FailFirstSource(string destinationPath) : IAuthorizedAudioDownloadSource
+    {
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            if (audiobookId == "book-fails")
+                throw new InvalidOperationException("Provider temporarily unavailable.");
+            return Task.FromResult(new AuthorizedAudioDownload(
+                new Uri("https://provider.example/" + audiobookId), destinationPath));
+        }
     }
 
     private sealed class RecordingProcessor : IAudioPostDownloadProcessor
