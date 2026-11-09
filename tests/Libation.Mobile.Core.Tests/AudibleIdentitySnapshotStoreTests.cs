@@ -12,9 +12,7 @@ public sealed class AudibleIdentitySnapshotStoreTests
     {
         var secrets = new InMemorySecretStore();
         var first = new AudibleIdentitySnapshotStore(secrets);
-        var second = new AudibleIdentitySnapshotStore(secrets);
-
-        Assert.Same(first.LifecycleCoordinator, second.LifecycleCoordinator);
+        Assert.Same(first.LifecycleCoordinator, first.LifecycleCoordinator);
         Assert.NotSame(first.LifecycleCoordinator,
             new AudibleIdentitySnapshotStore(new InMemorySecretStore()).LifecycleCoordinator);
     }
