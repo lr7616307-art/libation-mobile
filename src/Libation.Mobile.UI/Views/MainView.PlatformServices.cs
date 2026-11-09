@@ -23,9 +23,21 @@ public partial class MainView
         var view = new MainView();
         var signInViewModel = PlatformSignInViewModelFactory?.Invoke();
         if (signInViewModel is not null
-            && view.Content is ScrollViewer { Content: StackPanel stack })
+            && view.Content is TabControl tabs)
         {
-            stack.Children.Insert(Math.Min(3, stack.Children.Count), AudibleSignInPanel.Create(signInViewModel));
+            var accountTab = tabs.Items
+                .OfType<TabItem>()
+                .FirstOrDefault(tab => string.Equals(
+                    tab.Header?.ToString(), "Account", StringComparison.Ordinal));
+
+            if (accountTab?.Content is ScrollViewer { Content: StackPanel accountStack })
+            {
+                // Keep the native sign-in panel inside the visible Account tab,
+                // rather than trying to insert it into the TabControl's root.
+                accountStack.Children.Insert(
+                    Math.Min(2, accountStack.Children.Count),
+                    AudibleSignInPanel.Create(signInViewModel));
+            }
         }
 
         return view;
