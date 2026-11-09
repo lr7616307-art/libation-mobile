@@ -58,24 +58,34 @@ public sealed class AudioFileDownloader
             !string.Equals(finalUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             throw new HttpRequestException("The download redirected to a non-HTTPS address.");
 
-        var append = existingBytes > 0 && response.StatusCode == System.Net.HttpStatusCode.PartialContent;
-        if (append)
-        {
-            if (response.Content.Headers.ContentRange?.From != existingBytes)
-                throw new HttpRequestException("The server returned an invalid byte range for the saved partial download.");
-        }
-        else if (response.StatusCode == System.Net.HttpStatusCode.PartialContent &&
-                 response.Content.Headers.ContentRange?.From is not (0 or null))
-        {
-            throw new HttpRequestException("The server returned an unexpected partial download range.");
-        }
-
-        // A server that ignores Range returns 200; safely restart rather than append duplicate bytes.
+        var isPartialResponse = response.StatusCode == System.Net.HttpStatusCode.PartialContent;
+        var append = existingBytes > 0 && isPartialResponse;
         var startingBytes = append ? existingBytes : 0;
         var responseLength = response.Content.Headers.ContentLength;
-        if (responseLength is not null && responseLength > _maximumBytes - startingBytes)
+        long? expectedFinalLength = responseLength is long length
+            ? startingBytes + length
+            : null;
+
+        if (isPartialResponse)
+        {
+            var range = response.Content.Headers.ContentRange;
+            if (range?.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
+                throw new HttpRequestException("The server returned an invalid byte range for this download.");
+
+            if (range.Length is not long totalLength || totalLength <= rangeEnd)
+                throw new HttpRequestException("The server did not provide a verifiable total length for the partial download.");
+
+            var segmentLength = rangeEnd - startingBytes + 1;
+            if (responseLength is long declaredSegmentLength && declaredSegmentLength != segmentLength)
+                throw new HttpRequestException("The server's Content-Length does not match its byte range.");
+
+            expectedFinalLength = totalLength;
+        }
+
+        if (expectedFinalLength is long expected && expected > _maximumBytes)
             throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
 
+        // A server that ignores Range returns 200; safely restart rather than append duplicate bytes.
         await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
         await using var output = new FileStream(
             partialPath,
@@ -97,10 +107,12 @@ public sealed class AudioFileDownloader
                 throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
             await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
             received += read;
-            progress?.Report(new AudioDownloadProgress(received, response.Content.Headers.ContentLength is long length
-                ? startingBytes + length
-                : null));
+            progress?.Report(new AudioDownloadProgress(received, expectedFinalLength));
         }
+
+        if (expectedFinalLength is long expectedBytes && received != expectedBytes)
+            throw new InvalidDataException(
+                $"The download ended early or contained extra data. Expected {expectedBytes} bytes but received {received}.");
 
         await output.FlushAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
