@@ -126,7 +126,7 @@ public sealed class AudioFileDownloader
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Keep all bytes accepted before cancellation so a later worker can resume safely.
+            // Cancellation preserves accepted bytes as a durable .part checkpoint for the next worker run.
             await output.FlushAsync(CancellationToken.None);
             output.Flush(flushToDisk: true);
             throw;
