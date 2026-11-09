@@ -30,6 +30,58 @@ public sealed class AudioFileDownloaderTests
         Assert.Equal(100d, progress.Values[^1].Percentage);
     }
 
+
+    [Fact]
+    public async Task DownloadAsync_ResumesExistingPartialFileWithRangeRequest()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(partial, new byte[] { 1, 2 });
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            Assert.Equal(2, request.Headers.Range?.Ranges.Single().From);
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(new byte[] { 3, 4, 5 })
+            };
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(2, 4, 5);
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        var result = await downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination);
+
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, await File.ReadAllBytesAsync(destination));
+        Assert.Equal(5, result.BytesReceived);
+        Assert.False(File.Exists(partial));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_RestartsWhenServerIgnoresRangeRequest()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(destination + ".part", new byte[] { 9, 9 });
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            Assert.NotNull(request.Headers.Range);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+            };
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await downloader.DownloadAsync(new Uri("https://provider.example/audio"), destination);
+
+        Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(destination));
+    }
+
     [Fact]
     public async Task DownloadAsync_RejectsNonHttpsUrl()
     {
