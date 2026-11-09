@@ -30,7 +30,7 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
         this.authorize = authorize ?? throw new ArgumentNullException(nameof(authorize));
         this.systemDateTime = systemDateTime ?? throw new ArgumentNullException(nameof(systemDateTime));
         this.snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
-        this.lifecycleCoordinator = lifecycleCoordinator ?? new AudibleIdentityLifecycleCoordinator();
+        this.lifecycleCoordinator = lifecycleCoordinator ?? snapshotStore.LifecycleCoordinator;
 
         if (!identity.IsValid || identity.PrivateKey is null || identity.AdpToken is null || identity.RefreshToken is null)
             throw new ArgumentException("A complete restored Audible identity is required.", nameof(identity));

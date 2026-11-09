@@ -8,6 +8,16 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleIdentitySnapshotStoreTests
 {
     [Fact]
+    public void StoresForTheSameIdentityBoundary_ShareOneLifecycleCoordinator()
+    {
+        var secrets = new InMemorySecretStore();
+        var first = new AudibleIdentitySnapshotStore(secrets);
+        Assert.Same(first.LifecycleCoordinator, first.LifecycleCoordinator);
+        Assert.NotSame(first.LifecycleCoordinator,
+            new AudibleIdentitySnapshotStore(new InMemorySecretStore()).LifecycleCoordinator);
+    }
+
+    [Fact]
     public async Task SaveAndLoad_StoresOneCompleteSerializedRecord()
     {
         var secrets = new InMemorySecretStore();
