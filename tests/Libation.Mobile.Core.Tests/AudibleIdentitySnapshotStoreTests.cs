@@ -39,6 +39,41 @@ public sealed class AudibleIdentitySnapshotStoreTests
     }
 
     [Fact]
+    public void Serializer_AcceptsSnapshotAtExactMaximumSize()
+    {
+        var baseline = CreateSnapshot();
+        var baselineJson = AudibleIdentitySnapshotSerializer.Serialize(baseline);
+        var padding = AudibleIdentitySnapshot.MaximumSerializedBytes
+            - System.Text.Encoding.UTF8.GetByteCount(baselineJson);
+        var atLimit = baseline with
+        {
+            Cookies = [baseline.Cookies[0] with { Value = new string('x', "cookie".Length + padding) }]
+        };
+
+        var serialized = AudibleIdentitySnapshotSerializer.Serialize(atLimit);
+
+        Assert.Equal(AudibleIdentitySnapshot.MaximumSerializedBytes,
+            System.Text.Encoding.UTF8.GetByteCount(serialized));
+        Assert.Equal(atLimit.Cookies[0].Value,
+            AudibleIdentitySnapshotSerializer.Deserialize(serialized).Cookies[0].Value);
+    }
+
+    [Fact]
+    public void Serializer_RejectsSnapshotOneByteOverMaximumSize()
+    {
+        var baseline = CreateSnapshot();
+        var baselineJson = AudibleIdentitySnapshotSerializer.Serialize(baseline);
+        var padding = AudibleIdentitySnapshot.MaximumSerializedBytes
+            - System.Text.Encoding.UTF8.GetByteCount(baselineJson);
+        var overLimit = baseline with
+        {
+            Cookies = [baseline.Cookies[0] with { Value = new string('x', "cookie".Length + padding + 1) }]
+        };
+
+        Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotSerializer.Serialize(overLimit));
+    }
+
+    [Fact]
     public async Task Load_WhenMissing_ReturnsNull()
     {
         var store = new AudibleIdentitySnapshotStore(new InMemorySecretStore());
