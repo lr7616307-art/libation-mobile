@@ -475,7 +475,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         var items = await _downloadQueue.GetItemsAsync(cancellationToken);
         QueueItems.Clear();
-        foreach (var item in items) QueueItems.Add(item);
+        foreach (var item in items)
+        {
+            var book = _allBooks.FirstOrDefault(candidate => string.Equals(candidate.Id, item.AudiobookId, StringComparison.Ordinal));
+            QueueItems.Add(item with
+            {
+                DisplayTitle = book?.Title ?? item.AudiobookId,
+                DisplayAuthor = book?.Author ?? string.Empty
+            });
+        }
         OnPropertyChanged(nameof(IsQueueEmpty));
         OnPropertyChanged(nameof(QueueCountLabel));
         OnPropertyChanged(nameof(QueueSummaryLabel));
