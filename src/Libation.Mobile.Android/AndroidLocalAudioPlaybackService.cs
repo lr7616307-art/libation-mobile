@@ -120,9 +120,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
         catch (Exception)
         {
-            // A transient restore failure must not erase the only saved
-            // position. A later app launch can retry recovery.
-            StopPlayback(clearRecovery: intent?.Action != ActionRestore);
+            // A command can fail after the last valid checkpoint was saved.
+            // Keep that checkpoint for the next service start, regardless of
+            // which command failed; clearing it here would turn a transient
+            // playback/control error into permanent progress loss.
+            StopPlayback(clearRecovery: false);
             StopSelf(startId);
         }
 
