@@ -127,6 +127,7 @@ public sealed class AudioFileDownloader
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Cancellation preserves accepted bytes as a durable .part checkpoint for the next worker run.
+            // The next worker can validate the partial file and request the remaining byte range.
             await output.FlushAsync(CancellationToken.None);
             output.Flush(flushToDisk: true);
             throw;
