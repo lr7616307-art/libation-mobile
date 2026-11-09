@@ -39,6 +39,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private Java.Lang.Runnable? _sleepTimerRunnable;
     private long? _sleepDeadlineUtcTicks;
     private long? _sleepChapterPositionMilliseconds;
+    private long _initialPositionMilliseconds;
+    private bool _hasReachedReady;
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
@@ -139,6 +141,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             _title = Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
         _playbackSpeed = 1f;
+        _initialPositionMilliseconds = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
+        _hasReachedReady = false;
 
         // Android requires a service started with startForegroundService() to
         // promote itself promptly. MediaPlayer.Prepare() can block while a
@@ -149,7 +153,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _player.AddListener(this);
         var mediaUri = global::Android.Net.Uri.FromFile(new Java.IO.File(path));
         _player.SetMediaItem(MediaItem.FromUri(mediaUri));
-        var position = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
+        var position = _initialPositionMilliseconds;
         if (position > 0) _player.SeekTo(position);
         _player.Prepare();
         var speed = intent.GetFloatExtra(ExtraSpeed, 1f);
@@ -176,6 +180,15 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     // lifecycle synchronized with the actual decoder state.
     public void OnPlaybackStateChanged(int playbackState)
     {
+        if (playbackState == 3) // Player.STATE_READY
+        {
+            // Until the first READY callback, CurrentPosition can still report
+            // zero even though the requested resume seek has not been applied.
+            // From this point onward ExoPlayer owns the authoritative position.
+            _hasReachedReady = true;
+            SavePlaybackSnapshot();
+        }
+
         if (playbackState == 4) // Player.STATE_ENDED
         {
             StopPlayback();
@@ -317,8 +330,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         try
         {
+            var position = _hasReachedReady ? ReadPosition() : _initialPositionMilliseconds;
             PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
-                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed,
+                _currentFilePath, _title, position, ReadDuration(), _playbackSpeed,
                 // IsPlaying is false while buffering or temporarily suppressed.
                 // PlayWhenReady records the listener's intent, so recovery can
                 // resume a session that was meant to be playing before shutdown.
