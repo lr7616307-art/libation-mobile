@@ -57,6 +57,13 @@ public sealed class AndroidDownloadQueueService : Service
     {
         if (intent?.Action == ActionCancel)
         {
+            // Cancel() may be delivered after Android has recreated the service
+            // process. Because Cancel() uses StartForegroundService on API 26+,
+            // this path must also promote the service before doing any work.
+            StartForeground(
+                NotificationId,
+                BuildNotification("Pausing download queue", 0, indeterminate: true));
+
             _controller?.Cancel();
             StopIfIdle(startId);
             return StartCommandResult.NotSticky;
