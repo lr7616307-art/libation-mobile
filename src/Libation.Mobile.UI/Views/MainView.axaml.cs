@@ -380,23 +380,31 @@ public partial class MainView : UserControl
         _queueRefreshTimer.Tick -= QueueRefreshTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
-        if (_localAudioPlayer is null) return;
+        var player = _localAudioPlayer;
+        if (player is null) return;
+
+        // Detach this view's adapter before awaiting persistence. A rapid
+        // unload/load cycle can then create a fresh adapter without the older
+        // unload handler disposing or clearing the newly loaded view's state.
+        var audiobookId = _playingAudiobookId;
+        var position = player.PositionMilliseconds;
+        _localAudioPlayer = null;
+        _playingAudiobookId = null;
+
         try
         {
-            if (_playingAudiobookId is not null)
+            if (audiobookId is not null)
             {
                 // The Android foreground service owns playback independently of
                 // this view. Unloading the UI must checkpoint progress, not pause
                 // the audiobook; the service continues while the app is backgrounded.
-                await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+                await _viewModel.SavePlaybackPositionAsync(audiobookId, position);
             }
         }
         catch (Exception) { /* Cleanup must continue even if saving progress fails. */ }
         finally
         {
-            _localAudioPlayer.Dispose();
-            _localAudioPlayer = null;
-            _playingAudiobookId = null;
+            player.Dispose();
         }
     }
 
