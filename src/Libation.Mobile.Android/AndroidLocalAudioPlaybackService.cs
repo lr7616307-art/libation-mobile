@@ -158,6 +158,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         StartForeground(NotificationId, BuildNotification());
 
         _player = new ExoPlayerBuilder(this).Build();
+        // Let Media3 request/release Android audio focus for interruptions,
+        // and pause automatically when wired or Bluetooth audio is disconnected.
+        var audioAttributes = new AndroidX.Media3.Common.AudioAttributes.Builder()
+            .SetUsage(C.UsageMedia)
+            .SetContentType(C.AudioContentTypeSpeech)
+            .Build();
+        _player.SetAudioAttributes(audioAttributes, true);
+        _player.SetHandleAudioBecomingNoisy(true);
         _player.AddListener(this);
         var mediaUri = global::Android.Net.Uri.FromFile(new Java.IO.File(path));
         _player.SetMediaItem(MediaItem.FromUri(mediaUri));
