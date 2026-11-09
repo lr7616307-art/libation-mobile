@@ -2,7 +2,7 @@
 
 ## Status
 
-This is a design correction based on the exact pinned AudibleApi source and Libation desktop implementation. It is not a claim that mobile authentication is implemented.
+The Android app now contains an implemented user-assisted external-browser sign-in flow backed by the pinned AudibleApi 14.1.2 integration, encrypted identity snapshot storage, and an account status UI. This documents the intended user flow and security boundaries; it does **not** claim successful real-account authentication on a physical handset. Browser return, MFA/CAPTCHA, encrypted persistence, process restart, and library sync still require device/account-owner validation.
 
 ## Upstream behavior verified
 
@@ -15,7 +15,7 @@ The `ILoginExternal.GetResponseUrl(loginUrl, signInCookies)` callback is synchro
 
 Therefore, cookie injection into Android's external browser is not a prerequisite for reproducing the existing supported Libation desktop workflow. The earlier handoff audit overstated this requirement. The cookie collection must still be treated as sensitive and must never be leaked; mobile should not invent a new cookie transport.
 
-## Proposed mobile UX
+## Implemented mobile UX
 
 1. User selects their Audible marketplace and starts sign-in.
 2. App creates one in-memory `ExternalLogin` instance and obtains its generated login URL.
@@ -23,7 +23,7 @@ Therefore, cookie injection into Android's external browser is not a prerequisit
 4. App explains that the user must finish Amazon/Audible sign-in, then copy the complete final address-bar URL and return to the app.
 5. User pastes the URL into a dedicated response field and explicitly submits it.
 6. The app passes the exact response string directly to the same in-memory `ExternalLogin.Login(responseUrl)` instance. Do not parse/rewrite the query string in the UI layer.
-7. The app performs the upstream registration exchange and persists the resulting complete identity through the mobile-owned encrypted snapshot store. Only show connected after registration and encrypted persistence both succeed.
+7. The app performs the upstream registration exchange and persists the resulting complete identity through the mobile-owned encrypted snapshot store. The UI reports connected only after registration and encrypted persistence both succeed.
 
 This is a user-assisted flow matching the desktop CLI, not an OAuth redirect/deep-link callback. Do not add an exported deep link or accept callback URLs from arbitrary Android intents.
 
@@ -45,18 +45,11 @@ After `ExternalLogin.Login` succeeds:
 4. If registration or persistence fails, clear the in-memory challenge/session and remain disconnected.
 5. Create the authenticated API using the public `Api(IIdentityMaintainer)` constructor and an app-owned identity maintainer; never use the file-based `EzApiCreator.GetApiAsync` convenience overload because it delegates identity persistence to a file-oriented persister.
 
-## Required implementation tests
+## Automated and physical-device validation
 
-- Generated login URL is absolute HTTPS and comes from the pinned AudibleApi instance.
-- Browser launch uses only the generated URL.
-- Initial sign-in cookies, if retrieved for API compatibility, never enter intents, UI, logs, preferences, files or clipboard.
-- A valid pasted response is passed unchanged to the same challenge's `ExternalLogin.Login`.
-- Empty, non-HTTPS, malformed, expired, replayed and cross-challenge responses are rejected.
-- A failed parser/registration/persistence step leaves no connected state and no partial identity.
-- Successful registration is not reported as connected until encrypted snapshot persistence completes.
-- Input and in-memory challenge are cleared on success, cancellation, timeout, and disconnect.
-- Process death before response submission safely cancels the attempt; it must not persist the response URL for later replay.
-- ARMv7 Android 10 physical-device test covers browser switching, copy/paste, Amazon MFA/CAPTCHA, app resume, encrypted save and restart restore.
+Automated coverage should continue to verify generated login URL validation, challenge lifecycle, and safe failure behavior.
+- Physical Android 10 / ARMv7 validation remains outstanding: browser switching, copy/paste, Amazon MFA/CAPTCHA, app resume, encrypted save, restart restore, and a successful library sync.
+- CI builds for ARMv7 and ARM64 do not substitute for this real-device validation.
 
 ## References
 
