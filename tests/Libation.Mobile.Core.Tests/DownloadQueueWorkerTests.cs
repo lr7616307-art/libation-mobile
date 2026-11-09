@@ -77,6 +77,25 @@ public sealed class DownloadQueueWorkerTests
 
 
     [Fact]
+    public async Task ProcessNextAsync_DoesNotPersistSensitiveProviderExceptionText()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-private");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client),
+            new SensitiveFailureSource());
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.DoesNotContain("signed.example", item.ErrorMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-token", item.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("authorize", item.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_CancellationReturnsItemToQueued()
     {
         using var directory = new TemporaryDirectory();
@@ -180,6 +199,14 @@ public sealed class DownloadQueueWorkerTests
         public Task<AuthorizedAudioDownload> ResolveAsync(
             string audiobookId, CancellationToken cancellationToken = default)
             => throw new InvalidOperationException("No authorized download URL is available.");
+    }
+
+    private sealed class SensitiveFailureSource : IAuthorizedAudioDownloadSource
+    {
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException(
+                "Request failed for https://signed.example/book?token=secret-token");
     }
 
     private sealed class StubHandler(Func<HttpResponseMessage> response) : HttpMessageHandler
