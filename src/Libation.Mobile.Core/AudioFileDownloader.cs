@@ -153,11 +153,6 @@ public sealed class AudioFileDownloader
             throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
         }
 
-        if (expectedFinalLength is long knownLength && knownLength < startingBytes)
-        {
-            DiscardResumeState(partialPath, validatorPath);
-            throw new HttpRequestException("The server declared a representation shorter than the saved resume offset. The stale partial download was discarded.");
-        }
 
         // A server that ignores Range returns 200; safely restart rather than append duplicate bytes.
         await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
