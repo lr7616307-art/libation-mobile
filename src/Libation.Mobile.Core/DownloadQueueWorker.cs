@@ -101,9 +101,11 @@ public sealed class DownloadQueueWorker
         }
         catch (Exception exception)
         {
+            // Provider/network exceptions can include signed media URLs or query tokens.
+            // Persist only a stable, user-safe category; never store raw exception text.
             await _queue.UpdateStatusAsync(
                 item.AudiobookId, DownloadStatus.Failed,
-                exception.Message,
+                GetSafeFailureMessage(exception),
                 cancellationToken: CancellationToken.None);
             return true;
         }
@@ -113,4 +115,13 @@ public sealed class DownloadQueueWorker
             _runGate.Release();
         }
     }
+
+    private static string GetSafeFailureMessage(Exception exception) => exception switch
+    {
+        HttpRequestException => "The download request failed. Check your connection and retry.",
+        InvalidDataException => "The downloaded audio failed validation.",
+        UnauthorizedAccessException => "The app cannot write to the selected download location.",
+        InvalidOperationException => "The provider could not authorize this download.",
+        _ => "The download could not be completed. Please retry."
+    };
 }
