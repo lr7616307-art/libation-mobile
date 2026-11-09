@@ -187,6 +187,8 @@ public sealed class AudioFileDownloader
                 if (read == 0) break;
                 if (read > _maximumBytes - received)
                     throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
+                if (expectedFinalLength is long declaredLength && read > declaredLength - received)
+                    throw new InvalidDataException("The download contained more data than the server declared. The partial download was discarded.");
                 await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 received += read;
                 progress?.Report(new AudioDownloadProgress(received, expectedFinalLength));
