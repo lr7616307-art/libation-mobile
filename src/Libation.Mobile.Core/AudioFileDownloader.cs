@@ -99,28 +99,38 @@ public sealed class AudioFileDownloader
 
         var buffer = new byte[64 * 1024];
         long received = startingBytes;
-        while (true)
+        try
         {
-            var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-            if (read == 0) break;
-            if (read > _maximumBytes - received)
-                throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
-            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            received += read;
-            progress?.Report(new AudioDownloadProgress(received, expectedFinalLength));
+            while (true)
+            {
+                var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+                if (read == 0) break;
+                if (read > _maximumBytes - received)
+                    throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
+                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                received += read;
+                progress?.Report(new AudioDownloadProgress(received, expectedFinalLength));
+            }
+
+            if (expectedFinalLength is long expectedBytes && received != expectedBytes)
+                throw new InvalidDataException(
+                    $"The download ended early or contained extra data. Expected {expectedBytes} bytes but received {received}.");
+
+            // A successful HTTP response is not necessarily a usable audiobook.
+            // Never publish a zero-byte file or mark an empty transfer as complete.
+            if (received == 0)
+                throw new InvalidDataException("The audio provider returned an empty download.");
+
+            await output.FlushAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
         }
-
-        if (expectedFinalLength is long expectedBytes && received != expectedBytes)
-            throw new InvalidDataException(
-                $"The download ended early or contained extra data. Expected {expectedBytes} bytes but received {received}.");
-
-        // A successful HTTP response is not necessarily a usable audiobook.
-        // Never publish a zero-byte file or mark an empty transfer as complete.
-        if (received == 0)
-            throw new InvalidDataException("The audio provider returned an empty download.");
-
-        await output.FlushAsync(cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Keep all bytes accepted before cancellation so a later worker can resume safely.
+            await output.FlushAsync(CancellationToken.None);
+            output.Flush(flushToDisk: true);
+            throw;
+        }
         output.Close();
         File.Move(partialPath, fullPath, overwrite: true);
         return new AudioDownloadResult(fullPath, received);
