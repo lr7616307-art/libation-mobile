@@ -38,16 +38,19 @@ Record each item as **Pass**, **Fail**, or **Not available**.
 - [ ] Force-close and relaunch; confirm the local catalogue remains available.
 - [ ] Open Audible sign-in and verify that it launches the external browser. Do not enter credentials into an unofficial page; verify the domain before signing in.
 - [ ] If already signed in, attempt a library sync and record whether it succeeds. Do not share account identifiers or authentication data.
+- [ ] For a synced Audible catalogue title, confirm its queue action is disabled and reads **Audible download unavailable**. Attempting to enqueue it through the UI must not add a job or imply that media was downloaded.
+- [ ] Confirm generic provider-neutral queue entries still expose **Add to queue** when such entries are available; do not mistake this for Audible media support.
 - [ ] Import a user-owned DRM-free audio file, play it, pause/resume, seek, change speed, and confirm playback position is restored after relaunch.
 - [ ] Test notification controls and background playback while switching away from the app.
-- [ ] If download-queue controls are exposed, inspect their state transitions. Do not assume Audible downloads work: a verified Audible-authorized media-source resolver is still required.
 - [ ] Mark backup/restore **Not available** unless the current build exposes a completed, verified user-facing flow.
 
 ## Current feature boundaries
 
-The app contains Audible account sign-in and library-catalogue integration, plus local imported-audio playback and a provider-neutral HTTPS download queue. These are separate capabilities.
+The app contains Audible account sign-in and library-catalogue integration, local imported-audio playback, and a provider-neutral HTTPS download queue. These are separate capabilities.
 
-A successful catalogue sync does **not** mean Audible audiobook media can be downloaded. The Audible-specific authorized media resolver and protected-media playback/licensing path are not implemented. Do not attempt to bypass DRM or use unofficial download endpoints. Local imported DRM-free audio is the supported playback test path.
+Provider-backed Audible catalogue entries are deliberately blocked from the generic download queue until a verified, authorized Audible media-source contract is available. The app directs users to the official Audible app for protected titles. A successful catalogue sync does **not** mean audiobook media can be downloaded.
+
+The Audible-specific authorized media resolver and protected-media playback/licensing path are not implemented. Do not attempt to bypass DRM or use unofficial download endpoints. Local imported DRM-free audio is the supported playback test path.
 
 CI success means the project compiled for the selected ABI. It does not prove real-device behavior, Audible sign-in acceptance, Android Keystore persistence, background playback reliability, or download functionality. Those require physical-device testing.
 
