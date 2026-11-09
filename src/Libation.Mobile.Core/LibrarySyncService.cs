@@ -2,18 +2,31 @@ namespace Libation.Mobile.Core;
 
 /// <summary>
 /// Synchronizes provider catalogue metadata into the local catalogue while preserving
-/// manually created entries. This class does not authenticate or download audio.
+/// manually created entries. Cover artwork is best-effort and never blocks metadata sync.
 /// </summary>
-public sealed class LibrarySyncService(
-    ILibraryCatalogProvider provider,
-    ILibraryRepository repository)
+public sealed class LibrarySyncService
 {
+    private const int MaximumCoverDownloadsPerSync = 100;
+    private readonly ILibraryCatalogProvider _provider;
+    private readonly ILibraryRepository _repository;
+    private readonly CoverArtDownloadService? _coverArtDownloader;
+
+    public LibrarySyncService(ILibraryCatalogProvider provider, ILibraryRepository repository, CoverArtDownloadService? coverArtDownloader = null)
+    {
+        _provider = provider ?? throw new ArgumentNullException(nameof(provider));
+        _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+        if (coverArtDownloader is not null)
+            _coverArtDownloader = coverArtDownloader;
+        else if (OperatingSystem.IsAndroid())
+        {
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "covers");
+            _coverArtDownloader = new CoverArtDownloadService(new HttpClient { Timeout = TimeSpan.FromSeconds(12) }, directory);
+        }
+    }
+
     public async Task<int> SyncAsync(CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(provider);
-        ArgumentNullException.ThrowIfNull(repository);
-
-        var remote = await provider.GetLibraryAsync(cancellationToken);
+        var remote = await _provider.GetLibraryAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(remote);
         if (remote.Count > 5000)
@@ -24,23 +37,14 @@ public sealed class LibrarySyncService(
         foreach (var item in remote)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (item is null ||
-                string.IsNullOrWhiteSpace(item.ProviderId) ||
-                string.IsNullOrWhiteSpace(item.Title) ||
-                string.IsNullOrWhiteSpace(item.Author))
+            if (item is null || string.IsNullOrWhiteSpace(item.ProviderId) ||
+                string.IsNullOrWhiteSpace(item.Title) || string.IsNullOrWhiteSpace(item.Author))
                 throw new InvalidDataException("The provider returned an audiobook with missing required metadata.");
 
             var id = "provider:" + item.ProviderId.Trim();
-            if (!ids.Add(id))
-                throw new InvalidDataException("The provider returned duplicate audiobook IDs.");
-
-            mapped.Add(new Audiobook(
-                id,
-                item.Title.Trim(),
-                item.Author.Trim(),
-                item.Narrator?.Trim() ?? string.Empty,
-                item.Length?.Trim() ?? string.Empty,
-                "Library")
+            if (!ids.Add(id)) throw new InvalidDataException("The provider returned duplicate audiobook IDs.");
+            mapped.Add(new Audiobook(id, item.Title.Trim(), item.Author.Trim(), item.Narrator?.Trim() ?? string.Empty,
+                item.Length?.Trim() ?? string.Empty, "Library")
             {
                 Series = item.Series?.Trim() ?? string.Empty,
                 Genre = item.Genre?.Trim() ?? string.Empty,
@@ -50,36 +54,52 @@ public sealed class LibrarySyncService(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var existing = await repository.GetBooksAsync(cancellationToken);
+        var existing = await _repository.GetBooksAsync(cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        var existingProviderBooks = existing
-            .Where(book => book.Id.StartsWith("provider:", StringComparison.Ordinal))
+        var existingProviderBooks = existing.Where(book => book.Id.StartsWith("provider:", StringComparison.Ordinal))
             .ToDictionary(book => book.Id, StringComparer.Ordinal);
 
-        // Keep the user's locally edited metadata for provider IDs that still
-        // exist remotely. Removed remote IDs are intentionally not retained.
         var mergedProviderBooks = mapped.Select(remoteBook =>
             existingProviderBooks.TryGetValue(remoteBook.Id, out var localBook)
                 ? localBook with { CoverImageUrl = string.IsNullOrWhiteSpace(remoteBook.CoverImageUrl) ? localBook.CoverImageUrl : remoteBook.CoverImageUrl }
-                : remoteBook);
+                : remoteBook).ToArray();
 
-        var manual = existing.Where(book =>
-            !book.Id.StartsWith("provider:", StringComparison.Ordinal)
-            && book.Status != "Library"
-            && book.Status != "Demo");
+        if (_coverArtDownloader is not null)
+        {
+            var downloaded = 0;
+            for (var i = 0; i < mergedProviderBooks.Length && downloaded < MaximumCoverDownloadsPerSync; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var book = mergedProviderBooks[i];
+                if (!string.IsNullOrWhiteSpace(book.CoverImagePath) || string.IsNullOrWhiteSpace(book.CoverImageUrl))
+                    continue;
+                downloaded++;
+                try
+                {
+                    var path = await _coverArtDownloader.DownloadAsync(book.Id, book.CoverImageUrl, cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(path)) mergedProviderBooks[i] = book with { CoverImagePath = path };
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (HttpRequestException) { /* Optional artwork can be retried on a later sync. */ }
+                catch (InvalidDataException) { /* Ignore invalid or oversized provider artwork. */ }
+                catch (TaskCanceledException) { /* A per-image timeout must not fail catalogue sync. */ }
+            }
+        }
+
+        var manual = existing.Where(book => !book.Id.StartsWith("provider:", StringComparison.Ordinal)
+            && book.Status != "Library" && book.Status != "Demo");
         var merged = manual.Concat(mergedProviderBooks).ToArray();
         cancellationToken.ThrowIfCancellationRequested();
-        await repository.ReplaceAllAsync(merged, cancellationToken);
+        await _repository.ReplaceAllAsync(merged, cancellationToken);
         return mapped.Count;
     }
 
     private static string NormalizeCoverUrl(string? value)
     {
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
-            || uri.Scheme != Uri.UriSchemeHttps
-            || !string.Equals(uri.Host, "m.media-amazon.com", StringComparison.OrdinalIgnoreCase))
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !string.Equals(uri.Host, "m.media-amazon.com", StringComparison.OrdinalIgnoreCase))
             return string.Empty;
-
         return uri.AbsoluteUri;
     }
 }
