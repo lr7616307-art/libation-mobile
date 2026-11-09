@@ -91,6 +91,27 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_MidstreamReadFailurePreservesDestinationAndCleansPartialFile()
+    {
+        using var directory = new TemporaryDirectory();
+        Directory.CreateDirectory(directory.Path);
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        await File.WriteAllTextAsync(destination, "existing");
+        using var client = new HttpClient(new StubHandler((_, _) =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new FaultingReadStream([1, 2, 3, 4, 5]))
+            }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<IOException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal("existing", await File.ReadAllTextAsync(destination));
+        Assert.Empty(Directory.GetFiles(directory.Path, "*.part"));
+    }
+
+    [Fact]
     public async Task DownloadAsync_DoesNotReplaceDestinationWhenRequestFails()
     {
         using var directory = new TemporaryDirectory();
@@ -106,6 +127,18 @@ public sealed class AudioFileDownloaderTests
 
         Assert.Equal("existing", await File.ReadAllTextAsync(destination));
         Assert.Empty(Directory.GetFiles(directory.Path, "*.part"));
+    }
+
+    private sealed class FaultingReadStream(byte[] payload) : MemoryStream(payload)
+    {
+        private bool _returnedData;
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_returnedData) throw new IOException("Simulated connection interruption.");
+            _returnedData = true;
+            return base.ReadAsync(buffer[..Math.Min(3, buffer.Length)], cancellationToken);
+        }
     }
 
     private sealed class StubHandler(Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> response)
