@@ -125,14 +125,23 @@ public sealed class AudioFileDownloader
             if (range is null ||
                 !string.Equals(range.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
                 range.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
-                throw new HttpRequestException("The server returned an invalid byte range for this download.");
+            {
+                DiscardResumeState(partialPath, validatorPath);
+                throw new HttpRequestException("The server returned an invalid byte range for this download. The stale partial download was discarded; retry to start again.");
+            }
 
             if (range.Length is not long partialTotalLength || partialTotalLength <= rangeEnd)
-                throw new HttpRequestException("The server did not provide a verifiable total length for the partial download.");
+            {
+                DiscardResumeState(partialPath, validatorPath);
+                throw new HttpRequestException("The server did not provide a verifiable total length for the partial download. The stale partial download was discarded; retry to start again.");
+            }
 
             var segmentLength = rangeEnd - startingBytes + 1;
             if (responseLength is long declaredSegmentLength && declaredSegmentLength != segmentLength)
-                throw new HttpRequestException("The server's Content-Length does not match its byte range.");
+            {
+                DiscardResumeState(partialPath, validatorPath);
+                throw new HttpRequestException("The server's Content-Length does not match its byte range. The stale partial download was discarded; retry to start again.");
+            }
 
             expectedFinalLength = partialTotalLength;
         }
@@ -276,6 +285,12 @@ public sealed class AudioFileDownloader
             or System.Net.HttpStatusCode.RedirectMethod
             or System.Net.HttpStatusCode.TemporaryRedirect
             or System.Net.HttpStatusCode.PermanentRedirect;
+
+    private static void DiscardResumeState(string partialPath, string validatorPath)
+    {
+        if (File.Exists(partialPath)) File.Delete(partialPath);
+        if (File.Exists(validatorPath)) File.Delete(validatorPath);
+    }
 
     private static async Task FlushDurablyAsync(FileStream output)
     {
