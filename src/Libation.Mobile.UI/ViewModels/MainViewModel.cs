@@ -177,7 +177,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string NewChapterStart { get => _newChapterStart; set => SetField(ref _newChapterStart, value); }
     public string SelectedBookChapterCountLabel => SelectedBook is null ? string.Empty : $"{SelectedBook.Chapters.Count} chapter marker(s)";
     public bool IsEditing => _editingBookId is not null;
+    public string EditorTitle => IsEditing ? "Edit audiobook" : "Add an audiobook";
     public string SaveButtonLabel => IsEditing ? "Save changes" : "Save to local catalogue";
+    public string CatalogueSummaryLabel => $"{Books.Count} of {_allBooks.Count} audiobooks";
 
     private IReadOnlyList<Audiobook> _allBooks = [];
     public bool IsLoading { get => _isLoading; private set { if (_isLoading == value) return; _isLoading = value; OnPropertyChanged(); } }
@@ -202,8 +204,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsQueueEmpty => QueueItems.Count == 0;
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
     public string QueueSummaryLabel => $"{QueueItems.Count(x => x.Status == DownloadStatus.Queued)} queued · {QueueItems.Count(x => x.Status == DownloadStatus.Downloading)} downloading · {QueueItems.Count(x => x.Status == DownloadStatus.Completed)} completed · {QueueItems.Count(x => x.Status == DownloadStatus.Failed)} failed";
-    public string EmptyMessage => HasBooks ? string.Empty :
-        string.IsNullOrWhiteSpace(SearchText) ? "Your local catalogue is empty." : "No matching audiobooks.";
+    public string EmptyMessage => Books.Count > 0 ? string.Empty :
+        _allBooks.Count == 0 ? "Your local catalogue is empty." : "No matching audiobooks. Try another title, author or narrator."
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -240,6 +242,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         NewGenre = book.Genre;
         NewDescription = book.Description;
         OnPropertyChanged(nameof(IsEditing));
+        OnPropertyChanged(nameof(EditorTitle));
         OnPropertyChanged(nameof(SaveButtonLabel));
         ErrorMessage = string.Empty;
     }
@@ -287,6 +290,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _editingBookId = null;
             ClearEditor();
             OnPropertyChanged(nameof(IsEditing));
+            OnPropertyChanged(nameof(EditorTitle));
             OnPropertyChanged(nameof(SaveButtonLabel));
             ApplyFilter(_allBooks);
             if (SelectedBook?.Id == book.Id) SelectBook(book.Id);
@@ -529,6 +533,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         foreach (var book in matches) Books.Add(book);
         OnPropertyChanged(nameof(Books));
         OnPropertyChanged(nameof(HasBooks));
+        OnPropertyChanged(nameof(CatalogueSummaryLabel));
+        OnPropertyChanged(nameof(EmptyMessage));
         OnPropertyChanged(nameof(EmptyMessage));
     }
 
