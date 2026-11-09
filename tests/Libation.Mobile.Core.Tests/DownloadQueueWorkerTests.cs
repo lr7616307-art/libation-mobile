@@ -550,11 +550,21 @@ public sealed class DownloadQueueWorkerTests
         }
     }
 
-    private sealed class StubHandler(Func<HttpResponseMessage> response) : HttpMessageHandler
+    private sealed class StubHandler : HttpMessageHandler
     {
+        private readonly Func<HttpResponseMessage>? _response;
+        private readonly Func<HttpRequestMessage, HttpResponseMessage>? _requestResponse;
+
+        public StubHandler(Func<HttpResponseMessage> response) => _response = response;
+
+        public StubHandler(Func<HttpRequestMessage, HttpResponseMessage> response)
+            => _requestResponse = response;
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
-            => Task.FromResult(response());
+            => Task.FromResult(_requestResponse is not null
+                ? _requestResponse(request)
+                : _response!());
     }
 
     private sealed class TemporaryDirectory : IDisposable
