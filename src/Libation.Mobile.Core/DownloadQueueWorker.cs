@@ -12,7 +12,14 @@ public interface IAuthorizedAudioDownloadSource
         string audiobookId, CancellationToken cancellationToken = default);
 }
 
-public sealed record AuthorizedAudioDownload(Uri DownloadUri, string DestinationPath);
+public sealed record AuthorizedAudioDownload(Uri DownloadUri, string DestinationPath)
+{
+    /// <summary>
+    /// Protection metadata returned with the provider-issued licence. Defaults to
+    /// unprotected for existing non-DRM providers and test sources.
+    /// </summary>
+    public AudioProtectionDescriptor Protection { get; init; } = AudioProtectionDescriptor.Unprotected;
+}
 
 public sealed record DownloadQueueProgress(
     string AudiobookId,
@@ -28,11 +35,20 @@ public sealed record DownloadQueueProgress(
 public interface IAudioPostDownloadProcessor
 {
     /// <summary>
+    /// Indicates whether this processor has an authorized implementation for the
+    /// supplied protection type. Existing processors remain valid for unprotected
+    /// media, but must explicitly opt in before receiving protected media.
+    /// </summary>
+    bool CanProcess(AudioProtectionDescriptor protection)
+        => !protection.RequiresProtectedMediaPipeline;
+
+    /// <summary>
     /// Processes a completed download and returns the path of the resulting audio file.
     /// Implementations must leave the input file intact if processing fails.
     /// </summary>
     Task<string> ProcessAsync(
         string downloadedFilePath,
+        AudioProtectionDescriptor protection,
         CancellationToken cancellationToken = default);
 }
 
@@ -46,7 +62,9 @@ public sealed class DownloadQueueWorker
     private readonly IAuthorizedAudioDownloadSource _source;
     private readonly IAudioPostDownloadProcessor? _postDownloadProcessor;
     private readonly ILibraryRepository? _libraryRepository;
-    private readonly SemaphoreSlim _runGate = new(1, 1);
+    // A process-wide gate coordinates separate worker instances that share the same
+    // persisted queue. Recovery must never requeue an item owned by another worker.
+    private static readonly SemaphoreSlim ProcessRunGate = new(1, 1);
 
     public DownloadQueueWorker(
         IDownloadQueue queue,
@@ -71,22 +89,55 @@ public sealed class DownloadQueueWorker
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var processed = 0;
-        while (await ProcessNextAsync(progress, cancellationToken))
-            processed++;
-        return processed;
+        // Serialize recovery with all work performed by this worker. If a
+        // concurrent ProcessNextAsync were already active, recovering first
+        // would requeue its live item and make its eventual Completed transition
+        // invalid. Keep the gate for the entire batch, using the private core
+        // method below to avoid reacquiring it for each item.
+        await ProcessRunGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // A process restart can leave an item marked Downloading even though
+            // no worker is alive. Requeue those items before selecting new work;
+            // the downloader will validate and resume any retained partial file.
+            await _queue.RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
+
+            var processed = 0;
+            while (await ProcessNextCoreAsync(progress, cancellationToken).ConfigureAwait(false))
+                processed++;
+            return processed;
+        }
+        finally
+        {
+            ProcessRunGate.Release();
+        }
     }
 
     public async Task<int> RecoverInterruptedDownloadsAsync(CancellationToken cancellationToken = default)
     {
-        var items = await _queue.GetItemsAsync(cancellationToken);
-        var recovered = 0;
-        foreach (var item in items.Where(x => x.Status == DownloadStatus.Downloading))
+        // Explicit recovery must coordinate with every worker instance too;
+        // otherwise it could requeue an item another instance is downloading.
+        await ProcessRunGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            await _queue.UpdateStatusAsync(item.AudiobookId, DownloadStatus.Queued, cancellationToken: cancellationToken);
-            recovered++;
+            return await _queue.RecoverInterruptedDownloadsAsync(cancellationToken).ConfigureAwait(false);
         }
-        return recovered;
+        finally
+        {
+            ProcessRunGate.Release();
+        }
+    }
+
+    private static void EnsureHttpsDownloadUri(Uri downloadUri, string description)
+    {
+        if (!downloadUri.IsAbsoluteUri ||
+            !string.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"The {description} download URL must use HTTPS.");
+
+        // Provider URLs are bearer-like capabilities. Reject embedded URI credentials
+        // so they cannot be interpreted as HTTP authentication or leak through diagnostics.
+        if (!string.IsNullOrEmpty(downloadUri.UserInfo))
+            throw new InvalidDataException($"The {description} download URL must not contain embedded credentials.");
     }
 
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
@@ -114,26 +165,42 @@ public sealed class DownloadQueueWorker
         IProgress<DownloadQueueProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        await _runGate.WaitAsync(cancellationToken);
+        await ProcessRunGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var item = (await _queue.GetItemsAsync(cancellationToken))
-                .Where(x => x.Status == DownloadStatus.Queued)
-                .OrderBy(x => x.AddedAtUtc)
-                .FirstOrDefault();
+            return await ProcessNextCoreAsync(progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ProcessRunGate.Release();
+        }
+    }
 
+    private async Task<bool> ProcessNextCoreAsync(
+        IProgress<DownloadQueueProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+            // Selection and transition must be atomic across distinct worker
+            // instances, not merely protected by this worker's local run gate.
+            var item = await _queue.TryClaimNextAsync(cancellationToken).ConfigureAwait(false);
             if (item is null)
                 return false;
-
-            await _queue.UpdateStatusAsync(
-                item.AudiobookId, DownloadStatus.Downloading,
-                cancellationToken: cancellationToken);
 
             try
             {
                 var target = await _source.ResolveAsync(item.AudiobookId, cancellationToken);
                 if (target is null)
                     throw new InvalidOperationException("The audio provider returned no download target.");
+
+                EnsureHttpsDownloadUri(target.DownloadUri, "provider-issued");
+
+                // Do not spend bandwidth or storage on protected bytes that this
+                // app cannot process. A compatible, authorized processor must be
+                // present before the first network request is made.
+                if (target.Protection.RequiresProtectedMediaPipeline &&
+                    (_postDownloadProcessor is null || !_postDownloadProcessor.CanProcess(target.Protection)))
+                    throw new NotSupportedException(
+                        $"The audiobook uses {target.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
 
                 // Persist progress asynchronously. Blocking on UpdateProgressAsync from
                 // the downloader's synchronous IProgress callback can deadlock when a
@@ -163,11 +230,53 @@ public sealed class DownloadQueueWorker
                 AudioDownloadResult result;
                 try
                 {
-                    result = await _downloader.DownloadAsync(
-                        target.DownloadUri,
-                        target.DestinationPath,
-                        downloadProgress,
-                        cancellationToken);
+                    try
+                    {
+                        result = await _downloader.DownloadAsync(
+                            target.DownloadUri,
+                            target.DestinationPath,
+                            downloadProgress,
+                            cancellationToken);
+                    }
+                    catch (HttpRequestException exception) when (
+                        exception.StatusCode is System.Net.HttpStatusCode.Unauthorized or
+                            System.Net.HttpStatusCode.Forbidden)
+                    {
+                        // Provider download URLs can expire independently of the
+                        // purchased title. Request one fresh authorized licence and
+                        // retry once; never loop indefinitely on rejected credentials.
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var refreshedTarget = await _source.ResolveAsync(
+                            item.AudiobookId, cancellationToken).ConfigureAwait(false);
+                        if (refreshedTarget is null)
+                            throw new InvalidOperationException(
+                                "The audio provider returned no refreshed download target.");
+
+                        EnsureHttpsDownloadUri(refreshedTarget.DownloadUri, "refreshed provider-issued");
+
+                        if (!string.Equals(
+                            Path.GetFullPath(refreshedTarget.DestinationPath),
+                            Path.GetFullPath(target.DestinationPath),
+                            StringComparison.Ordinal))
+                            throw new InvalidDataException(
+                                "The refreshed download target changed the audiobook destination.");
+
+                        // A refreshed licence is authoritative and may carry
+                        // different protection metadata from the expired URL's licence.
+                        // Revalidate before retrying so protected bytes are never fetched
+                        // without a compatible authorized processor.
+                        if (refreshedTarget.Protection.RequiresProtectedMediaPipeline &&
+                            (_postDownloadProcessor is null || !_postDownloadProcessor.CanProcess(refreshedTarget.Protection)))
+                            throw new NotSupportedException(
+                                $"The refreshed audiobook licence uses {refreshedTarget.Protection.Kind} protection, but no compatible authorized media pipeline is configured.");
+
+                        target = refreshedTarget;
+                        result = await _downloader.DownloadAsync(
+                            target.DownloadUri,
+                            target.DestinationPath,
+                            downloadProgress,
+                            cancellationToken);
+                    }
                     latestProgress = new AudioDownloadProgress(result.BytesReceived, result.BytesReceived);
                 }
                 finally
@@ -180,13 +289,14 @@ public sealed class DownloadQueueWorker
                     await progressPersistence.ConfigureAwait(false);
                 }
 
-                // This hook is deliberately optional and runs only after a complete
-                // download. Its output becomes the catalogue's playable local file.
+                // This hook is deliberately optional for unprotected media and runs
+                // only after a complete download. Its output becomes the playable file.
                 var playablePath = result.FilePath;
-                if (_postDownloadProcessor is not null)
+                if (_postDownloadProcessor is not null &&
+                    _postDownloadProcessor.CanProcess(target.Protection))
                 {
                     playablePath = await _postDownloadProcessor.ProcessAsync(
-                        result.FilePath, cancellationToken);
+                        result.FilePath, target.Protection, cancellationToken);
                     if (string.IsNullOrWhiteSpace(playablePath) ||
                         !File.Exists(playablePath) ||
                         new FileInfo(playablePath).Length == 0)
@@ -224,10 +334,5 @@ public sealed class DownloadQueueWorker
                     cancellationToken: CancellationToken.None);
                 return true;
             }
-        }
-        finally
-        {
-            _runGate.Release();
-        }
     }
 }

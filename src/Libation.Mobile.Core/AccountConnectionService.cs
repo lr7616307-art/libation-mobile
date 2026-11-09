@@ -114,8 +114,11 @@ public sealed class AccountConnectionService(
         try
         {
             _pendingChallenge = null;
-            await authenticator.DisconnectAsync(cancellationToken);
-            await sessions.ClearAsync(cancellationToken);
+            // Once logout begins, finish clearing both credential stores as one
+            // logical operation. Cancellation here could otherwise leave the
+            // generic session record behind after provider credentials were erased.
+            await authenticator.DisconnectAsync(CancellationToken.None);
+            await sessions.ClearAsync(CancellationToken.None);
         }
         finally { _signInGate.Release(); }
     }

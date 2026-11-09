@@ -235,6 +235,10 @@
       <StackPanel Spacing="8">
         <TextBlock Text="{Binding QueueCountLabel}" FontSize="20" FontWeight="SemiBold" />
         <TextBlock Text="{Binding QueueSummaryLabel}" FontSize="12" Opacity="0.7" />
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+          <Button Grid.Column="0" Content="Pause downloads" Click="PauseQueueClicked" />
+          <Button Grid.Column="1" Content="Resume downloads" Click="ResumeQueueClicked" />
+        </Grid>
         <TextBlock Text="Nothing queued yet." IsVisible="{Binding IsQueueEmpty}" FontSize="13" Opacity="0.7" />
         <ItemsControl ItemsSource="{Binding QueueItems}">
           <ItemsControl.ItemTemplate>
