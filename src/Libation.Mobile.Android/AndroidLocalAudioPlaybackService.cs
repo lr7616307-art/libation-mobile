@@ -435,12 +435,23 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void StopPlayer()
     {
-        if (_player is null) return;
-        try { _player.Stop(); } catch (Exception) { }
-        _player.Release();
-        _player.Dispose();
+        var player = _player;
+        if (player is null) return;
+
+        // Unregister before teardown so the old player's queued state changes
+        // cannot be delivered to this service after a replacement is attached.
+        try { player.RemoveListener(this); } catch (Exception) { }
+
+        // Detach first so callbacks raised while stopping/releasing the old
+        // player cannot checkpoint its reset position over the last snapshot.
         _player = null;
         _currentFilePath = null;
+        _hasReachedReady = false;
+        _initialPositionMilliseconds = 0;
+
+        try { player.Stop(); } catch (Exception) { }
+        try { player.Release(); } catch (Exception) { }
+        try { player.Dispose(); } catch (Exception) { }
     }
 
     private void StopPlayback(bool clearRecovery = true)
