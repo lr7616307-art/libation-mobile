@@ -49,7 +49,7 @@ public sealed class AudibleAccountAuthenticator(
         ArgumentException.ThrowIfNullOrWhiteSpace(challengeId);
         ArgumentException.ThrowIfNullOrWhiteSpace(responseUrl);
         cancellationToken.ThrowIfCancellationRequested();
-        return await lifecycleCoordinator.CreateAndSaveAsync(
+        var identity = await lifecycleCoordinator.CreateAndSaveAsync(
             async token =>
             {
                 token.ThrowIfCancellationRequested();
@@ -61,33 +61,31 @@ public sealed class AudibleAccountAuthenticator(
                 }
                 if (state.ExpiresAtUtc <= systemDateTime.UtcNow)
                     throw new InvalidOperationException("The Audible sign-in attempt expired. Start again.");
-                var identity = state.Login.Login(responseUrl);
-                var authorization = identity.Authorization
+                var createdIdentity = state.Login.Login(responseUrl);
+                var authorization = createdIdentity.Authorization
                     ?? throw new InvalidOperationException("Audible did not return an authorization code.");
                 token.ThrowIfCancellationRequested();
-                var authorize = new Authorize(identity.Locale);
+                var authorize = new Authorize(createdIdentity.Locale);
                 var registration = await authorize.RegisterAsync(authorization).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
-                RegistrationParser.ParseRegistrationIntoIdentity(registration, identity, systemDateTime);
-                if (!identity.IsValid)
+                RegistrationParser.ParseRegistrationIntoIdentity(registration, createdIdentity, systemDateTime);
+                if (!createdIdentity.IsValid)
                     throw new InvalidOperationException("Audible device registration did not produce a complete identity.");
-                return identity;
+                return createdIdentity;
             },
-            async (identity, token) =>
+            async (createdIdentity, token) =>
             {
-                await snapshotStore.SaveAsync(Capture(identity), token).ConfigureAwait(false);
+                await snapshotStore.SaveAsync(Capture(createdIdentity), token).ConfigureAwait(false);
             },
-            cancellationToken).ContinueWith(task =>
-            {
-                var identity = task.GetAwaiter().GetResult();
-                var refreshToken = identity.RefreshToken
-                    ?? throw new InvalidOperationException("Audible did not return a refresh token.");
-                var expiry = identity.ExistingAccessToken.Expires;
-                if (expiry.Kind != DateTimeKind.Utc) expiry = DateTime.SpecifyKind(expiry, DateTimeKind.Utc);
-                return new AccountSession(
-                    identity.AmazonAccountId ?? identity.DeviceSerialNumber ?? "audible-account",
-                    identity.ExistingAccessToken.Reveal(), refreshToken.Reveal(), new DateTimeOffset(expiry));
-            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            cancellationToken).ConfigureAwait(false);
+
+        var refreshToken = identity.RefreshToken
+            ?? throw new InvalidOperationException("Audible did not return a refresh token.");
+        var expiry = identity.ExistingAccessToken.Expires;
+        if (expiry.Kind != DateTimeKind.Utc) expiry = DateTime.SpecifyKind(expiry, DateTimeKind.Utc);
+        return new AccountSession(
+            identity.AmazonAccountId ?? identity.DeviceSerialNumber ?? "audible-account",
+            identity.ExistingAccessToken.Reveal(), refreshToken.Reveal(), new DateTimeOffset(expiry));
     }
 
     public async Task<bool> HasRestorableIdentityAsync(CancellationToken cancellationToken = default)
