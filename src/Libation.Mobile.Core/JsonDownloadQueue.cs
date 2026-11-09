@@ -98,6 +98,37 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         }, cancellationToken);
     }
 
+    public async Task UpdateProgressAsync(
+        string audiobookId,
+        long bytesReceived,
+        long? totalBytes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
+        if (bytesReceived < 0)
+            throw new ArgumentOutOfRangeException(nameof(bytesReceived));
+        if (totalBytes is < 0 || (totalBytes is long total && total > 0 && bytesReceived > total))
+            throw new ArgumentOutOfRangeException(nameof(totalBytes));
+
+        await MutateAsync(items =>
+        {
+            var index = items.FindIndex(item =>
+                string.Equals(item.AudiobookId, audiobookId, StringComparison.Ordinal));
+            if (index < 0)
+                throw new KeyNotFoundException($"No download queue item exists for '{audiobookId}'.");
+            var current = items[index];
+            if (current.Status != DownloadStatus.Downloading)
+                throw new InvalidOperationException("Progress can only be updated while an item is downloading.");
+
+            items[index] = current with
+            {
+                BytesReceived = bytesReceived,
+                TotalBytes = totalBytes,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            };
+        }, cancellationToken);
+    }
+
     public async Task<bool> RemoveAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);

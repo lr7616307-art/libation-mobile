@@ -9,5 +9,10 @@ public interface IDownloadQueue
         DownloadStatus status,
         string? errorMessage = null,
         CancellationToken cancellationToken = default);
+    Task UpdateProgressAsync(
+        string audiobookId,
+        long bytesReceived,
+        long? totalBytes,
+        CancellationToken cancellationToken = default);
     Task<bool> RemoveAsync(string audiobookId, CancellationToken cancellationToken = default);
 }
