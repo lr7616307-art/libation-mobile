@@ -278,6 +278,24 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task Search_RaisesEmptyMessageChangedOnlyOncePerFilter()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        var notifications = 0;
+        vm.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(vm.EmptyMessage)) notifications++;
+        };
+
+        vm.SearchText = "no matching title";
+
+        Assert.Equal(1, notifications);
+        Assert.Contains("No matching audiobooks", vm.EmptyMessage);
+    }
+
+    [Fact]
     public async Task Search_NoMatchesShowsNoResultsInsteadOfEmptyCatalogue()
     {
         using var directory = new TemporaryDirectory();

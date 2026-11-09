@@ -548,7 +548,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasBooks));
         OnPropertyChanged(nameof(CatalogueSummaryLabel));
         OnPropertyChanged(nameof(EmptyMessage));
-        OnPropertyChanged(nameof(EmptyMessage));
     }
 
     private void SetField(ref string field, string value, [CallerMemberName] string? propertyName = null)
