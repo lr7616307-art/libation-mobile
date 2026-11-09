@@ -180,7 +180,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public void OnPlayerError(PlaybackException? error)
     {
-        StopPlayback();
+        // Decoder or source errors should stop playback, but must not erase the
+        // last recoverable position. Capture the best available position before
+        // releasing ExoPlayer so the user can retry after reopening the app.
+        SavePlaybackSnapshot();
+        StopPlayback(clearRecovery: false);
         StopSelf();
     }
 
