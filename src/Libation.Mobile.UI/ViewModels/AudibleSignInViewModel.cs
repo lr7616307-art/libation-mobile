@@ -71,12 +71,9 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             var state = await _connection.GetStateAsync(cancellationToken);
             Status = state.Status switch
             {
-                AccountConnectionStatus.Connected =>
-                    "Audible account connected. You can start a new sign-in if needed.",
-                AccountConnectionStatus.Expired =>
-                    "Your Audible session has expired. Sign in again to restore access.",
-                AccountConnectionStatus.ReauthenticationRequired =>
-                    "Saved Audible credentials are missing or damaged. Sign in again to restore your library.",
+                AccountConnectionStatus.Connected => "Audible account connected. You can start a new sign-in if needed.",
+                AccountConnectionStatus.Expired => "Your Audible session has expired. Sign in again to restore access.",
+                AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials are missing or damaged. Sign in again to restore your library.",
                 _ => "Audible is not connected. Sign in to access your library."
             };
         }
@@ -98,27 +95,45 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
             ResponseUrl = string.Empty;
+
             var request = new AccountSignInRequest("audible-mobile", Marketplace.Trim());
             var challenge = await _connection.BeginSignInAsync(request, cancellationToken);
             _challengeId = challenge.ChallengeId;
             OnPropertyChanged(nameof(HasChallenge));
             OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
-            _browser.Open(challenge.AuthorizationUri);
-            Status = "Browser opened. Complete sign-in there, then copy the final address-bar URL and paste it below. Do not share it with anyone.";
+
+            try
+            {
+                _browser.Open(challenge.AuthorizationUri);
+                Status = "Browser opened. Complete sign-in there, then copy the final address-bar URL and paste it below. Do not share it with anyone.";
+            }
+            catch (Exception ex)
+            {
+                // Do not leave a live one-time challenge behind when the browser handoff fails.
+                try { await _connection.CancelSignInAsync(challenge.ChallengeId, CancellationToken.None); }
+                catch (Exception) { /* The local challenge is still discarded below. */ }
+
+                _challengeId = null;
+                OnPropertyChanged(nameof(HasChallenge));
+                OnPropertyChanged(nameof(CanCancel));
+                OnPropertyChanged(nameof(CanComplete));
+                Status = $"Could not open the sign-in browser ({ex.GetType().Name}). Check that a browser is installed and try again.";
+                return;
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             Status = "Sign-in start cancelled.";
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             _challengeId = null;
             OnPropertyChanged(nameof(HasChallenge));
             OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
-            Status = "Could not start Audible sign-in. Check the marketplace and try again.";
+            Status = $"Audible could not create the sign-in request ({ex.GetType().Name}). Check the marketplace and try again.";
         }
         finally { IsBusy = false; }
     }
