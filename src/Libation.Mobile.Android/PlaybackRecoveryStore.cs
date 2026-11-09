@@ -22,14 +22,22 @@ internal static class PlaybackRecoveryStore
         if (string.IsNullOrWhiteSpace(path)) return null;
         var speed = preferences?.GetFloat(SpeedKey, 1f) ?? 1f;
         if (float.IsNaN(speed) || float.IsInfinity(speed)) speed = 1f;
+
+        var duration = Math.Max(0, preferences?.GetLong(DurationKey, 0) ?? 0);
+        var position = Math.Max(0, preferences?.GetLong(PositionKey, 0) ?? 0);
+        // A media file may have been replaced, truncated, or report a slightly
+        // shorter duration after recovery. Never seek beyond a known end point;
+        // duration zero means the previous player had not reported it yet.
+        if (duration > 0)
+            position = Math.Min(position, duration);
+
         return new PlaybackRecoverySnapshot(path,
             preferences?.GetString(TitleKey, "Audiobook") ?? "Audiobook",
-            Math.Max(0, preferences?.GetLong(PositionKey, 0) ?? 0),
-            Math.Max(0, preferences?.GetLong(DurationKey, 0) ?? 0),
-            Math.Clamp(speed, 0.5f, 3f), preferences?.GetBoolean(WasPlayingKey, false) ?? false);
+            position, duration, Math.Clamp(speed, 0.5f, 3f),
+            preferences?.GetBoolean(WasPlayingKey, false) ?? false);
     }
 
-    public static void Save(global::Android.Content.Context context, PlaybackRecoverySnapshot snapshot)
+    public static void Save(global::Android.Content.Context context, PlaybackRecoverySnapshot snapshot, bool flushImmediately = false)
     {
         var editor = context.GetSharedPreferences(PreferencesName, global::Android.Content.FileCreationMode.Private)?.Edit();
         editor?.PutString(FilePathKey, snapshot.FilePath);
@@ -38,11 +46,18 @@ internal static class PlaybackRecoveryStore
         editor?.PutLong(DurationKey, Math.Max(0, snapshot.DurationMilliseconds));
         editor?.PutFloat(SpeedKey, Math.Clamp(snapshot.PlaybackSpeed, 0.5f, 3f));
         editor?.PutBoolean(WasPlayingKey, snapshot.WasPlaying);
-        // Apply persists asynchronously so the five-second checkpoint never blocks
-        // the main looper or causes audible playback stutter.
-        editor?.Apply();
+        // Periodic checkpoints stay asynchronous to avoid playback stutter. Explicit
+        // user actions and lifecycle shutdowns can request a synchronous disk flush.
+        if (flushImmediately) editor?.Commit();
+        else editor?.Apply();
     }
 
     public static void Clear(global::Android.Content.Context context)
-        => context.GetSharedPreferences(PreferencesName, global::Android.Content.FileCreationMode.Private)?.Edit()?.Clear()?.Apply();
+    {
+        // Clearing a completed or invalid session is a state transition just
+        // as important as saving a pause. Flush it synchronously so a process
+        // death cannot resurrect an audiobook that was already cleared.
+        context.GetSharedPreferences(PreferencesName, global::Android.Content.FileCreationMode.Private)
+            ?.Edit()?.Clear()?.Commit();
+    }
 }
