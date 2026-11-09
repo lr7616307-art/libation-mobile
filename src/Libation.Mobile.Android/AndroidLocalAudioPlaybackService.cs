@@ -117,7 +117,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         {
             // A transient restore failure must not erase the only saved
             // position. A later app launch can retry recovery.
-            StopPlayback(clearRecovery: intent?.Action != ActionRestore);
+            // A failed command must not discard the last known-good resume point.
+            // This also protects the previous audiobook when a new Play request is invalid.
+            StopPlayback(clearRecovery: false);
             StopSelf(startId);
         }
 
