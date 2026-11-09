@@ -329,40 +329,29 @@ public sealed class AudioFileDownloader
             entityTag is not null && !entityTag.IsWeak)
             return new ResumeValidator(
                 new System.Net.Http.Headers.RangeConditionHeaderValue(entityTag), value);
-        if (value.StartsWith("modified:", StringComparison.Ordinal) &&
-            DateTimeOffset.TryParse(value[9..], System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.AssumeUniversal, out var modified))
-            return new ResumeValidator(
-                new System.Net.Http.Headers.RangeConditionHeaderValue(modified), value);
+
+        // HTTP-date validators are not necessarily strong. Without an explicit
+        // origin guarantee, If-Range dates can splice representations that changed
+        // within the timestamp's one-second granularity. Discard legacy date state.
         return null;
     }
 
     private static ResumeValidator? TryGetValidator(HttpResponseMessage response)
     {
         var entityTag = response.Headers.ETag;
-        if (entityTag is not null && !entityTag.IsWeak)
-            return new ResumeValidator(
+        return entityTag is not null && !entityTag.IsWeak
+            ? new ResumeValidator(
                 new System.Net.Http.Headers.RangeConditionHeaderValue(entityTag),
-                "etag:" + entityTag);
-        var modified = response.Content.Headers.LastModified;
-        return modified is null ? null : new ResumeValidator(
-            new System.Net.Http.Headers.RangeConditionHeaderValue(modified.Value),
-            "modified:" + modified.Value.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                "etag:" + entityTag)
+            : null;
     }
 
     private static bool ResponseMatchesValidator(
         HttpResponseMessage response, ResumeValidator saved)
-    {
-        if (saved.SerializedValue.StartsWith("etag:", StringComparison.Ordinal))
-            return response.Headers.ETag is { } entityTag &&
-                string.Equals("etag:" + entityTag, saved.SerializedValue, StringComparison.Ordinal);
-        if (saved.SerializedValue.StartsWith("modified:", StringComparison.Ordinal))
-            return response.Content.Headers.LastModified is { } modified &&
-                string.Equals(
-                    "modified:" + modified.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture),
-                    saved.SerializedValue, StringComparison.Ordinal);
-        return false;
-    }
+        => saved.SerializedValue.StartsWith("etag:", StringComparison.Ordinal) &&
+            response.Headers.ETag is { } entityTag &&
+            !entityTag.IsWeak &&
+            string.Equals("etag:" + entityTag, saved.SerializedValue, StringComparison.Ordinal);
 
     private static async Task WriteValidatorAsync(
         string path, ResumeValidator validator, CancellationToken cancellationToken)
