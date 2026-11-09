@@ -252,6 +252,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _editingBookId = null;
         ClearEditor();
         OnPropertyChanged(nameof(IsEditing));
+        OnPropertyChanged(nameof(EditorTitle));
         OnPropertyChanged(nameof(SaveButtonLabel));
         ErrorMessage = string.Empty;
     }
