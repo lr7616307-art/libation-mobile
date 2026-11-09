@@ -7,7 +7,7 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
-    public async Task ProbeWidevine_UsesPlatformDiagnosticAndRaisesNotification()
+    public void ProbeWidevine_UsesPlatformDiagnosticAndRaisesNotification()
     {
         using var directory = new TemporaryDirectory();
         var vm = new MainViewModel(
@@ -22,7 +22,7 @@ public sealed class MainViewModelTests
         };
 
         Assert.True(vm.CanProbeWidevine);
-        Assert.Contains("not reported", vm.WidevineDiagnostic);
+        Assert.Equal("Widevine check is available only in the Android app.", vm.WidevineDiagnostic);
 
         vm.ProbeWidevine();
 
@@ -31,7 +31,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ProbeWidevine_WhenPlatformProbeThrows_ShowsSafeDiagnostic()
+    public void ProbeWidevine_WhenPlatformProbeThrows_ShowsSafeDiagnostic()
     {
         using var directory = new TemporaryDirectory();
         var vm = new MainViewModel(
@@ -46,7 +46,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ProbeWidevine_WithoutAndroidFactory_RemainsUnavailable()
+    public void ProbeWidevine_WithoutAndroidFactory_RemainsUnavailable()
     {
         using var directory = new TemporaryDirectory();
         var vm = CreateViewModel(directory.Path);
