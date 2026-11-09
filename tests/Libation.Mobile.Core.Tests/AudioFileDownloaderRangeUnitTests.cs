@@ -136,6 +136,39 @@ public sealed class AudioFileDownloaderRangeUnitTests
         Assert.False(File.Exists(destination));
     }
 
+    [Fact]
+    public async Task DownloadAsync_DiscardsResumeStateWhenDeclaredTotalExceedsSizeLimit()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(partial, [1, 2]);
+        await File.WriteAllTextAsync(partial + ".validator", "etag:\\"v1\\"");
+
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            Assert.Equal(2, request.Headers.Range?.Ranges.Single().From);
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent([3, 4, 5])
+            };
+            Assert.True(ContentRangeHeaderValue.TryParse("bytes 2-4/10", out var range));
+            response.Content.Headers.ContentRange = range;
+            response.Headers.ETag = new EntityTagHeaderValue("\\"v1\\"");
+            return response;
+        }));
+
+        var downloader = new AudioFileDownloader(client, maximumBytes: 5);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
+        Assert.False(File.Exists(destination));
+    }
+
     private sealed class StubHandler(Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> response)
         : HttpMessageHandler
     {
