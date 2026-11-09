@@ -144,7 +144,7 @@ public sealed class AudioFileDownloaderRangeUnitTests
         var partial = destination + ".part";
         Directory.CreateDirectory(directory.Path);
         await File.WriteAllBytesAsync(partial, [1, 2]);
-        await File.WriteAllTextAsync(partial + ".validator", "etag:\\"v1\\"");
+        await File.WriteAllTextAsync(partial + ".validator", "etag:\"v1\"");
 
         using var client = new HttpClient(new StubHandler((request, _) =>
         {
@@ -155,7 +155,7 @@ public sealed class AudioFileDownloaderRangeUnitTests
             };
             Assert.True(ContentRangeHeaderValue.TryParse("bytes 2-4/10", out var range));
             response.Content.Headers.ContentRange = range;
-            response.Headers.ETag = new EntityTagHeaderValue("\\"v1\\"");
+            response.Headers.ETag = new EntityTagHeaderValue("\"v1\"");
             return response;
         }));
 
