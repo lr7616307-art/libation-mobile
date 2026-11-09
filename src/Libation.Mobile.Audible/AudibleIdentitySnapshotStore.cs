@@ -22,6 +22,10 @@ public sealed class AudibleIdentitySnapshotStore(ISecretStore secrets)
 {
     public const string StorageKey = "audible_identity_v1";
 
+    // One lifecycle boundary per encrypted identity store. Every authenticator and
+    // API-session maintainer created for this store must share this coordinator.
+    public AudibleIdentityLifecycleCoordinator LifecycleCoordinator { get; } = new();
+
     public async Task SaveAsync(
         AudibleIdentitySnapshot snapshot,
         CancellationToken cancellationToken = default)
