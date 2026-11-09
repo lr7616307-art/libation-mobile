@@ -314,6 +314,29 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task Enqueue_AudibleCatalogueEntryShowsOfficialHandoffAndDoesNotQueue()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(repository, queue,
+            new LibrarySyncService(new FakeCatalogProvider([
+                new RemoteAudiobook("audible-asin", "Audible title", "Author", "Narrator", "5h")
+            ]), repository));
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+
+        var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
+        Assert.False(book.CanQueueDownload);
+        Assert.Equal("Audible download unavailable", book.DownloadActionLabel);
+
+        await vm.EnqueueAsync(book.Id);
+
+        Assert.Empty(await queue.GetItemsAsync());
+        Assert.Contains("official Audible app", vm.ErrorMessage);
+    }
+
+    [Fact]
     public async Task QueueSummary_ReflectsPersistedStatusCounts()
     {
         using var directory = new TemporaryDirectory();
