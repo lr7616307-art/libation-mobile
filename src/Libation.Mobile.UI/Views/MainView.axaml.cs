@@ -31,8 +31,9 @@ public partial class MainView : UserControl
         var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
+        var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
-        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory), new CoverArtImportService(Path.Combine(dataDirectory, "covers")));
+        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory), new CoverArtImportService(Path.Combine(dataDirectory, "covers")), syncStateStore);
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;

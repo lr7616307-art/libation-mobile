@@ -16,6 +16,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
+    private readonly ISyncStateStore? _syncStateStore;
     private bool _isSyncing;
     private string _syncStatus = "Provider not connected. Audible library sync is not available yet.";
     private DateTimeOffset? _lastSuccessfulSync;
@@ -79,13 +80,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SelectedBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
     }
 
-    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, CoverArtImportService? coverArtImportService = null)
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, CoverArtImportService? coverArtImportService = null, ISyncStateStore? syncStateStore = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
         _syncService = syncService;
         _audioImportService = audioImportService;
         _coverArtImportService = coverArtImportService;
+        _syncStateStore = syncStateStore;
     }
 
     public bool IsSyncing { get => _isSyncing; private set { if (_isSyncing == value) return; _isSyncing = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanSync)); } }
@@ -128,7 +130,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
             ApplyFilter(_allBooks);
             await ReloadQueueAsync(cancellationToken);
             LastSuccessfulSync = DateTimeOffset.UtcNow;
-            SyncStatus = $"Sync complete. {count} audiobook metadata entr{(count == 1 ? "y" : "ies")} updated.";
+            var timestampSaved = true;
+            if (_syncStateStore is not null)
+            {
+                try { await _syncStateStore.SaveLastSuccessfulSyncAsync(LastSuccessfulSync.Value, cancellationToken); }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (Exception) { timestampSaved = false; }
+            }
+            SyncStatus = timestampSaved
+                ? $"Sync complete. {count} audiobook metadata entr{(count == 1 ? "y" : "ies")} updated."
+                : $"Sync complete. {count} audiobook metadata entr{(count == 1 ? "y" : "ies")} updated, but the timestamp could not be saved.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -202,6 +213,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             IsLoading = true;
             ErrorMessage = string.Empty;
             await _repository.EnsureInitializedAsync(InitialSamples, cancellationToken);
+            if (_syncStateStore is not null)
+                LastSuccessfulSync = await _syncStateStore.GetLastSuccessfulSyncAsync(cancellationToken);
             var stored = await _repository.GetBooksAsync(cancellationToken);
             _allBooks = stored;
             ApplyFilter(_allBooks);
