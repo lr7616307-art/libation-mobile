@@ -64,73 +64,32 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
-    public async Task DownloadAsync_ResumesPartialFileWithMatchingLastModifiedValidator()
+    public async Task DownloadAsync_DiscardsLegacyLastModifiedResumeStateAndRestarts()
     {
         using var directory = new TemporaryDirectory();
         var destination = Path.Combine(directory.Path, "book.m4b");
         var partial = destination + ".part";
-        var modified = new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.Zero);
         Directory.CreateDirectory(directory.Path);
-        await File.WriteAllBytesAsync(partial, new byte[] { 1, 2 });
-        await File.WriteAllTextAsync(
-            partial + ".validator",
-            "modified:" + modified.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+        await File.WriteAllBytesAsync(partial, [1, 2]);
+        await File.WriteAllTextAsync(partial + ".validator", "modified:Tue, 03 Nov 2026 10:00:00 GMT");
         using var client = new HttpClient(new StubHandler((request, _) =>
         {
-            Assert.Equal(2, request.Headers.Range?.Ranges.Single().From);
-            Assert.Equal(modified, request.Headers.IfRange?.Date);
-            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            Assert.Null(request.Headers.Range);
+            Assert.Null(request.Headers.IfRange);
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new ByteArrayContent(new byte[] { 3, 4, 5 })
+                Content = new ByteArrayContent([7, 8, 9])
             };
-            response.Content.Headers.ContentRange =
-                new System.Net.Http.Headers.ContentRangeHeaderValue(2, 4, 5);
-            response.Content.Headers.LastModified = modified;
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"strong-v1\"");
             return response;
         }));
         var downloader = new AudioFileDownloader(client);
 
-        var result = await downloader.DownloadAsync(
-            new Uri("https://provider.example/audio"), destination);
+        await downloader.DownloadAsync(new Uri("https://provider.example/audio"), destination);
 
-        Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, await File.ReadAllBytesAsync(destination));
-        Assert.Equal(5, result.BytesReceived);
+        Assert.Equal(new byte[] { 7, 8, 9 }, await File.ReadAllBytesAsync(destination));
         Assert.False(File.Exists(partial));
         Assert.False(File.Exists(partial + ".validator"));
-    }
-
-    [Fact]
-    public async Task DownloadAsync_ResumesWithMatchingLastModifiedValidator()
-    {
-        using var directory = new TemporaryDirectory();
-        var destination = Path.Combine(directory.Path, "book.m4b");
-        Directory.CreateDirectory(directory.Path);
-        await File.WriteAllBytesAsync(destination + ".part", new byte[] { 1, 2 });
-        await File.WriteAllTextAsync(destination + ".part.validator", "modified:Tue, 03 Nov 2026 10:00:00 GMT");
-        using var client = new HttpClient(new StubHandler((request, _) =>
-        {
-            Assert.Equal(2, request.Headers.Range?.Ranges.Single().From);
-            Assert.Equal(
-                new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.Zero),
-                request.Headers.IfRange?.Date);
-            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
-            {
-                Content = new ByteArrayContent(new byte[] { 3, 4, 5 })
-            };
-            response.Content.Headers.ContentRange =
-                new System.Net.Http.Headers.ContentRangeHeaderValue(2, 4, 5);
-            response.Content.Headers.LastModified =
-                new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.Zero);
-            return response;
-        }));
-        var downloader = new AudioFileDownloader(client);
-
-        var result = await downloader.DownloadAsync(
-            new Uri("https://provider.example/audio"), destination);
-
-        Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, await File.ReadAllBytesAsync(destination));
-        Assert.Equal(5, result.BytesReceived);
-        Assert.False(File.Exists(destination + ".part"));
     }
 
     [Fact]
@@ -159,8 +118,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(partial));
-        Assert.Equal("etag:\"old-version\"", await File.ReadAllTextAsync(partial + ".validator"));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -225,39 +184,6 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
-    public async Task DownloadAsync_PromotesCompletePartialAfterRangeNotSatisfiableWhenLastModifiedMatches()
-    {
-        using var directory = new TemporaryDirectory();
-        var destination = Path.Combine(directory.Path, "book.m4b");
-        var payload = new byte[] { 1, 2, 3, 4, 5 };
-        var modified = new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.Zero);
-        Directory.CreateDirectory(directory.Path);
-        await File.WriteAllBytesAsync(destination + ".part", payload);
-        await File.WriteAllTextAsync(
-            destination + ".part.validator",
-            "modified:" + modified.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
-        using var client = new HttpClient(new StubHandler((request, _) =>
-        {
-            Assert.Equal(payload.Length, request.Headers.Range?.Ranges.Single().From);
-            Assert.Equal(modified, request.Headers.IfRange?.Date);
-            var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
-            response.Content.Headers.ContentRange =
-                new System.Net.Http.Headers.ContentRangeHeaderValue(payload.Length);
-            response.Content.Headers.LastModified = modified;
-            return response;
-        }));
-        var downloader = new AudioFileDownloader(client);
-
-        var result = await downloader.DownloadAsync(
-            new Uri("https://provider.example/audio"), destination);
-
-        Assert.Equal(payload, await File.ReadAllBytesAsync(destination));
-        Assert.Equal(payload.Length, result.BytesReceived);
-        Assert.False(File.Exists(destination + ".part"));
-        Assert.False(File.Exists(destination + ".part.validator"));
-    }
-
-    [Fact]
     public async Task DownloadAsync_DoesNotPromotePartialWhenRangeNotSatisfiableOmitsTotalLength()
     {
         using var directory = new TemporaryDirectory();
@@ -280,7 +206,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(payload, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -308,7 +235,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(payload, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -317,6 +245,7 @@ public sealed class AudioFileDownloaderTests
     {
         using var directory = new TemporaryDirectory();
         var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
         var payload = new byte[] { 1, 2, 3, 4, 5 };
         var savedModified = new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.Zero);
         var responseModified = savedModified.AddSeconds(1);
@@ -338,7 +267,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(payload, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -347,6 +277,7 @@ public sealed class AudioFileDownloaderTests
     {
         using var directory = new TemporaryDirectory();
         var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
         var payload = new byte[] { 1, 2, 3, 4, 5 };
         Directory.CreateDirectory(directory.Path);
         await File.WriteAllBytesAsync(destination + ".part", payload);
@@ -364,7 +295,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(payload, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -391,7 +323,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(destination + ".part"));
+        Assert.False(File.Exists(destination + ".part.validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -418,7 +351,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(destination + ".part"));
+        Assert.False(File.Exists(destination + ".part.validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -627,7 +561,8 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
             new Uri("https://provider.example/audio"), destination));
 
-        Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(partial + ".validator"));
         Assert.False(File.Exists(destination));
     }
 
@@ -642,6 +577,174 @@ public sealed class AudioFileDownloaderTests
         await Assert.ThrowsAsync<ArgumentException>(() => downloader.DownloadAsync(
             new Uri("http://provider.example/audio"),
             Path.Combine(directory.Path, "book.m4b")));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_FollowsRelativeHttpsRedirect()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var calls = 0;
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            calls++;
+            if (calls == 1)
+            {
+                Assert.Equal("https://provider.example/audio", request.RequestUri!.AbsoluteUri);
+                var redirect = new HttpResponseMessage(HttpStatusCode.Redirect);
+                redirect.Headers.Location = new Uri("/cdn/book", UriKind.Relative);
+                return redirect;
+            }
+
+            Assert.Equal("https://provider.example/cdn/book", request.RequestUri!.AbsoluteUri);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+            };
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await downloader.DownloadAsync(new Uri("https://provider.example/audio"), destination);
+
+        Assert.Equal(2, calls);
+        Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(destination));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_PreservesRangeValidatorAcrossHttpsRedirect()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(destination + ".part", new byte[] { 1, 2 });
+        await File.WriteAllTextAsync(destination + ".part.validator", "etag:\"v1\"");
+        var calls = 0;
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            calls++;
+            Assert.Equal(2, request.Headers.Range?.Ranges.Single().From);
+            Assert.Equal("\"v1\"", request.Headers.IfRange?.EntityTag?.Tag);
+            if (calls == 1)
+            {
+                var redirect = new HttpResponseMessage(HttpStatusCode.TemporaryRedirect);
+                redirect.Headers.Location = new Uri("https://cdn.example/audio");
+                return redirect;
+            }
+
+            var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(new byte[] { 3, 4, 5 })
+            };
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(2, 4, 5);
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"v1\"");
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await downloader.DownloadAsync(new Uri("https://provider.example/audio"), destination);
+
+        Assert.Equal(2, calls);
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, await File.ReadAllBytesAsync(destination));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_EnforcesMaximumRedirectCount()
+    {
+        using var directory = new TemporaryDirectory();
+        var calls = 0;
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            calls++;
+            var redirect = new HttpResponseMessage(HttpStatusCode.Redirect);
+            redirect.Headers.Location = new Uri($"https://cdn.example/audio/{calls}");
+            return redirect;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"),
+            Path.Combine(directory.Path, "book.m4b")));
+
+        Assert.Equal(6, calls);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_RejectsHttpsToHttpRedirectBeforeFollowingIt()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var calls = 0;
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            calls++;
+            var redirect = new HttpResponseMessage(HttpStatusCode.Redirect);
+            redirect.Headers.Location = new Uri("http://insecure.example/audio");
+            return redirect;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(1, calls);
+        Assert.False(File.Exists(destination));
+        Assert.False(File.Exists(destination + ".part"));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_RejectsRedirectWithEmbeddedCredentials()
+    {
+        using var directory = new TemporaryDirectory();
+        var calls = 0;
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            calls++;
+            var redirect = new HttpResponseMessage(HttpStatusCode.Redirect);
+            redirect.Headers.Location = new Uri("https://user:secret@cdn.example/audio");
+            return redirect;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"),
+            Path.Combine(directory.Path, "book.m4b")));
+
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_RejectsRedirectWithoutLocation()
+    {
+        using var directory = new TemporaryDirectory();
+        using var client = new HttpClient(new StubHandler((_, _) =>
+            new HttpResponseMessage(HttpStatusCode.Redirect)));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"),
+            Path.Combine(directory.Path, "book.m4b")));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_StopsRedirectLoop()
+    {
+        using var directory = new TemporaryDirectory();
+        var calls = 0;
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            calls++;
+            var redirect = new HttpResponseMessage(HttpStatusCode.Redirect);
+            redirect.Headers.Location = new Uri("https://provider.example/audio");
+            return redirect;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"),
+            Path.Combine(directory.Path, "book.m4b")));
+
+        Assert.Equal(1, calls);
     }
 
     [Fact]

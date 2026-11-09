@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace Libation.Mobile.Core;
@@ -12,13 +13,18 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         WriteIndented = true
     };
 
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileGates = new(StringComparer.Ordinal);
     private readonly string _filePath;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SemaphoreSlim _gate;
 
     public JsonDownloadQueue(string filePath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         _filePath = Path.GetFullPath(filePath);
+        // Multiple queue objects can be created by the UI and Android service
+        // for the same file. Serialize all their mutations through one process-wide
+        // gate so two recovery passes cannot both claim the same interrupted item.
+        _gate = FileGates.GetOrAdd(_filePath, static _ => new SemaphoreSlim(1, 1));
     }
 
     public async Task<IReadOnlyList<DownloadQueueItem>> GetItemsAsync(
@@ -59,6 +65,43 @@ public sealed class JsonDownloadQueue : IDownloadQueue
             }
         }, cancellationToken);
         return recovered;
+    }
+
+    /// <summary>
+    /// Atomically transitions the oldest queued item to Downloading. The shared
+    /// file gate makes selection and claim one indivisible operation across all
+    /// queue instances in this process.
+    /// </summary>
+    public async Task<DownloadQueueItem?> TryClaimNextAsync(CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var items = (await ReadItemsAsync(cancellationToken).ConfigureAwait(false)).ToList();
+            var index = items
+                .Select((item, itemIndex) => (item, itemIndex))
+                .Where(entry => entry.item.Status == DownloadStatus.Queued)
+                .OrderBy(entry => entry.item.AddedAtUtc)
+                .Select(entry => entry.itemIndex)
+                .FirstOrDefault(-1);
+
+            if (index < 0)
+                return null;
+
+            var claimed = items[index] with
+            {
+                Status = DownloadStatus.Downloading,
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+                ErrorMessage = null
+            };
+            items[index] = claimed;
+            await WriteItemsAsync(items, cancellationToken).ConfigureAwait(false);
+            return claimed;
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
@@ -216,6 +259,9 @@ public sealed class JsonDownloadQueue : IDownloadQueue
             {
                 await JsonSerializer.SerializeAsync(stream, items, JsonOptions, cancellationToken);
                 await stream.FlushAsync(cancellationToken);
+                // Persist queue state before the atomic rename. This is important
+                // for restart recovery after a sudden process or device shutdown.
+                stream.Flush(flushToDisk: true);
             }
 
             File.Move(temporaryPath, _filePath, overwrite: true);

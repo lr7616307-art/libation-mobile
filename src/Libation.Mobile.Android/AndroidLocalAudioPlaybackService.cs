@@ -39,6 +39,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private Java.Lang.Runnable? _sleepTimerRunnable;
     private long? _sleepDeadlineUtcTicks;
     private long? _sleepChapterPositionMilliseconds;
+    private long _initialPositionMilliseconds;
+    private bool _hasReachedReady;
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
@@ -75,13 +77,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     StartPlayback(intent);
                     break;
                 case ActionPause:
-                    if (_player?.IsPlaying == true) _player.Pause();
-                    SavePlaybackSnapshot();
+                    if (_player?.PlayWhenReady == true) _player.Pause();
+                    SavePlaybackSnapshot(durable: true);
                     UpdateNotification();
                     break;
                 case ActionResume:
-                    if (_player is not null && !_player.IsPlaying) _player.Play();
-                    SavePlaybackSnapshot();
+                    if (_player is not null && !_player.PlayWhenReady) _player.Play();
+                    SavePlaybackSnapshot(durable: true, wasPlayingOverride: true);
                     UpdateNotification();
                     break;
                 case ActionSeek:
@@ -89,7 +91,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     {
                         var target = Math.Clamp(intent.GetLongExtra(ExtraPosition, 0), 0, int.MaxValue);
                         _player.SeekTo((int)target);
-                        SavePlaybackSnapshot();
+                        SavePlaybackSnapshot(durable: true);
                     }
                     break;
                 case ActionRewind:
@@ -100,7 +102,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     break;
                 case ActionSetSpeed:
                     SetPlaybackSpeed(intent.GetFloatExtra(ExtraSpeed, 1f));
-                    SavePlaybackSnapshot();
+                    // Playback speed is an explicit user setting. Flush it with
+                    // the current position so a sudden shutdown does not revert
+                    // the listener's chosen speed on the next recovery.
+                    SavePlaybackSnapshot(durable: true);
                     break;
                 case ActionRestore:
                     RestoreSavedPlayback();
@@ -115,9 +120,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
         catch (Exception)
         {
-            // A transient restore failure must not erase the only saved
-            // position. A later app launch can retry recovery.
-            StopPlayback(clearRecovery: intent?.Action != ActionRestore);
+            // Capture the latest live position before releasing the player.
+            // Keeping only the previous periodic snapshot could lose progress
+            // made since that checkpoint when a command fails.
+            SavePlaybackSnapshot(durable: true);
+            // A failed command must not turn a transient error into permanent
+            // progress loss; retain the snapshot for the next service start.
+            StopPlayback(clearRecovery: false);
             StopSelf(startId);
         }
 
@@ -136,6 +145,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             _title = Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
         _playbackSpeed = 1f;
+        _initialPositionMilliseconds = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
+        _hasReachedReady = false;
 
         // Android requires a service started with startForegroundService() to
         // promote itself promptly. MediaPlayer.Prepare() can block while a
@@ -146,7 +157,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _player.AddListener(this);
         var mediaUri = global::Android.Net.Uri.FromFile(new Java.IO.File(path));
         _player.SetMediaItem(MediaItem.FromUri(mediaUri));
-        var position = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
+        var position = _initialPositionMilliseconds;
         if (position > 0) _player.SeekTo(position);
         _player.Prepare();
         var speed = intent.GetFloatExtra(ExtraSpeed, 1f);
@@ -157,7 +168,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
         if (intent.GetBooleanExtra(ExtraAutoPlay, true))
             _player.Play();
-        SavePlaybackSnapshot();
+        // ExoPlayer prepares asynchronously. Reading CurrentPosition immediately
+        // after Play() can still return zero and overwrite the resume point we
+        // just restored. Persist the requested seek position and intended play
+        // state first; periodic checkpoints replace these values once the
+        // decoder reports its real position and duration.
+        PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
+            path, _title, position, 0, _playbackSpeed,
+            intent.GetBooleanExtra(ExtraAutoPlay, true)), flushImmediately: true);
         UpdateNotification();
     }
 
@@ -166,6 +184,15 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     // lifecycle synchronized with the actual decoder state.
     public void OnPlaybackStateChanged(int playbackState)
     {
+        if (playbackState == 3) // Player.STATE_READY
+        {
+            // Until the first READY callback, CurrentPosition can still report
+            // zero even though the requested resume seek has not been applied.
+            // From this point onward ExoPlayer owns the authoritative position.
+            _hasReachedReady = true;
+            SavePlaybackSnapshot();
+        }
+
         if (playbackState == 4) // Player.STATE_ENDED
         {
             StopPlayback();
@@ -180,7 +207,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public void OnPlayerError(PlaybackException? error)
     {
-        StopPlayback();
+        // Decoder and I/O errors can be transient (for example, storage becoming
+        // temporarily unavailable). Capture the last known position before
+        // releasing ExoPlayer, but retain the recovery snapshot so the next app
+        // launch can retry instead of silently losing the listening session.
+        SavePlaybackSnapshot(durable: true);
+        StopPlayback(clearRecovery: false);
         StopSelf();
     }
 
@@ -203,7 +235,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         // Seek and media-position discontinuities can be followed by an abrupt
         // process death. Persist the new position immediately instead of waiting
         // for the next five-second periodic checkpoint.
-        SavePlaybackSnapshot();
+        SavePlaybackSnapshot(durable: true);
     }
     public void OnPlaybackParametersChanged(PlaybackParameters? parameters) { }
     public void OnPlaybackSuppressionReasonChanged(int reason) { }
@@ -263,7 +295,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var editor = GetSharedPreferences("vorath_sleep_timer", FileCreationMode.Private)?.Edit();
         editor?.PutLong("deadline_utc_ticks", _sleepDeadlineUtcTicks ?? 0);
         editor?.PutLong("chapter_position_ms", _sleepChapterPositionMilliseconds ?? -1);
-        editor?.Apply();
+        // Setting, cancelling, or expiring a sleep timer is an explicit state
+        // transition. Flush it before returning so process death cannot restore
+        // a timer the listener already cancelled or allow a cancelled timer to
+        // unexpectedly pause playback later.
+        editor?.Commit();
     }
 
     private void ClearSleepTimer()
@@ -278,11 +314,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         try
         {
             var deadlineReached = _sleepDeadlineUtcTicks is { } deadline && DateTime.UtcNow.Ticks >= deadline;
-            var chapterReached = _sleepChapterPositionMilliseconds is { } chapter && _player?.IsPlaying == true && ReadPosition() >= chapter;
+            var chapterReached = _sleepChapterPositionMilliseconds is { } chapter && _player?.PlayWhenReady == true && ReadPosition() >= chapter;
             if (deadlineReached || chapterReached)
             {
-                if (_player?.IsPlaying == true) _player.Pause();
-                SavePlaybackSnapshot();
+                if (_player?.PlayWhenReady == true) _player.Pause();
+                SavePlaybackSnapshot(durable: true);
                 ClearSleepTimer();
                 UpdateNotification();
             }
@@ -293,13 +329,18 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             if (_sleepTimerRunnable is not null) _checkpointHandler?.PostDelayed(_sleepTimerRunnable, 1_000);
         }
     }
-    private void SavePlaybackSnapshot()
+    private void SavePlaybackSnapshot(bool durable = false, bool? wasPlayingOverride = null)
     {
         if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         try
         {
+            var position = _hasReachedReady ? ReadPosition() : _initialPositionMilliseconds;
             PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
-                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying));
+                _currentFilePath, _title, position, ReadDuration(), _playbackSpeed,
+                // IsPlaying is false while buffering or temporarily suppressed.
+                // PlayWhenReady records the listener's intent, so recovery can
+                // resume a session that was meant to be playing before shutdown.
+                wasPlayingOverride ?? _player.PlayWhenReady), durable);
         }
         catch (Exception) { /* A checkpoint must never interrupt audio playback. */ }
     }
@@ -342,8 +383,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var contentPendingIntent = PendingIntent.GetActivity(
             this, 4102, launchIntent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
-        var action = _player?.IsPlaying == true ? ActionPause : ActionResume;
-        var actionLabel = _player?.IsPlaying == true ? "Pause" : "Resume";
+        var wantsPlayback = _player?.PlayWhenReady == true;
+        var action = wantsPlayback ? ActionPause : ActionResume;
+        var actionLabel = wantsPlayback ? "Pause" : "Resume";
         var actionIcon = _player?.IsPlaying == true
             ? global::Android.Resource.Drawable.StatSysHeadset
             : global::Android.Resource.Drawable.StatSysHeadset;
@@ -365,7 +407,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             .SetContentTitle("VØRATH")
             .SetContentText(_title)
             .SetContentIntent(contentPendingIntent)
-            .SetOngoing(_player?.IsPlaying == true)
+            .SetOngoing(wantsPlayback)
             .SetOnlyAlertOnce(true)
             .AddAction(global::Android.Resource.Drawable.IcMediaRew, "−15 sec", rewindPendingIntent)
             .AddAction(actionIcon, actionLabel, controlPendingIntent)
@@ -393,12 +435,23 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void StopPlayer()
     {
-        if (_player is null) return;
-        try { _player.Stop(); } catch (Exception) { }
-        _player.Release();
-        _player.Dispose();
+        var player = _player;
+        if (player is null) return;
+
+        // Unregister before teardown so the old player's queued state changes
+        // cannot be delivered to this service after a replacement is attached.
+        try { player.RemoveListener(this); } catch (Exception) { }
+
+        // Detach first so callbacks raised while stopping/releasing the old
+        // player cannot checkpoint its reset position over the last snapshot.
         _player = null;
         _currentFilePath = null;
+        _hasReachedReady = false;
+        _initialPositionMilliseconds = 0;
+
+        try { player.Stop(); } catch (Exception) { }
+        try { player.Release(); } catch (Exception) { }
+        try { player.Dispose(); } catch (Exception) { }
     }
 
     private void StopPlayback(bool clearRecovery = true)
@@ -412,13 +465,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public override void OnTaskRemoved(Intent? rootIntent)
     {
-        SavePlaybackSnapshot();
+        SavePlaybackSnapshot(durable: true);
         base.OnTaskRemoved(rootIntent);
     }
 
     public override void OnDestroy()
     {
-        SavePlaybackSnapshot();
+        SavePlaybackSnapshot(durable: true);
         if (_checkpointRunnable is not null)
             _checkpointHandler?.RemoveCallbacks(_checkpointRunnable);
         if (_sleepTimerRunnable is not null)

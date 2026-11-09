@@ -16,6 +16,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly SemaphoreSlim _queueRefreshGate = new(1, 1);
+    private readonly SemaphoreSlim _playbackPositionSaveGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
     private bool _isSyncing;
     private string _syncStatus = "Provider not connected. Audible library sync is not available yet.";
@@ -455,10 +456,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task SavePlaybackPositionAsync(string audiobookId, long positionMilliseconds, CancellationToken cancellationToken = default)
     {
         if (positionMilliseconds < 0) positionMilliseconds = 0;
-        var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
-        if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath)) return;
+        var gateAcquired = false;
         try
         {
+            // Progress checkpoints, seeks, pauses, and view-unload saves can
+            // overlap. Serialize them so an older in-flight checkpoint cannot
+            // overwrite a newer user-requested position.
+            await _playbackPositionSaveGate.WaitAsync(cancellationToken);
+            gateAcquired = true;
+            var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+            if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath)) return;
+
             var updated = book with { PlaybackPositionMilliseconds = positionMilliseconds };
             await _repository.UpsertAsync(updated, cancellationToken);
             _allBooks = await _repository.GetBooksAsync(cancellationToken);
@@ -466,6 +474,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { AudioImportStatus = "Could not save playback position."; }
+        finally
+        {
+            if (gateAcquired)
+                _playbackPositionSaveGate.Release();
+        }
     }
 
     public long GetResumePositionMilliseconds(string audiobookId)
