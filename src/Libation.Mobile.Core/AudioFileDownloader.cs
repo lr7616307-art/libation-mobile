@@ -201,6 +201,15 @@ public sealed class AudioFileDownloader
                 }
             }
         }
+        catch (InvalidDataException)
+        {
+            // A size-limit violation is permanent for this representation, not a
+            // transient transport failure. Close the file before deleting it so an
+            // oversized stream cannot leave a partial that every retry extends.
+            await output.DisposeAsync();
+            DiscardResumeState(partialPath, validatorPath);
+            throw;
+        }
         catch
         {
             // Preserve all bytes accepted by the file stream when a transfer is
