@@ -306,6 +306,61 @@ public sealed class AccountConnectionServiceTests
     }
 
     [Fact]
+    public async Task Disconnect_WaitsForInFlightSignInCompletionThenClearsTheNewSession()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AccountSessionStore(secrets);
+        var authenticator = new FakeAuthenticator(NewSession("acct-complete-race", "new-access", "new-refresh"))
+        {
+            BlockComplete = true
+        };
+        var service = new AccountConnectionService(authenticator, store);
+        var challenge = await service.BeginSignInAsync(new("user@example.com", "in"));
+
+        var completionTask = service.CompleteSignInAsync(
+            challenge.ChallengeId, "https://example.invalid/return");
+        await authenticator.CompleteStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var disconnectTask = service.DisconnectAsync();
+
+        Assert.False(disconnectTask.IsCompleted);
+        authenticator.AllowCompleteToFinish.TrySetResult();
+
+        var connectedState = await completionTask;
+        await disconnectTask;
+
+        Assert.Equal(AccountConnectionStatus.Connected, connectedState.Status);
+        Assert.Null(await store.LoadAsync());
+        Assert.Equal(1, authenticator.DisconnectCount);
+    }
+
+    [Fact]
+    public async Task Disconnect_WaitsForInFlightStateReadAndPreventsStaleConnectedResultAfterLogout()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AccountSessionStore(secrets);
+        await store.SaveAsync(NewSession("acct-state-race", "access", "refresh"));
+        var authenticator = new FakeAuthenticator
+        {
+            BlockIdentityCheck = true
+        };
+        var service = new AccountConnectionService(authenticator, store);
+
+        var stateTask = service.GetStateAsync();
+        await authenticator.IdentityCheckStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var disconnectTask = service.DisconnectAsync();
+
+        Assert.False(disconnectTask.IsCompleted);
+        authenticator.AllowIdentityCheckToFinish.TrySetResult();
+
+        var state = await stateTask;
+        await disconnectTask;
+
+        Assert.Equal(AccountConnectionStatus.Connected, state.Status);
+        Assert.Null(await store.LoadAsync());
+        Assert.Equal(1, authenticator.DisconnectCount);
+    }
+
+    [Fact]
     public async Task Disconnect_ClearsSavedSessionAndPendingChallenge()
     {
         var secrets = new InMemorySecretStore();
@@ -366,9 +421,19 @@ public sealed class AccountConnectionServiceTests
         public int DisconnectCount { get; private set; }
         public int RefreshCount { get; private set; }
         public bool BlockRefresh { get; init; }
+        public bool BlockComplete { get; init; }
+        public bool BlockIdentityCheck { get; init; }
         public TaskCompletionSource RefreshStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource AllowRefreshToFinish { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CompleteStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AllowCompleteToFinish { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource IdentityCheckStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AllowIdentityCheckToFinish { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool? RestorableIdentity { get; set; }
         public string NextChallengeId { get; set; } = "challenge-1";
@@ -383,16 +448,29 @@ public sealed class AccountConnectionServiceTests
                 NextChallengeId, new Uri("https://example.invalid/login"), ChallengeExpiry));
         }
 
-        public Task<AccountSession> CompleteSignInAsync(
+        public async Task<AccountSession> CompleteSignInAsync(
             string challengeId, string responseUrl, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             CompleteCount++;
-            return Task.FromResult(completion ?? throw new InvalidOperationException("No fake completion result configured."));
+            if (BlockComplete)
+            {
+                CompleteStarted.TrySetResult();
+                await AllowCompleteToFinish.Task.WaitAsync(cancellationToken);
+            }
+            return completion ?? throw new InvalidOperationException("No fake completion result configured.");
         }
 
-        public Task<bool> HasRestorableIdentityAsync(CancellationToken cancellationToken = default)
-        { cancellationToken.ThrowIfCancellationRequested(); return Task.FromResult(RestorableIdentity ?? true); }
+        public async Task<bool> HasRestorableIdentityAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (BlockIdentityCheck)
+            {
+                IdentityCheckStarted.TrySetResult();
+                await AllowIdentityCheckToFinish.Task.WaitAsync(cancellationToken);
+            }
+            return RestorableIdentity ?? true;
+        }
 
         public Task DisconnectAsync(CancellationToken cancellationToken = default)
         {
