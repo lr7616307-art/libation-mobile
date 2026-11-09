@@ -17,6 +17,7 @@ public sealed class AndroidDownloadQueueService : Service
     private const int NotificationId = 2401;
     private const string ActionCancel = "org.libationmobile.app.action.CANCEL_DOWNLOADS";
 
+    private static int _processRunActive;
     private DownloadQueueExecutionController? _controller;
     private bool _runStarted;
 
@@ -98,6 +99,17 @@ public sealed class AndroidDownloadQueueService : Service
             return StartCommandResult.NotSticky;
         }
 
+        // A service instance can be recreated or receive duplicate start intents.
+        // Keep a process-wide guard so only one foreground service instance owns
+        // queue execution at a time.
+        if (Interlocked.CompareExchange(ref _processRunActive, 1, 0) != 0)
+        {
+            _controller = null;
+            StopForegroundAndRemoveNotification();
+            StopSelf(startId);
+            return StartCommandResult.NotSticky;
+        }
+
         _runStarted = true;
         _ = RunQueueAsync(startId);
         return StartCommandResult.RedeliverIntent;
@@ -133,6 +145,7 @@ public sealed class AndroidDownloadQueueService : Service
         {
             _controller = null;
             _runStarted = false;
+            Interlocked.Exchange(ref _processRunActive, 0);
             StopForegroundAndRemoveNotification();
             StopSelf(startId);
         }
