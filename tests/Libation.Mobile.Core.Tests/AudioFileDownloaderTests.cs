@@ -257,6 +257,91 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_DoesNotPromotePartialWhenRangeNotSatisfiableOmitsTotalLength()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        var payload = new byte[] { 1, 2, 3, 4, 5 };
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(partial, payload);
+        await File.WriteAllTextAsync(partial + ".validator", "etag:\"stable-v1\"");
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            Assert.Equal(payload.Length, request.Headers.Range?.Ranges.Single().From);
+            Assert.Equal("\"stable-v1\"", request.Headers.IfRange?.EntityTag?.Tag);
+            var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"stable-v1\"");
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_DoesNotPromotePartialWhenRangeTotalExceedsPartialLength()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        var payload = new byte[] { 1, 2, 3, 4, 5 };
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(partial, payload);
+        await File.WriteAllTextAsync(partial + ".validator", "etag:\"stable-v1\"");
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            Assert.Equal(payload.Length, request.Headers.Range?.Ranges.Single().From);
+            var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(payload.Length + 1);
+            response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"stable-v1\"");
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(partial));
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_DoesNotPromoteCompletePartialWhenLastModifiedDiffers()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var payload = new byte[] { 1, 2, 3, 4, 5 };
+        var savedModified = new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.Zero);
+        var responseModified = savedModified.AddSeconds(1);
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(destination + ".part", payload);
+        await File.WriteAllTextAsync(
+            destination + ".part.validator",
+            "modified:" + savedModified.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+        using var client = new HttpClient(new StubHandler((_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable);
+            response.Content.Headers.ContentRange =
+                new System.Net.Http.Headers.ContentRangeHeaderValue(payload.Length);
+            response.Content.Headers.LastModified = responseModified;
+            return response;
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination));
+
+        Assert.Equal(payload, await File.ReadAllBytesAsync(destination + ".part"));
+        Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
     public async Task DownloadAsync_DoesNotPromoteCompletePartialWhenRangeValidatorDiffers()
     {
         using var directory = new TemporaryDirectory();
@@ -334,6 +419,36 @@ public sealed class AudioFileDownloaderTests
 
         Assert.Equal(new byte[] { 1, 2 }, await File.ReadAllBytesAsync(destination + ".part"));
         Assert.False(File.Exists(destination));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_DiscardsPartialWithMalformedValidatorAndStartsFresh()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "book.m4b");
+        var partial = destination + ".part";
+        var validator = partial + ".validator";
+        Directory.CreateDirectory(directory.Path);
+        await File.WriteAllBytesAsync(partial, new byte[] { 9, 9, 9 });
+        await File.WriteAllTextAsync(validator, "etag:not-a-valid-entity-tag");
+        using var client = new HttpClient(new StubHandler((request, _) =>
+        {
+            Assert.Null(request.Headers.Range);
+            Assert.Null(request.Headers.IfRange);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3, 4 })
+            };
+        }));
+        var downloader = new AudioFileDownloader(client);
+
+        var result = await downloader.DownloadAsync(
+            new Uri("https://provider.example/audio"), destination);
+
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, await File.ReadAllBytesAsync(destination));
+        Assert.Equal(4, result.BytesReceived);
+        Assert.False(File.Exists(partial));
+        Assert.False(File.Exists(validator));
     }
 
     [Fact]
