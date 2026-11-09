@@ -50,6 +50,7 @@ public sealed class LibrarySyncServiceTests
         Assert.Equal("My corrected author", saved.Author);
         Assert.Equal("My narrator", saved.Narrator);
         Assert.Equal("9h", saved.Length);
+        Assert.Empty(saved.CoverImageUrl);
     }
 
     [Fact]
@@ -234,6 +235,41 @@ public sealed class LibrarySyncServiceTests
 
         public Task<bool> RemoveAsync(string audiobookId, CancellationToken cancellationToken = default)
             => inner.RemoveAsync(audiobookId, cancellationToken);
+    }
+
+    [Fact]
+    public async Task Sync_UpdatesProviderCoverUrlAndPreservesImportedLocalCover()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("provider:aud-1", "Local title", "Local author", "", "", "Library")
+            {
+                CoverImagePath = "/app/covers/local.jpg",
+                CoverImageUrl = "https://m.media-amazon.com/images/I/old.jpg"
+            }
+        ]);
+        var service = new LibrarySyncService(
+            new FakeProvider([
+                new RemoteAudiobook("aud-1", "Remote title", "Remote author", "", "")
+                {
+                    CoverImageUrl = "https://m.media-amazon.com/images/I/new.jpg"
+                },
+                new RemoteAudiobook("aud-2", "Second title", "Author", "", "")
+                {
+                    CoverImageUrl = "https://example.com/not-audible-cover.jpg"
+                }
+            ]),
+            repository);
+
+        await service.SyncAsync();
+
+        var saved = await repository.GetBooksAsync();
+        var existing = Assert.Single(saved, book => book.Id == "provider:aud-1");
+        Assert.Equal("/app/covers/local.jpg", existing.CoverImagePath);
+        Assert.Equal("https://m.media-amazon.com/images/I/new.jpg", existing.CoverImageUrl);
+        var newBook = Assert.Single(saved, book => book.Id == "provider:aud-2");
+        Assert.Empty(newBook.CoverImageUrl);
     }
 
     private sealed class FakeProvider(IReadOnlyList<RemoteAudiobook> books) : ILibraryCatalogProvider

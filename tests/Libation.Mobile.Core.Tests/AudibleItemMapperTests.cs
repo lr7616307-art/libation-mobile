@@ -15,6 +15,7 @@ public sealed class AudibleItemMapperTests
             Title = " Example title ",
             Subtitle = " Subtitle ",
             RuntimeLengthMin = 321,
+            ProductImages = new ProductImages { The500 = new Uri("https://m.media-amazon.com/images/I/cover123._SL500_.jpg") },
             Authors =
             [
                 new Person { Name = " Author One " },
@@ -35,6 +36,7 @@ public sealed class AudibleItemMapperTests
         Assert.Equal("Author One, Author Two", result.Author);
         Assert.Equal("Narrator One, Narrator Two", result.Narrator);
         Assert.Equal("321", result.Length);
+        Assert.Equal("https://m.media-amazon.com/images/I/cover123._SL500_.jpg", result.CoverImageUrl);
     }
 
     [Fact]
