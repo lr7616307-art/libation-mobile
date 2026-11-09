@@ -61,6 +61,9 @@ public sealed class AudibleAccountAuthenticator(
                 }
                 if (state.ExpiresAtUtc <= systemDateTime.UtcNow)
                     throw new InvalidOperationException("The Audible sign-in attempt expired. Start again.");
+                if (!Uri.TryCreate(responseUrl, UriKind.Absolute, out var responseUri)
+                    || responseUri.Scheme != Uri.UriSchemeHttps)
+                    throw new InvalidOperationException("The Audible sign-in response must be an absolute HTTPS URL.");
                 var createdIdentity = state.Login.Login(responseUrl);
                 var authorization = createdIdentity.Authorization
                     ?? throw new InvalidOperationException("Audible did not return an authorization code.");
