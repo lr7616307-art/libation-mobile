@@ -93,7 +93,7 @@ public sealed class AndroidDownloadQueueService : Service
                 "Download provider unavailable",
                 0,
                 indeterminate: false);
-            StopForeground(true);
+            StopForegroundAndRemoveNotification();
             StopSelf(startId);
             return StartCommandResult.NotSticky;
         }
@@ -133,7 +133,7 @@ public sealed class AndroidDownloadQueueService : Service
         {
             _controller = null;
             _runStarted = false;
-            StopForeground(true);
+            StopForegroundAndRemoveNotification();
             StopSelf(startId);
         }
     }
@@ -152,9 +152,19 @@ public sealed class AndroidDownloadQueueService : Service
     {
         if (!_runStarted)
         {
-            StopForeground(true);
+            StopForegroundAndRemoveNotification();
             StopSelf(startId);
         }
+    }
+
+    private void StopForegroundAndRemoveNotification()
+    {
+        // Android 13 introduced the flag-based overload. Keep the legacy
+        // overload for older supported devices (including API 29).
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.Tiramisu)
+            StopForeground(StopForegroundFlags.Remove);
+        else
+            StopForeground(true);
     }
 
     private void EnsureNotificationChannel()
