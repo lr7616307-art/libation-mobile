@@ -7,6 +7,57 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public void ProbeWidevine_UsesPlatformDiagnosticAndRaisesNotification()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = new MainViewModel(
+            new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")),
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            widevineDiagnosticFactory: () => "Widevine supported. Security level: L3.");
+
+        var notifications = 0;
+        vm.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(vm.WidevineDiagnostic)) notifications++;
+        };
+
+        Assert.True(vm.CanProbeWidevine);
+        Assert.Equal("Widevine check is available only in the Android app.", vm.WidevineDiagnostic);
+
+        vm.ProbeWidevine();
+
+        Assert.Equal("Widevine supported. Security level: L3.", vm.WidevineDiagnostic);
+        Assert.Equal(1, notifications);
+    }
+
+    [Fact]
+    public void ProbeWidevine_WhenPlatformProbeThrows_ShowsSafeDiagnostic()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = new MainViewModel(
+            new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")),
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            widevineDiagnosticFactory: () => throw new InvalidOperationException("private device detail"));
+
+        vm.ProbeWidevine();
+
+        Assert.Equal("Widevine check failed (InvalidOperationException).", vm.WidevineDiagnostic);
+        Assert.DoesNotContain("private device detail", vm.WidevineDiagnostic);
+    }
+
+    [Fact]
+    public void ProbeWidevine_WithoutAndroidFactory_RemainsUnavailable()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+
+        Assert.False(vm.CanProbeWidevine);
+        vm.ProbeWidevine();
+
+        Assert.Equal("Widevine check is available only in the Android app.", vm.WidevineDiagnostic);
+    }
+
+    [Fact]
     public async Task SyncLibraryAsync_WithoutProvider_ReportsNotConnected()
     {
         using var directory = new TemporaryDirectory();

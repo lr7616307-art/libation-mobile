@@ -37,5 +37,5 @@ Return an actionable unsupported/error state if the device lacks Widevine suppor
 ## Current implementation status
 
 - Authenticated API session factory: merged in PR #152.
-- Android Widevine capability probe: under CI review in PR #153; not yet surfaced in UI or validated on the user's handset.
+- Android Widevine capability probe: merged in PR #153 and surfaced as a user-triggered diagnostic in PR #155. It reports platform scheme support and an optional security-level property only; it has not been validated on the user's handset.
 - Download worker, SAF destination handling, persistent-license lifecycle, DRM playback integration, and offline playback verification: not implemented.
