@@ -22,11 +22,19 @@ internal static class PlaybackRecoveryStore
         if (string.IsNullOrWhiteSpace(path)) return null;
         var speed = preferences?.GetFloat(SpeedKey, 1f) ?? 1f;
         if (float.IsNaN(speed) || float.IsInfinity(speed)) speed = 1f;
+
+        var duration = Math.Max(0, preferences?.GetLong(DurationKey, 0) ?? 0);
+        var position = Math.Max(0, preferences?.GetLong(PositionKey, 0) ?? 0);
+        // A media file may have been replaced, truncated, or report a slightly
+        // shorter duration after recovery. Never seek beyond a known end point;
+        // duration zero means the previous player had not reported it yet.
+        if (duration > 0)
+            position = Math.Min(position, duration);
+
         return new PlaybackRecoverySnapshot(path,
             preferences?.GetString(TitleKey, "Audiobook") ?? "Audiobook",
-            Math.Max(0, preferences?.GetLong(PositionKey, 0) ?? 0),
-            Math.Max(0, preferences?.GetLong(DurationKey, 0) ?? 0),
-            Math.Clamp(speed, 0.5f, 3f), preferences?.GetBoolean(WasPlayingKey, false) ?? false);
+            position, duration, Math.Clamp(speed, 0.5f, 3f),
+            preferences?.GetBoolean(WasPlayingKey, false) ?? false);
     }
 
     public static void Save(global::Android.Content.Context context, PlaybackRecoverySnapshot snapshot, bool flushImmediately = false)
