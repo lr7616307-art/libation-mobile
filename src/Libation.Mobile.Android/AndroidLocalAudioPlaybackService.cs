@@ -5,6 +5,8 @@ using AndroidX.Media3.ExoPlayer;
 using Android.OS;
 using Android.Media;
 using Android.Media.Session;
+using Android.Graphics;
+using Path = System.IO.Path;
 
 namespace Libation.Mobile.Android;
 
@@ -24,6 +26,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionCancelSleepTimer = "org.libationmobile.app.action.CANCEL_SLEEP_TIMER";
     public const string ExtraFilePath = "file_path";
     public const string ExtraTitle = "title";
+    public const string ExtraArtworkPath = "artwork_path";
     public const string ExtraPosition = "position_ms";
     public const string ExtraSpeed = "playback_speed";
     public const string ExtraAutoPlay = "auto_play";
@@ -35,6 +38,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private IExoPlayer? _player;
     private string _title = "Audiobook";
     private string? _currentFilePath;
+    private string? _artworkPath;
+    private global::Android.Graphics.Bitmap? _coverBitmap;
     private float _playbackSpeed = 1f;
     private bool _isRestoringPlayback;
     private MediaSession? _mediaSession;
@@ -141,6 +146,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (string.IsNullOrWhiteSpace(_title))
             _title = Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
+        _artworkPath = intent.GetStringExtra(ExtraArtworkPath);
+        LoadCoverArtwork(_artworkPath);
         _playbackSpeed = 1f;
         if (_mediaSession is not null) _mediaSession.Active = true;
         UpdateMediaSessionState();
@@ -251,6 +258,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var intent = new Intent(this, typeof(AndroidLocalAudioPlaybackService));
         intent.PutExtra(ExtraFilePath, snapshot.FilePath);
         intent.PutExtra(ExtraTitle, snapshot.Title);
+        if (!string.IsNullOrWhiteSpace(snapshot.ArtworkPath)) intent.PutExtra(ExtraArtworkPath, snapshot.ArtworkPath);
         intent.PutExtra(ExtraPosition, snapshot.PositionMilliseconds);
         intent.PutExtra(ExtraSpeed, snapshot.PlaybackSpeed);
         intent.PutExtra(ExtraAutoPlay, snapshot.WasPlaying);
@@ -316,7 +324,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         try
         {
             PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
-                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying));
+                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying, _artworkPath));
         }
         catch (Exception) { /* A checkpoint must never interrupt audio playback. */ }
     }
@@ -381,6 +389,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         builder.SetSmallIcon(global::Android.Resource.Drawable.StatSysHeadset)
             .SetContentTitle("VØRATH")
             .SetContentText(_title)
+            .SetLargeIcon(_coverBitmap)
             .SetContentIntent(contentPendingIntent)
             .SetOngoing(_player?.IsPlaying == true)
             .SetOnlyAlertOnce(true)
@@ -400,6 +409,30 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         manager?.Notify(NotificationId, BuildNotification());
     }
 
+    private void LoadCoverArtwork(string? path)
+    {
+        global::Android.Graphics.Bitmap? decoded = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            {
+                var options = new global::Android.Graphics.BitmapFactory.Options { InSampleSize = 4 };
+                decoded = global::Android.Graphics.BitmapFactory.DecodeFile(path, options);
+            }
+        }
+        catch (Exception)
+        {
+            decoded = null;
+        }
+
+        if (!ReferenceEquals(_coverBitmap, decoded))
+        {
+            _coverBitmap?.Recycle();
+            _coverBitmap?.Dispose();
+            _coverBitmap = decoded;
+        }
+    }
+
     private void CreateMediaSession()
     {
         _mediaSession = new MediaSession(this, "VORATHPlayback");
@@ -408,6 +441,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _mediaSession.SetMetadata(new global::Android.Media.MediaMetadata.Builder()
             .PutString(global::Android.Media.MediaMetadata.MetadataKeyTitle, _title)
             .PutString(global::Android.Media.MediaMetadata.MetadataKeyArtist, "VØRATH")
+            .PutBitmap(global::Android.Media.MediaMetadata.MetadataKeyAlbumArt, _coverBitmap)
             .Build());
     }
 
@@ -419,6 +453,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             _mediaSession.SetMetadata(new global::Android.Media.MediaMetadata.Builder()
                 .PutString(global::Android.Media.MediaMetadata.MetadataKeyTitle, _title)
                 .PutString(global::Android.Media.MediaMetadata.MetadataKeyArtist, "VØRATH")
+                .PutBitmap(global::Android.Media.MediaMetadata.MetadataKeyAlbumArt, _coverBitmap)
                 .Build());
 
             var actions = PlaybackState.ActionPlay | PlaybackState.ActionPause |
@@ -523,6 +558,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         StopPlayback(clearRecovery: false);
         if (_mediaSession is not null) _mediaSession.Active = false;
         _mediaSession?.Release();
+        _coverBitmap?.Recycle();
+        _coverBitmap?.Dispose();
+        _coverBitmap = null;
         _mediaSession = null;
         if (Current == this) Current = null;
         base.OnDestroy();
