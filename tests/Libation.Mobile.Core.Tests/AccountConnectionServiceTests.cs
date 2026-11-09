@@ -278,6 +278,34 @@ public sealed class AccountConnectionServiceTests
     }
 
     [Fact]
+    public async Task Disconnect_WaitsForInFlightRefreshThenClearsTheRefreshedSession()
+    {
+        var secrets = new InMemorySecretStore();
+        var store = new AccountSessionStore(secrets);
+        await store.SaveAsync(NewSession("acct-race", "old-access", "old-refresh"));
+        var authenticator = new FakeAuthenticator(
+            NewSession("acct-race", "new-access", "new-refresh"))
+        {
+            BlockRefresh = true
+        };
+        var service = new AccountConnectionService(authenticator, store);
+
+        var refreshTask = service.RefreshAsync();
+        await authenticator.RefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var disconnectTask = service.DisconnectAsync();
+
+        Assert.False(disconnectTask.IsCompleted);
+        authenticator.AllowRefreshToFinish.TrySetResult();
+
+        var refreshedState = await refreshTask;
+        await disconnectTask;
+
+        Assert.Equal(AccountConnectionStatus.Connected, refreshedState.Status);
+        Assert.Null(await store.LoadAsync());
+        Assert.Equal(1, authenticator.DisconnectCount);
+    }
+
+    [Fact]
     public async Task Disconnect_ClearsSavedSessionAndPendingChallenge()
     {
         var secrets = new InMemorySecretStore();
@@ -337,6 +365,11 @@ public sealed class AccountConnectionServiceTests
         public int CompleteCount { get; private set; }
         public int DisconnectCount { get; private set; }
         public int RefreshCount { get; private set; }
+        public bool BlockRefresh { get; init; }
+        public TaskCompletionSource RefreshStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AllowRefreshToFinish { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool? RestorableIdentity { get; set; }
         public string NextChallengeId { get; set; } = "challenge-1";
         public DateTimeOffset ChallengeExpiry { get; set; } = DateTimeOffset.UtcNow.AddMinutes(5);
@@ -368,12 +401,17 @@ public sealed class AccountConnectionServiceTests
             return Task.CompletedTask;
         }
 
-        public Task<AccountSession> RefreshAsync(
+        public async Task<AccountSession> RefreshAsync(
             AccountSession currentSession, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             RefreshCount++;
-            return Task.FromResult(completion ?? throw new InvalidOperationException("No fake refresh result configured."));
+            if (BlockRefresh)
+            {
+                RefreshStarted.TrySetResult();
+                await AllowRefreshToFinish.Task.WaitAsync(cancellationToken);
+            }
+            return completion ?? throw new InvalidOperationException("No fake refresh result configured.");
         }
     }
 
