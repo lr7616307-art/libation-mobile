@@ -1,7 +1,5 @@
 using AudibleApi;
-using AudibleApi.Authorization;
 using AudibleApi.Common;
-using Dinah.Core;
 using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Audible;
@@ -33,22 +31,10 @@ public sealed class AudibleLibraryCatalogProvider : ILibraryCatalogProvider
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(snapshotStore);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var snapshot = await snapshotStore.LoadAsync(cancellationToken).ConfigureAwait(false);
-        if (snapshot is null)
-            return null;
-
-        cancellationToken.ThrowIfCancellationRequested();
-        var identity = AudibleIdentitySnapshotMapper.Restore(snapshot);
-        var authorize = new Authorize(identity.Locale);
-        var maintainer = new AudibleIdentityMaintainer(
-            identity,
-            authorize,
-            new SystemDateTime(),
-            snapshotStore);
-        var api = new Api(maintainer);
-        return new AudibleLibraryCatalogProvider(api);
+        var api = await new AudibleApiSessionFactory(snapshotStore)
+            .CreateFromSavedIdentityAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return api is null ? null : new AudibleLibraryCatalogProvider(api);
     }
 
     /// <summary>Creates a provider around a page reader; useful for deterministic tests and alternate hosts.</summary>
