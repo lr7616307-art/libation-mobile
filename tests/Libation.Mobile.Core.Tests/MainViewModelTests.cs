@@ -344,6 +344,22 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task BackupImport_InvalidFileReportsSafeErrorWithoutExposingExceptionDetails()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        await using var invalidBackup = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("private-path-token: /storage/emulated/0/secret.json"));
+
+        await vm.PrepareImportAsync(invalidBackup);
+
+        Assert.False(vm.HasPendingImport);
+        Assert.Equal("Could not read this backup file. Check that it is a valid catalogue backup and try again.", vm.ErrorMessage);
+        Assert.DoesNotContain("/storage/emulated/0/secret.json", vm.ErrorMessage);
+        Assert.DoesNotContain("private-path-token", vm.ErrorMessage);
+    }
+
+    [Fact]
     public async Task BackupImport_CanBeCancelledWithoutChangingCatalogue()
     {
         using var directory = new TemporaryDirectory();
