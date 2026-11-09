@@ -12,7 +12,7 @@ namespace Libation.Mobile.UI.Views;
 /// </summary>
 internal static class AudibleSignInPanel
 {
-    public static Control Create(AudibleSignInViewModel viewModel)
+    public static Control Create(AudibleSignInViewModel viewModel, Func<Task>? onSignInCompleted = null)
     {
         var marketplace = new TextBox
         {
@@ -42,7 +42,12 @@ internal static class AudibleSignInPanel
 
         var complete = new Button { Content = "Complete sign-in" };
         complete.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanComplete)));
-        complete.Click += async (_, _) => await viewModel.CompleteSignInAsync();
+        complete.Click += async (_, _) =>
+        {
+            await viewModel.CompleteSignInAsync();
+            if (viewModel.IsConnected && onSignInCompleted is not null)
+                await onSignInCompleted();
+        };
 
         var disconnect = new Button { Content = "Disconnect Audible account" };
         disconnect.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanBegin)));

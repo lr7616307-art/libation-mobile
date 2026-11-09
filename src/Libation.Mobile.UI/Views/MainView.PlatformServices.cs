@@ -36,7 +36,9 @@ public partial class MainView
                 // rather than trying to insert it into the TabControl's root.
                 accountStack.Children.Insert(
                     Math.Min(2, accountStack.Children.Count),
-                    AudibleSignInPanel.Create(signInViewModel));
+                    AudibleSignInPanel.Create(
+                        signInViewModel,
+                        () => view._viewModel.SyncLibraryAsync()));
             }
         }
 
