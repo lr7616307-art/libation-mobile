@@ -16,18 +16,21 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
     private readonly IAuthorize authorize;
     private readonly ISystemDateTime systemDateTime;
     private readonly AudibleIdentitySnapshotStore snapshotStore;
-    private readonly SemaphoreSlim gate = new(1, 1);
+    private readonly AudibleIdentityLifecycleCoordinator lifecycleCoordinator;
+    private bool disconnected;
 
     public AudibleIdentityMaintainer(
         Identity identity,
         IAuthorize authorize,
         ISystemDateTime systemDateTime,
-        AudibleIdentitySnapshotStore snapshotStore)
+        AudibleIdentitySnapshotStore snapshotStore,
+        AudibleIdentityLifecycleCoordinator? lifecycleCoordinator = null)
     {
         this.identity = identity ?? throw new ArgumentNullException(nameof(identity));
         this.authorize = authorize ?? throw new ArgumentNullException(nameof(authorize));
         this.systemDateTime = systemDateTime ?? throw new ArgumentNullException(nameof(systemDateTime));
         this.snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
+        this.lifecycleCoordinator = lifecycleCoordinator ?? new AudibleIdentityLifecycleCoordinator();
 
         if (!identity.IsValid || identity.PrivateKey is null || identity.AdpToken is null || identity.RefreshToken is null)
             throw new ArgumentException("A complete restored Audible identity is required.", nameof(identity));
@@ -57,46 +60,61 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
         return identity.PrivateKey;
     }
 
+    /// <summary>
+    /// Clears the persisted identity behind the same gate used by refresh. Once this
+    /// completes, this maintainer instance is terminal and cannot refresh or serve credentials.
+    /// </summary>
+    public async Task DisconnectAsync(CancellationToken cancellationToken = default)
+    {
+        if (disconnected)
+            return;
+
+        await lifecycleCoordinator.ClearAsync(async token =>
+        {
+            await snapshotStore.ClearAsync(token).ConfigureAwait(false);
+            disconnected = true;
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task EnsureFreshAsync()
     {
-        await gate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
-                return;
-
-            var refreshToken = identity.RefreshToken
-                ?? throw new InvalidOperationException("The Audible refresh credential is unavailable.");
-            var previousToken = identity.ExistingAccessToken;
-
-            // Keep the current identity untouched until the remote refresh has succeeded.
-            var refreshedToken = await authorize.RefreshAccessTokenAsync(refreshToken).ConfigureAwait(false);
-            identity.Update(refreshedToken);
-
-            try
+        // Even an unexpired token must pass through the lifecycle gate. Otherwise a
+        // cached-token fast path could race with sign-out and return credentials after
+        // the disconnect transition has acquired the lifecycle boundary.
+        await lifecycleCoordinator.ExecuteCurrentAsync(
+            async _ =>
             {
-                await snapshotStore.SaveAsync(Capture(identity)).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
+                if (disconnected)
+                    throw new InvalidOperationException("The Audible session has been disconnected.");
+
+                if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
+                    return (Token: identity.ExistingAccessToken, Refreshed: false);
+
+                var refreshToken = identity.RefreshToken
+                    ?? throw new InvalidOperationException("The Audible refresh credential is unavailable.");
+                var refreshedToken = await authorize.RefreshAccessTokenAsync(refreshToken).ConfigureAwait(false);
+                return (Token: refreshedToken, Refreshed: true);
+            },
+            async (result, _) =>
             {
-                // Cancellation is not a storage failure. Restore the prior in-memory token
-                // and preserve the caller's cancellation signal.
-                identity.Update(previousToken);
-                throw;
-            }
-            catch (Exception persistenceException)
-            {
-                // The new token is not considered committed. Restore the in-memory token so
-                // subsequent callers cannot use a credential that was not durably saved.
-                identity.Update(previousToken);
-                throw new InvalidOperationException(
-                    "The refreshed Audible session could not be securely saved.", persistenceException);
-            }
-        }
-        finally
-        {
-            gate.Release();
-        }
+                if (disconnected)
+                    throw new InvalidOperationException("The Audible session has been disconnected.");
+                if (!result.Refreshed)
+                    return;
+
+                var previousToken = identity.ExistingAccessToken;
+                identity.Update(result.Token);
+                try
+                {
+                    await snapshotStore.SaveAsync(Capture(identity)).ConfigureAwait(false);
+                }
+                catch (Exception persistenceException)
+                {
+                    identity.Update(previousToken);
+                    throw new InvalidOperationException(
+                        "The refreshed Audible session could not be securely saved.", persistenceException);
+                }
+            }).ConfigureAwait(false);
     }
 
     private static AudibleIdentitySnapshot Capture(Identity source)
@@ -135,5 +153,4 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
             StoreAuthenticationCookie = source.StoreAuthenticationCookie.Reveal() ?? string.Empty
         };
     }
-
 }
