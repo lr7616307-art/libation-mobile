@@ -204,7 +204,11 @@ public sealed class AudioFileDownloader
         if (received == 0)
             throw new InvalidDataException("The audio provider returned an empty download.");
 
-        await output.FlushAsync(cancellationToken);
+        // The final tail may be smaller than the periodic 1 MiB checkpoint.
+        // Force all bytes to stable storage before publishing the completed file,
+        // otherwise a sudden power loss after the rename could leave a truncated
+        // destination that the queue has already marked Completed.
+        await FlushDurablyAsync(output);
         cancellationToken.ThrowIfCancellationRequested();
         output.Close();
         File.Move(partialPath, fullPath, overwrite: true);
