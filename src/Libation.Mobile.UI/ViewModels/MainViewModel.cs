@@ -394,7 +394,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _pendingImport = null;
             OnPropertyChanged(nameof(HasPendingImport));
             OnPropertyChanged(nameof(PendingImportLabel));
-            ErrorMessage = ex.Message;
+            ErrorMessage = "Could not read this backup file. Check that it is a valid catalogue backup and try again.";
         }
     }
 
