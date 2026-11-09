@@ -149,10 +149,14 @@ public sealed class AudioFileDownloader
         if (expectedFinalLength is long expected && expected > _maximumBytes)
         {
             // A declared oversized representation cannot become valid on retry.
-            // Remove any prior resume bytes and validator so the queue does not
-            // repeatedly request an offset into a file that exceeds our limit.
             DiscardResumeState(partialPath, validatorPath);
             throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
+        }
+
+        if (expectedFinalLength is long knownLength && knownLength < startingBytes)
+        {
+            DiscardResumeState(partialPath, validatorPath);
+            throw new HttpRequestException("The server declared a representation shorter than the saved resume offset. The stale partial download was discarded.");
         }
 
         // A server that ignores Range returns 200; safely restart rather than append duplicate bytes.
