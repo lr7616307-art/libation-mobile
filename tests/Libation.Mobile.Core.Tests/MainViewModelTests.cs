@@ -278,6 +278,24 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task Search_NoMatchesShowsNoResultsInsteadOfEmptyCatalogue()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+
+        vm.SearchText = "Atomic Habits";
+        Assert.Empty(vm.Books);
+        Assert.Equal("No matching audiobooks. Try another title, author or narrator.", vm.EmptyMessage);
+        Assert.Equal("0 of 3 audiobooks", vm.CatalogueSummaryLabel);
+
+        vm.SearchText = "Project Hail Mary";
+        Assert.Single(vm.Books);
+        Assert.Empty(vm.EmptyMessage);
+        Assert.Equal("1 of 3 audiobooks", vm.CatalogueSummaryLabel);
+    }
+
+    [Fact]
     public async Task QueueSummary_ReflectsPersistedStatusCounts()
     {
         using var directory = new TemporaryDirectory();
