@@ -120,10 +120,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
         catch (Exception)
         {
-            // A command can fail after the last valid checkpoint was saved.
-            // Keep that checkpoint for the next service start, regardless of
-            // which command failed; clearing it here would turn a transient
-            // playback/control error into permanent progress loss.
+            // Capture the latest live position before releasing the player.
+            // Keeping only the previous periodic snapshot could lose progress
+            // made since that checkpoint when a command fails.
+            SavePlaybackSnapshot(durable: true);
+            // A failed command must not turn a transient error into permanent
+            // progress loss; retain the snapshot for the next service start.
             StopPlayback(clearRecovery: false);
             StopSelf(startId);
         }
