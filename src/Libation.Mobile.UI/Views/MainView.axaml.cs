@@ -119,6 +119,14 @@ public partial class MainView : UserControl
         }
         try
         {
+            // Save the currently active session before replacing it. The
+            // periodic checkpoint may not have fired yet, so switching books
+            // (or restarting the same book) must not fall back to an older
+            // catalogue position.
+            if (_playingAudiobookId is not null)
+                await _viewModel.SavePlaybackPositionAsync(
+                    _playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _playingAudiobookId = book.Id;
             _playbackProgressTimer.Start();
