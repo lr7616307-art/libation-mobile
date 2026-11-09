@@ -75,12 +75,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     StartPlayback(intent);
                     break;
                 case ActionPause:
-                    if (_player?.IsPlaying == true) _player.Pause();
+                    if (_player?.PlayWhenReady == true) _player.Pause();
                     SavePlaybackSnapshot(durable: true);
                     UpdateNotification();
                     break;
                 case ActionResume:
-                    if (_player is not null && !_player.IsPlaying) _player.Play();
+                    if (_player is not null && !_player.PlayWhenReady) _player.Play();
                     SavePlaybackSnapshot(durable: true, wasPlayingOverride: true);
                     UpdateNotification();
                     break;
@@ -365,8 +365,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var contentPendingIntent = PendingIntent.GetActivity(
             this, 4102, launchIntent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
-        var action = _player?.IsPlaying == true ? ActionPause : ActionResume;
-        var actionLabel = _player?.IsPlaying == true ? "Pause" : "Resume";
+        var wantsPlayback = _player?.PlayWhenReady == true;
+        var action = wantsPlayback ? ActionPause : ActionResume;
+        var actionLabel = wantsPlayback ? "Pause" : "Resume";
         var actionIcon = _player?.IsPlaying == true
             ? global::Android.Resource.Drawable.StatSysHeadset
             : global::Android.Resource.Drawable.StatSysHeadset;
@@ -388,7 +389,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             .SetContentTitle("VØRATH")
             .SetContentText(_title)
             .SetContentIntent(contentPendingIntent)
-            .SetOngoing(_player?.IsPlaying == true)
+            .SetOngoing(wantsPlayback)
             .SetOnlyAlertOnce(true)
             .AddAction(global::Android.Resource.Drawable.IcMediaRew, "−15 sec", rewindPendingIntent)
             .AddAction(actionIcon, actionLabel, controlPendingIntent)
