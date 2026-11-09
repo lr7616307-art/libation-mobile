@@ -455,7 +455,7 @@ public sealed class DownloadQueueWorkerTests
     private sealed class CancelAfterFirstReadStream(byte[] payload, CancellationTokenSource cancellation) : Stream
     {
         private int _position;
-        private bool _cancelled;
+        private bool _firstReadCompleted;
 
         public override bool CanRead => true;
         public override bool CanSeek => false;
@@ -477,13 +477,16 @@ public sealed class DownloadQueueWorkerTests
             Memory<byte> buffer,
             CancellationToken cancellationToken = default)
         {
-            if (_cancelled)
+            if (_firstReadCompleted)
+            {
+                cancellation.Cancel();
                 return ValueTask.FromCanceled<int>(cancellationToken);
+            }
+
             var read = Math.Min(buffer.Length, payload.Length - _position);
             payload.AsMemory(_position, read).CopyTo(buffer);
             _position += read;
-            _cancelled = true;
-            cancellation.Cancel();
+            _firstReadCompleted = true;
             return ValueTask.FromResult(read);
         }
     }
