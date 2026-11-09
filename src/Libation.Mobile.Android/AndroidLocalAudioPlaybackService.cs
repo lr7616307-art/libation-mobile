@@ -297,10 +297,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         try
         {
             var deadlineReached = _sleepDeadlineUtcTicks is { } deadline && DateTime.UtcNow.Ticks >= deadline;
-            var chapterReached = _sleepChapterPositionMilliseconds is { } chapter && _player?.IsPlaying == true && ReadPosition() >= chapter;
+            var chapterReached = _sleepChapterPositionMilliseconds is { } chapter && _player?.PlayWhenReady == true && ReadPosition() >= chapter;
             if (deadlineReached || chapterReached)
             {
-                if (_player?.IsPlaying == true) _player.Pause();
+                if (_player?.PlayWhenReady == true) _player.Pause();
                 SavePlaybackSnapshot(durable: true);
                 ClearSleepTimer();
                 UpdateNotification();
