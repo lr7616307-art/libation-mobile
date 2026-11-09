@@ -123,3 +123,31 @@ This establishes the source-backed mapping rule, but does **not** mean the mobil
 Source inspected:
 - [Generated Audible library DTO](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi.Common/LibraryDtoV10.generated.cs) — `Item.Authors`, `Item.Narrators`, `Item.PublisherName`, and `Person.Name`.
 - [Item convenience properties](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi.Common/Item.cs) — confirms `Publisher` aliases `PublisherName`; it does not alias author.
+
+
+## Authorized media-source investigation (2026-11-10)
+
+Issue #167 asks whether the pinned `AudibleApi 14.1.2` contract can resolve an entitled audiobook into a provider-issued media source suitable for the generic download queue.
+
+### Finding: no verified supported media resolver in the pinned integration
+
+The upstream AudibleApi repository's published README describes its supported entry point and documents library/product response groups. Those fields include catalogue metadata, `sample_url`, and PDF links, but the published API surface reviewed here does not document a purchased-audiobook media download/stream resolver, a media entitlement check that returns such a source, or a mobile playback/licensing contract.
+
+This is not proof that Audible has no internal or first-party download mechanism. It means this repository has no source-backed basis to implement one through the pinned package without inventing an undocumented endpoint or borrowing assumptions from unrelated clients. The presence of an ASIN, library membership, `is_downloaded`, `available_codecs`, sample URL, or PDF URL is not proof of a downloadable full-length media URL.
+
+### Implementation decision
+
+- Do not implement an Audible `IAuthorizedAudioDownloadSource` adapter against guessed routes.
+- Do not pass `sample_url`, `pdf_url`, or catalogue fields to the generic audiobook downloader as if they were the full audiobook.
+- Keep the generic HTTPS downloader available for providers that can supply a verified, authorized media URL.
+- Audible catalogue entries must remain clearly distinguishable from locally available audio. The download action should report that direct Audible media download is not currently supported and direct the user to the official Audible app for protected titles.
+- Continue supporting local import/playback of user-provided DRM-free audio independently.
+- Revisit the adapter only when an official/documented provider contract or a verifiable, authorized account-and-title-specific media source is available. Any protected-media license/decryption and playback work remains a separate milestone.
+
+### Evidence reviewed
+
+- The pinned package reference in `Libation.Mobile.Audible.csproj` is `AudibleApi 14.1.2`.
+- The upstream [AudibleApi README](https://github.com/rmcrackan/AudibleApi) describes the library API and the documented library response groups; it explicitly notes that Audible's API is undocumented. The listed `sample` and `pdf_url` response groups are not full audiobook media acquisition contracts.
+- The repository's existing `IAuthorizedAudioDownloadSource` contract correctly requires a provider-issued authorized HTTPS media URL and explicitly disallows bypassing access controls or decrypting protected media.
+
+**Status:** no safe production Audible media resolver can be implemented from the verified pinned contract. The correct product behavior is an explicit unsupported/official-handoff state, not a fake download or a speculative endpoint.
