@@ -30,7 +30,8 @@ public partial class MainView : UserControl
     {
         var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
-        var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
+        var queue = PlatformDownloadQueueFactory?.Invoke()
+            ?? new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
@@ -118,6 +119,14 @@ public partial class MainView : UserControl
         }
         try
         {
+            // Save the currently active session before replacing it. The
+            // periodic checkpoint may not have fired yet, so switching books
+            // (or restarting the same book) must not fall back to an older
+            // catalogue position.
+            if (_playingAudiobookId is not null)
+                await _viewModel.SavePlaybackPositionAsync(
+                    _playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _playingAudiobookId = book.Id;
             _playbackProgressTimer.Start();
@@ -371,23 +380,31 @@ public partial class MainView : UserControl
         _queueRefreshTimer.Tick -= QueueRefreshTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
-        if (_localAudioPlayer is null) return;
+        var player = _localAudioPlayer;
+        if (player is null) return;
+
+        // Detach this view's adapter before awaiting persistence. A rapid
+        // unload/load cycle can then create a fresh adapter without the older
+        // unload handler disposing or clearing the newly loaded view's state.
+        var audiobookId = _playingAudiobookId;
+        var position = player.PositionMilliseconds;
+        _localAudioPlayer = null;
+        _playingAudiobookId = null;
+
         try
         {
-            if (_playingAudiobookId is not null)
+            if (audiobookId is not null)
             {
                 // The Android foreground service owns playback independently of
                 // this view. Unloading the UI must checkpoint progress, not pause
                 // the audiobook; the service continues while the app is backgrounded.
-                await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
+                await _viewModel.SavePlaybackPositionAsync(audiobookId, position);
             }
         }
         catch (Exception) { /* Cleanup must continue even if saving progress fails. */ }
         finally
         {
-            _localAudioPlayer.Dispose();
-            _localAudioPlayer = null;
-            _playingAudiobookId = null;
+            player.Dispose();
         }
     }
 
@@ -702,11 +719,18 @@ public partial class MainView : UserControl
         }
     }
 
+    private void PauseQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => PlatformDownloadQueuePauseAction?.Invoke();
+
+    private void ResumeQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => PlatformDownloadQueueStartAction?.Invoke();
+
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
         {
             await _viewModel.EnqueueAsync(book.Id);
+            PlatformDownloadQueueStartAction?.Invoke();
             UpdateQueueRefreshTimer();
         }
     }
@@ -716,6 +740,7 @@ public partial class MainView : UserControl
         if (sender is Button { DataContext: DownloadQueueItem item } && item.Status == DownloadStatus.Failed)
         {
             await _viewModel.RetryFailedAsync(item.AudiobookId);
+            PlatformDownloadQueueStartAction?.Invoke();
             UpdateQueueRefreshTimer();
         }
     }

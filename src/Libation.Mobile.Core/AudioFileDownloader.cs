@@ -8,6 +8,8 @@ namespace Libation.Mobile.Core;
 /// </summary>
 public sealed class AudioFileDownloader
 {
+    private const long DurableCheckpointInterval = 1024 * 1024;
+    private const int MaximumRedirects = 5;
     private readonly HttpClient _httpClient;
     private readonly long _maximumBytes;
 
@@ -28,8 +30,9 @@ public sealed class AudioFileDownloader
         ArgumentNullException.ThrowIfNull(authorizedDownloadUri);
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
         if (!authorizedDownloadUri.IsAbsoluteUri ||
-            !string.Equals(authorizedDownloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Only absolute HTTPS download URLs are accepted.", nameof(authorizedDownloadUri));
+            !string.Equals(authorizedDownloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrEmpty(authorizedDownloadUri.UserInfo))
+            throw new ArgumentException("Only absolute HTTPS download URLs without embedded credentials are accepted.", nameof(authorizedDownloadUri));
 
         var fullPath = Path.GetFullPath(destinationPath);
         var directory = Path.GetDirectoryName(fullPath)
@@ -53,15 +56,8 @@ public sealed class AudioFileDownloader
             savedValidator = null;
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, authorizedDownloadUri);
-        if (existingBytes > 0)
-        {
-            request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingBytes, null);
-            request.Headers.IfRange = savedValidator!.Value.Condition;
-        }
-
-        using var response = await _httpClient.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await SendFollowingSafeRedirectsAsync(
+            authorizedDownloadUri, existingBytes, savedValidator, cancellationToken);
 
         // Validate the final transport before handling any status code, including 416.
         // Otherwise an insecure redirect could reach the completed-partial recovery path.
@@ -74,7 +70,8 @@ public sealed class AudioFileDownloader
         // of completion when its total length and representation validator both match.
         if (response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable &&
             existingBytes > 0 && savedValidator is { } completedValidator &&
-            response.Content.Headers.ContentRange is { HasLength: true, Length: long unsatisfiedRangeTotal } &&
+            response.Content.Headers.ContentRange is { HasLength: true, Length: long unsatisfiedRangeTotal } unsatisfiedRange &&
+            string.Equals(unsatisfiedRange.Unit, "bytes", StringComparison.OrdinalIgnoreCase) &&
             unsatisfiedRangeTotal == existingBytes &&
             ResponseMatchesValidator(response, completedValidator))
         {
@@ -85,6 +82,18 @@ public sealed class AudioFileDownloader
             return new AudioDownloadResult(fullPath, existingBytes);
         }
 
+        if (response.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable && existingBytes > 0)
+        {
+            // A 416 that did not satisfy the exact completed-file proof above
+            // means the saved offset/validator cannot safely describe this
+            // representation. Retaining it would resend the same unsatisfiable
+            // range on every retry, so discard the resume state and restart next time.
+            if (File.Exists(partialPath)) File.Delete(partialPath);
+            if (File.Exists(validatorPath)) File.Delete(validatorPath);
+            throw new HttpRequestException(
+                "The server rejected the saved download range. The stale partial download was discarded; retry to start again.");
+        }
+
         response.EnsureSuccessStatusCode();
 
 
@@ -92,13 +101,18 @@ public sealed class AudioFileDownloader
         var append = existingBytes > 0 && isPartialResponse;
         if (append && savedValidator is { } priorValidator &&
             !ResponseMatchesValidator(response, priorValidator))
-            throw new HttpRequestException("The server resumed a different audiobook representation.");
+        {
+            // The retained bytes belong to a different representation. Keeping
+            // them would make every later retry send the same stale If-Range
+            // validator and fail again. Discard both pieces of resume state so
+            // the next attempt starts from byte zero with a fresh response.
+            if (File.Exists(partialPath)) File.Delete(partialPath);
+            if (File.Exists(validatorPath)) File.Delete(validatorPath);
+            throw new HttpRequestException(
+                "The server resumed a different audiobook representation. The stale partial download was discarded; retry to start again.");
+        }
 
         var responseValidator = TryGetValidator(response);
-        if (responseValidator is not null)
-            await WriteValidatorAsync(validatorPath, responseValidator.Value, cancellationToken);
-        else if (!append && File.Exists(validatorPath))
-            File.Delete(validatorPath);
         var startingBytes = append ? existingBytes : 0;
         var responseLength = response.Content.Headers.ContentLength;
         long? expectedFinalLength = responseLength is long length
@@ -108,21 +122,38 @@ public sealed class AudioFileDownloader
         if (isPartialResponse)
         {
             var range = response.Content.Headers.ContentRange;
-            if (range?.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
-                throw new HttpRequestException("The server returned an invalid byte range for this download.");
+            if (range is null ||
+                !string.Equals(range.Unit, "bytes", StringComparison.OrdinalIgnoreCase) ||
+                range.From != startingBytes || range.To is not long rangeEnd || rangeEnd < startingBytes)
+            {
+                DiscardResumeState(partialPath, validatorPath);
+                throw new HttpRequestException("The server returned an invalid byte range for this download. The stale partial download was discarded; retry to start again.");
+            }
 
             if (range.Length is not long partialTotalLength || partialTotalLength <= rangeEnd)
-                throw new HttpRequestException("The server did not provide a verifiable total length for the partial download.");
+            {
+                DiscardResumeState(partialPath, validatorPath);
+                throw new HttpRequestException("The server did not provide a verifiable total length for the partial download. The stale partial download was discarded; retry to start again.");
+            }
 
             var segmentLength = rangeEnd - startingBytes + 1;
             if (responseLength is long declaredSegmentLength && declaredSegmentLength != segmentLength)
-                throw new HttpRequestException("The server's Content-Length does not match its byte range.");
+            {
+                DiscardResumeState(partialPath, validatorPath);
+                throw new HttpRequestException("The server's Content-Length does not match its byte range. The stale partial download was discarded; retry to start again.");
+            }
 
             expectedFinalLength = partialTotalLength;
         }
 
         if (expectedFinalLength is long expected && expected > _maximumBytes)
+        {
+            // A declared oversized representation cannot become valid on retry.
+            // Remove any prior resume bytes and validator so the queue does not
+            // repeatedly request an offset into a file that exceeds our limit.
+            DiscardResumeState(partialPath, validatorPath);
             throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
+        }
 
         // A server that ignores Range returns 200; safely restart rather than append duplicate bytes.
         await using var input = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -136,17 +167,58 @@ public sealed class AudioFileDownloader
         if (append)
             output.Seek(0, SeekOrigin.End);
 
+        // For a fresh 200 response, FileMode.Create has now truncated any old
+        // partial bytes. Persist the new validator only after that truncation:
+        // a crash between these operations must never pair old bytes with the
+        // new representation's validator and resume by splicing two versions.
+        if (responseValidator is not null)
+            await WriteValidatorAsync(validatorPath, responseValidator.Value, cancellationToken);
+        else if (!append && File.Exists(validatorPath))
+            File.Delete(validatorPath);
+
         var buffer = new byte[64 * 1024];
         long received = startingBytes;
-        while (true)
+        var nextDurableCheckpoint = (received / DurableCheckpointInterval + 1) * DurableCheckpointInterval;
+        try
         {
-            var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-            if (read == 0) break;
-            if (read > _maximumBytes - received)
-                throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
-            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            received += read;
-            progress?.Report(new AudioDownloadProgress(received, expectedFinalLength));
+            while (true)
+            {
+                var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+                if (read == 0) break;
+                if (read > _maximumBytes - received)
+                    throw new InvalidDataException("The audiobook exceeds the configured download size limit.");
+                if (expectedFinalLength is long declaredLength && read > declaredLength - received)
+                    throw new InvalidDataException("The download contained more data than the server declared. The partial download was discarded.");
+                await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                received += read;
+                progress?.Report(new AudioDownloadProgress(received, expectedFinalLength));
+
+                // Flush every MiB through the OS file buffers to stable storage. This
+                // bounds data loss after an abrupt process/device stop without forcing
+                // a disk sync for every 64 KiB network read.
+                if (received >= nextDurableCheckpoint)
+                {
+                    await FlushDurablyAsync(output);
+                    nextDurableCheckpoint = (received / DurableCheckpointInterval + 1) * DurableCheckpointInterval;
+                }
+            }
+        }
+        catch (InvalidDataException)
+        {
+            // A size-limit violation is permanent for this representation, not a
+            // transient transport failure. Close the file before deleting it so an
+            // oversized stream cannot leave a partial that every retry extends.
+            await output.DisposeAsync();
+            DiscardResumeState(partialPath, validatorPath);
+            throw;
+        }
+        catch
+        {
+            // Preserve all bytes accepted by the file stream when a transfer is
+            // cancelled or the response stream fails. Dispose alone only guarantees
+            // a normal close; force a durable checkpoint before the queue retries.
+            await FlushDurablyAsync(output);
+            throw;
         }
 
         if (expectedFinalLength is long expectedBytes && received != expectedBytes)
@@ -158,13 +230,89 @@ public sealed class AudioFileDownloader
         if (received == 0)
             throw new InvalidDataException("The audio provider returned an empty download.");
 
-        await output.FlushAsync(cancellationToken);
+        // The final tail may be smaller than the periodic 1 MiB checkpoint.
+        // Force all bytes to stable storage before publishing the completed file,
+        // otherwise a sudden power loss after the rename could leave a truncated
+        // destination that the queue has already marked Completed.
+        await FlushDurablyAsync(output);
         cancellationToken.ThrowIfCancellationRequested();
         output.Close();
         File.Move(partialPath, fullPath, overwrite: true);
         if (File.Exists(validatorPath))
             File.Delete(validatorPath);
         return new AudioDownloadResult(fullPath, received);
+    }
+
+    private async Task<HttpResponseMessage> SendFollowingSafeRedirectsAsync(
+        Uri initialUri,
+        long existingBytes,
+        ResumeValidator? savedValidator,
+        CancellationToken cancellationToken)
+    {
+        var currentUri = initialUri;
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var redirectCount = 0; ; redirectCount++)
+        {
+            if (!visited.Add(currentUri.AbsoluteUri))
+                throw new HttpRequestException("The download provider returned a redirect loop.");
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
+            if (existingBytes > 0)
+            {
+                request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingBytes, null);
+                request.Headers.IfRange = savedValidator!.Value.Condition;
+            }
+
+            var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!IsRedirect(response.StatusCode))
+                return response;
+
+            var location = response.Headers.Location;
+            if (location is null)
+            {
+                response.Dispose();
+                throw new HttpRequestException("The download provider returned a redirect without a Location header.");
+            }
+
+            if (redirectCount >= MaximumRedirects)
+            {
+                response.Dispose();
+                throw new HttpRequestException("The download provider exceeded the maximum number of redirects.");
+            }
+
+            var nextUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
+            if (!nextUri.IsAbsoluteUri ||
+                !string.Equals(nextUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                !string.IsNullOrEmpty(nextUri.UserInfo))
+            {
+                response.Dispose();
+                throw new HttpRequestException("The download redirect target must be HTTPS and must not contain embedded credentials.");
+            }
+
+            response.Dispose();
+            currentUri = nextUri;
+        }
+    }
+
+    private static bool IsRedirect(System.Net.HttpStatusCode statusCode)
+        => statusCode is System.Net.HttpStatusCode.MovedPermanently
+            or System.Net.HttpStatusCode.Redirect
+            or System.Net.HttpStatusCode.RedirectMethod
+            or System.Net.HttpStatusCode.TemporaryRedirect
+            or System.Net.HttpStatusCode.PermanentRedirect;
+
+    private static void DiscardResumeState(string partialPath, string validatorPath)
+    {
+        if (File.Exists(partialPath)) File.Delete(partialPath);
+        if (File.Exists(validatorPath)) File.Delete(validatorPath);
+    }
+
+    private static async Task FlushDurablyAsync(FileStream output)
+    {
+        await output.FlushAsync(CancellationToken.None);
+        output.Flush(flushToDisk: true);
     }
 
     private readonly record struct ResumeValidator(
@@ -181,40 +329,29 @@ public sealed class AudioFileDownloader
             entityTag is not null && !entityTag.IsWeak)
             return new ResumeValidator(
                 new System.Net.Http.Headers.RangeConditionHeaderValue(entityTag), value);
-        if (value.StartsWith("modified:", StringComparison.Ordinal) &&
-            DateTimeOffset.TryParse(value[9..], System.Globalization.CultureInfo.InvariantCulture,
-                System.Globalization.DateTimeStyles.AssumeUniversal, out var modified))
-            return new ResumeValidator(
-                new System.Net.Http.Headers.RangeConditionHeaderValue(modified), value);
+
+        // HTTP-date validators are not necessarily strong. Without an explicit
+        // origin guarantee, If-Range dates can splice representations that changed
+        // within the timestamp's one-second granularity. Discard legacy date state.
         return null;
     }
 
     private static ResumeValidator? TryGetValidator(HttpResponseMessage response)
     {
         var entityTag = response.Headers.ETag;
-        if (entityTag is not null && !entityTag.IsWeak)
-            return new ResumeValidator(
+        return entityTag is not null && !entityTag.IsWeak
+            ? new ResumeValidator(
                 new System.Net.Http.Headers.RangeConditionHeaderValue(entityTag),
-                "etag:" + entityTag);
-        var modified = response.Content.Headers.LastModified;
-        return modified is null ? null : new ResumeValidator(
-            new System.Net.Http.Headers.RangeConditionHeaderValue(modified.Value),
-            "modified:" + modified.Value.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                "etag:" + entityTag)
+            : null;
     }
 
     private static bool ResponseMatchesValidator(
         HttpResponseMessage response, ResumeValidator saved)
-    {
-        if (saved.SerializedValue.StartsWith("etag:", StringComparison.Ordinal))
-            return response.Headers.ETag is { } entityTag &&
-                string.Equals("etag:" + entityTag, saved.SerializedValue, StringComparison.Ordinal);
-        if (saved.SerializedValue.StartsWith("modified:", StringComparison.Ordinal))
-            return response.Content.Headers.LastModified is { } modified &&
-                string.Equals(
-                    "modified:" + modified.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture),
-                    saved.SerializedValue, StringComparison.Ordinal);
-        return false;
-    }
+        => saved.SerializedValue.StartsWith("etag:", StringComparison.Ordinal) &&
+            response.Headers.ETag is { } entityTag &&
+            !entityTag.IsWeak &&
+            string.Equals("etag:" + entityTag, saved.SerializedValue, StringComparison.Ordinal);
 
     private static async Task WriteValidatorAsync(
         string path, ResumeValidator validator, CancellationToken cancellationToken)
