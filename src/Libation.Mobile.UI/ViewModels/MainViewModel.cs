@@ -385,6 +385,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasNowPlayingBook => NowPlayingBook is not null;
+
+    /// <summary>Handles one Android system Back press without tearing down the activity or player.</summary>
+    public bool TryNavigateBack()
+    {
+        if (IsRemovalConfirmationVisible) { CancelPendingRemoval(); return true; }
+        if (_isStatusPickerVisible) { CloseStatusPicker(); return true; }
+        if (_isBookMenuVisible) { CloseBookMenu(); return true; }
+        if (_isSelectionMode) { ExitSelectionMode(); return true; }
+        if (_isChaptersVisible) { CloseChapters(); return true; }
+        if (_isFullPlayerVisible) { CloseFullPlayer(); return true; }
+        if (_isEditVisible) { CancelDetailBookEdit(); return true; }
+        if (_isBookDetailsVisible) { CloseBookDetails(); return true; }
+        if (_isInfoVisible) { CloseBookInfo(); return true; }
+        if (!string.IsNullOrWhiteSpace(SearchText)) { SearchText = string.Empty; return true; }
+        if (_selectedTabIndex != 0) { SelectTab(0); return true; }
+        return false;
+    }
+
     public void SelectTab(int index)
     {
         _selectedTabIndex = Math.Clamp(index, 0, 3);
