@@ -91,7 +91,7 @@ internal static class StartupDiagnostics
         {
             Text = "VØRATH could not start",
             TextSize = 22,
-            Typeface = Android.Graphics.Typeface.DefaultBold
+            Typeface = global::Android.Graphics.Typeface.DefaultBold
         });
 
         root.AddView(new TextView(activity)
@@ -109,7 +109,7 @@ internal static class StartupDiagnostics
         var scroll = new ScrollView(activity);
         scroll.AddView(details);
         root.AddView(scroll, new LinearLayout.LayoutParams(
-            Android.Views.ViewGroup.LayoutParams.MatchParent, 0, 1));
+            global::Android.Views.ViewGroup.LayoutParams.MatchParent, 0, 1));
 
         var dismiss = new Button(activity) { Text = "Dismiss and retry" };
         dismiss.Click += (_, _) =>
