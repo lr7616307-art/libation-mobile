@@ -51,8 +51,11 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         }
         catch (Exception exception)
         {
+            // Do not rethrow here. Android will not create MainActivity when
+            // Application.OnCreate throws, so the saved diagnostic could never
+            // be shown. MainActivity catches any follow-on Avalonia startup error
+            // and renders the native diagnostic screen.
             StartupDiagnostics.Record(this, "AndroidApp.OnCreate", exception);
-            throw;
         }
     }
 }
