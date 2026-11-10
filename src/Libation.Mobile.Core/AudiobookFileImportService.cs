@@ -37,13 +37,22 @@ public sealed class AudiobookFileImportService(LocalAudioImportService audioImpo
         {
             return await Task.Run(() => ReadMetadata(audiobookId, audioPath, fallbackTitle), cancellationToken);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch (Exception)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // A valid audio file remains importable even if its optional tags are damaged.
-            return new AudiobookImportResult(audioPath, fallbackTitle, string.Empty, string.Empty,
-                string.Empty, null, Array.Empty<AudiobookChapter>());
+            TryDeleteImportedFile(audioPath);
+            throw;
         }
+        catch (Exception ex)
+        {
+            TryDeleteImportedFile(audioPath);
+            throw new InvalidDataException("The selected file could not be read as a supported audiobook.", ex);
+        }
+    }
+
+    private static void TryDeleteImportedFile(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (Exception) { /* Cleanup is best-effort; the import still reports failure. */ }
     }
 
     private AudiobookImportResult ReadMetadata(string id, string audioPath, string fallbackTitle)
