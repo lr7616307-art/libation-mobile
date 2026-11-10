@@ -217,7 +217,7 @@ public sealed class MainViewModelTests
         await vm.AddBookAsync();
 
         Assert.Contains("title and author", vm.ErrorMessage);
-        Assert.Equal(3, vm.Books.Count);
+        Assert.Empty(vm.Books);
     }
 
     [Fact]
@@ -334,6 +334,9 @@ public sealed class MainViewModelTests
         using var directory = new TemporaryDirectory();
         var vm = CreateViewModel(directory.Path);
         await vm.InitializeAsync();
+        vm.NewTitle = "A real book";
+        vm.NewAuthor = "An author";
+        await vm.AddBookAsync();
         var notifications = 0;
         vm.PropertyChanged += (_, args) =>
         {
@@ -587,7 +590,10 @@ public sealed class MainViewModelTests
         var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
         var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
         await vm.InitializeAsync();
-        var book = vm.Books[0];
+        vm.NewTitle = "A book";
+        vm.NewAuthor = "An author";
+        await vm.AddBookAsync();
+        var book = Assert.Single(vm.Books);
 
         await vm.SavePlaybackPositionAsync(book.Id, 9000);
 
