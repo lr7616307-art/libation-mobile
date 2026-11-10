@@ -144,7 +144,10 @@ public sealed class DownloadQueueWorkerTests
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
         await queue.EnqueueAsync("book-1");
         await queue.EnqueueAsync("book-2");
-        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent([7, 8, 9])
+        }));
         var source = new ConcurrencyTrackingSource();
         var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
 
