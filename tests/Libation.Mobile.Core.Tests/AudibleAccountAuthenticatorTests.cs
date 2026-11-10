@@ -7,6 +7,18 @@ namespace Libation.Mobile.Core.Tests;
 
 public sealed class AudibleAccountAuthenticatorTests
 {
+    [Fact]
+    public async Task BeginSignIn_AcceptsIndiaMarketplaceCountryCode()
+    {
+        var authenticator = CreateAuthenticator(new InMemorySecretStore());
+
+        var challenge = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "in"));
+
+        Assert.True(challenge.AuthorizationUri.IsAbsoluteUri);
+        Assert.Equal(Uri.UriSchemeHttps, challenge.AuthorizationUri.Scheme);
+        Assert.True(challenge.ExpiresAtUtc > DateTimeOffset.UtcNow);
+    }
+
     [Theory]
     [InlineData("http://www.amazon.com/ap/signin")]
     [InlineData("not-a-url")]
