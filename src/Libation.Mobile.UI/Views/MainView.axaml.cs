@@ -113,7 +113,11 @@ public partial class MainView : UserControl
         _playingAudiobookId = currentBook.Id;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
-        SetPlayerChapterPositions(currentBook);
+        // Older library entries may predate embedded chapter extraction. Read
+        // their local file asynchronously without interrupting restored playback.
+        await _viewModel.LoadChapterMetadataAsync(currentBook.Id);
+        var refreshedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book => book.Id == currentBook.Id) ?? currentBook;
+        SetPlayerChapterPositions(refreshedBook);
         if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
         if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
@@ -179,10 +183,14 @@ public partial class MainView : UserControl
         {
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
-            SetPlayerChapterPositions(book);
             _playingAudiobookId = book.Id;
             await _viewModel.MarkPlaybackStartedAsync(book.Id);
             _viewModel.SetNowPlayingBook(book.Id);
+            // Start audio first; metadata parsing runs off the UI thread and
+            // can populate chapter navigation for older imported files.
+            await _viewModel.LoadChapterMetadataAsync(book.Id);
+            var refreshedBook = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == book.Id) ?? book;
+            SetPlayerChapterPositions(refreshedBook);
             if (PlayPauseButton is not null) PlayPauseButton.Content = "⏸";
             if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "⏸";
             _playbackProgressTimer.Start();
@@ -512,12 +520,7 @@ public partial class MainView : UserControl
     private (long Start, long End) GetCurrentChapterRange(long positionMilliseconds, long durationMilliseconds)
     {
         var book = _playingAudiobookId is null ? null : _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
-        var chapters = AudiobookChapterService.Normalize(book?.Chapters, durationMilliseconds);
-        var index = AudiobookChapterService.FindCurrentChapterIndex(chapters, positionMilliseconds);
-        if (chapters.Count == 0 || index < 0) return (0, Math.Max(0, durationMilliseconds));
-        var start = chapters[index].StartPositionMilliseconds;
-        var end = index + 1 < chapters.Count ? chapters[index + 1].StartPositionMilliseconds : durationMilliseconds;
-        return (start, Math.Max(start, end));
+        return AudiobookChapterService.GetChapterRange(book?.Chapters, positionMilliseconds, durationMilliseconds);
     }
 
     private void SetPlayerChapterPositions(Audiobook book)
@@ -557,10 +560,11 @@ public partial class MainView : UserControl
             ? chapters[currentIndex + 1].StartPositionMilliseconds
             : durationMilliseconds;
         CurrentChapterTitleLabel.Text = current.Title;
-        var chapterRange = end > current.StartPositionMilliseconds
-            ? $"{FormatPlaybackTime(current.StartPositionMilliseconds)} – {FormatPlaybackTime(end)}"
-            : $"from {FormatPlaybackTime(current.StartPositionMilliseconds)}";
-        ChapterProgressLabel.Text = $"Chapter {currentIndex + 1} of {chapters.Count} · {chapterRange}";
+        var chapterDuration = Math.Max(0, end - current.StartPositionMilliseconds);
+        var chapterElapsed = Math.Clamp(positionMilliseconds - current.StartPositionMilliseconds, 0, chapterDuration);
+        ChapterProgressLabel.Text = chapterDuration > 0
+            ? $"Chapter {currentIndex + 1} of {chapters.Count} · {FormatPlaybackTime(chapterElapsed)} / {FormatPlaybackTime(chapterDuration)}"
+            : $"Chapter {currentIndex + 1} of {chapters.Count}";
     }
 
     private static string FormatPlaybackTime(long milliseconds)
