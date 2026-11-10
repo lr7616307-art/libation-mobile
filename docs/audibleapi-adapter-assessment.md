@@ -151,3 +151,23 @@ This is not proof that Audible has no internal or first-party download mechanism
 - The repository's existing `IAuthorizedAudioDownloadSource` contract correctly requires a provider-issued authorized HTTPS media URL and explicitly disallows bypassing access controls or decrypting protected media.
 
 **Status:** no safe production Audible media resolver can be implemented from the verified pinned contract. The correct product behavior is an explicit unsupported/official-handoff state, not a fake download or a speculative endpoint.
+
+
+## Correction: pinned download API surface (2026-11-10)
+
+A subsequent direct source inspection corrected the earlier media-API finding above. The checked-out upstream AudibleApi.csproj declares Version 14.1.2.0, matching this app's AudibleApi 14.1.2 package reference. Its Api.Download.cs exposes these public methods:
+
+- GetDownloadLicenseAsync(asin, quality, chapterTitlesType, drmType, spatial, additionalCodecs) posts a content-license request and returns a parsed ContentLicense only when Audible reports Granted. The returned model includes content metadata and content URL/reference fields, plus license/voucher metadata.
+- WidevineDrmLicense(asin, licenseChallenge) posts the device-generated Widevine challenge and returns the provider's license string.
+- The content download-license request and Widevine CDM license exchange are distinct calls. A granted content license is not itself a Widevine CDM license, and neither response alone proves that media has been downloaded or can be played offline.
+- GetDownloadLicenseAsync contains an AAX fallback path when the content-license request throws. The mobile adapter must explicitly constrain the selected DRM mode and inspect the returned ContentLicense.DrmType; it must not accidentally route a protected Widevine request through a legacy AAX/ADRM fallback and label that result Widevine.
+- The API method internally logs exceptions and some response details. The mobile integration must review/redact sensitive request/response data before enabling verbose logging or persisting provider errors.
+
+The earlier statement in this document that the pinned integration exposes no content-license or Widevine-license methods was incorrect and is superseded by this section. The accurate conclusion is narrower:
+
+**The pinned API has the provider request methods needed to investigate an authorized download flow, but the app has not yet implemented or validated the full Android pipeline.** Remaining work includes verifying the exact ContentLicense DTO fields, account/title entitlement handling, Android device registration profile, Widevine MediaDrm challenge/response compatibility, protected media download, persistent offline key storage, DRM-capable playback, and real-device/offline testing. Do not use the generic downloader to treat a protected encrypted file as completed playable audio.
+
+### Source inspected
+
+- [Pinned AudibleApi project file](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/AudibleApi.csproj) — declares version 14.1.2.0.
+- [Download and DRM license API implementation](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Api.Download.cs) — public GetDownloadLicenseAsync and WidevineDrmLicense methods.
