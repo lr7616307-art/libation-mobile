@@ -25,6 +25,24 @@ public sealed class AudibleAccountAuthenticatorTests
         Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
     }
 
+    [Theory]
+    [InlineData("https://evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.amazon.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.amazon.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
+    public async Task CompleteSignIn_RejectsResponseOutsideSelectedMarketplaceHost(string responseUrl)
+    {
+        var secrets = new InMemorySecretStore();
+        var authenticator = CreateAuthenticator(secrets);
+        var challenge = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "us"));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => authenticator.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
+
+        Assert.Contains("sign-in response", error.Message);
+        Assert.Equal(0, secrets.SetCalls);
+        Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
+    }
+
     [Fact]
     public async Task InvalidResponse_ConsumesOneTimeChallenge()
     {

@@ -38,7 +38,7 @@ public sealed class AudibleAccountAuthenticator(
         lock (gate)
         {
             pending.Clear();
-            pending.Add(id, new PendingLogin(login, expires));
+            pending.Add(id, new PendingLogin(login, expires, locale.LoginUri().Host));
         }
         return Task.FromResult(new ExternalSignInChallenge(id, authorizationUri, expires));
     }
@@ -62,8 +62,13 @@ public sealed class AudibleAccountAuthenticator(
                 if (state.ExpiresAtUtc <= systemDateTime.UtcNow)
                     throw new InvalidOperationException("The Audible sign-in attempt expired. Start again.");
                 if (!Uri.TryCreate(responseUrl, UriKind.Absolute, out var responseUri)
-                    || responseUri.Scheme != Uri.UriSchemeHttps)
-                    throw new InvalidOperationException("The Audible sign-in response must be an absolute HTTPS URL.");
+                    || !string.Equals(responseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+                    || string.IsNullOrWhiteSpace(responseUri.Host)
+                    || !string.IsNullOrEmpty(responseUri.UserInfo)
+                    || !responseUri.IsDefaultPort)
+                    throw new InvalidOperationException("The Audible sign-in response must be an absolute HTTPS URL without embedded credentials.");
+                if (!string.Equals(responseUri.Host, state.ExpectedHost, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("The Audible sign-in response must come from the selected marketplace's Amazon sign-in host.");
                 var createdIdentity = state.Login.Login(responseUrl);
                 var authorization = createdIdentity.Authorization
                     ?? throw new InvalidOperationException("Audible did not return an authorization code.");
@@ -187,5 +192,5 @@ public sealed class AudibleAccountAuthenticator(
         };
     }
 
-    private sealed record PendingLogin(ExternalLogin Login, DateTime ExpiresAtUtc);
+    private sealed record PendingLogin(ExternalLogin Login, DateTime ExpiresAtUtc, string ExpectedHost);
 }
