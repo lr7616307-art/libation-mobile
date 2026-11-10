@@ -14,6 +14,7 @@ public sealed class AudibleLoginActivity : Activity
     internal const string ExpectedHostExtra = "audible.expected_host";
     private WebView? _webView;
     private string _expectedHost = string.Empty;
+    private string _callbackUrl = string.Empty;
     private bool _finished;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -74,7 +75,7 @@ public sealed class AudibleLoginActivity : Activity
         CookieManager.Instance.SetAcceptThirdPartyCookies(_webView, true);
         _webView.SetWebViewClient(new AudibleLoginWebViewClient(
             _expectedHost,
-            url => FinishLogin(url)));
+            url => _callbackUrl = url));
         root.AddView(_webView, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent, 0, 1));
 
@@ -96,6 +97,34 @@ public sealed class AudibleLoginActivity : Activity
         base.OnBackPressed();
     }
 
+    public override void OnWindowFocusChanged(bool hasFocus)
+    {
+        base.OnWindowFocusChanged(hasFocus);
+        if (!hasFocus || _finished || _webView is null) return;
+        _webView.EvaluateJavascript("window.location.href", new UrlEvaluationCallback(
+            url => RunOnUiThread(() => HandleCallbackProbe(url))));
+    }
+
+    private void HandleCallbackProbe(string? encodedUrl)
+    {
+        if (_finished || string.IsNullOrWhiteSpace(encodedUrl)) return;
+        var url = encodedUrl.Trim('"').Replace("\\\\u0026", "&", StringComparison.Ordinal)
+            .Replace("\\\\/", "/", StringComparison.Ordinal);
+        if (!TryValidateCallback(url)) return;
+        FinishLogin(url);
+    }
+
+    private bool TryValidateCallback(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(uri.Host, _expectedHost, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase)
+            || !uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal))
+            return false;
+        return true;
+    }
+
     protected override void OnDestroy()
     {
         if (!_finished) FinishLogin(null);
@@ -108,6 +137,12 @@ public sealed class AudibleLoginActivity : Activity
             _webView = null;
         }
         base.OnDestroy();
+    }
+
+    private sealed class UrlEvaluationCallback(Action<string?> callback) : Java.Lang.Object, IValueCallback
+    {
+        public void OnReceiveValue(Java.Lang.Object? value)
+            => callback(value?.ToString());
     }
 
     private sealed class AudibleLoginWebViewClient(string expectedHost, Action<string> completed) : WebViewClient
