@@ -141,8 +141,10 @@
               <TextBlock Text="Account connection" FontSize="18" FontWeight="SemiBold" />
               <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap" />
               <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="12" Opacity="0.7" />
+              <TextBlock Text="Connect your Amazon India account to sync your Audible library." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+              <Button Content="Sign in with Audible" Click="AudibleSignInClicked" />
+              <Button Content="Disconnect Audible account" Click="AudibleDisconnectClicked" />
               <Button Content="Sync Audible library" IsEnabled="{Binding CanSync}" Click="SyncLibraryClicked" />
-              <TextBlock Text="Sign-in and secure token management are being integrated. This page does not claim an account is connected unless the provider reports it." FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
             </StackPanel>
           </Border>
         </StackPanel>
