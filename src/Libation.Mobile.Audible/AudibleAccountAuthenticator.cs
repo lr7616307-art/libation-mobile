@@ -148,20 +148,6 @@ public sealed class AudibleAccountAuthenticator(
             new DateTimeOffset(expiry));
     }
 
-    private static Uri GetExpectedCallback(Uri authorizationUri)
-    {
-        var returnTo = HttpUtility.ParseQueryString(authorizationUri.Query)["openid.return_to"];
-        if (!Uri.TryCreate(returnTo, UriKind.Absolute, out var callbackUri)
-            || !string.Equals(callbackUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || string.IsNullOrWhiteSpace(callbackUri.Host)
-            || !string.IsNullOrEmpty(callbackUri.UserInfo)
-            || !callbackUri.IsDefaultPort
-            || !string.Equals(callbackUri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Audible did not provide a valid marketplace callback URL.");
-
-        return callbackUri;
-    }
-
     private static AudibleIdentitySnapshot Capture(Identity identity)
     {
         var privateKey = identity.PrivateKey
