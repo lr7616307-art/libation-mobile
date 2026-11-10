@@ -109,7 +109,25 @@ public partial class MainView : UserControl
 
     private async void PlayAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is not Button { DataContext: Audiobook book }) return;
+        if (sender is Button { DataContext: Audiobook book })
+            await PlayAudiobookAsync(book);
+    }
+
+    private async void PlayMenuBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.MenuBook is not { } book) return;
+        _viewModel.CloseBookMenu();
+        await PlayAudiobookAsync(book);
+    }
+
+    private async void PlayDetailBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.DetailBook is { } book)
+            await PlayAudiobookAsync(book);
+    }
+
+    private async Task PlayAudiobookAsync(Audiobook book)
+    {
         if (string.IsNullOrWhiteSpace(book.AudioFilePath))
         {
             _viewModel.ReportAudioStatus("Import an audio file for this audiobook before playing it.");
@@ -820,6 +838,35 @@ public partial class MainView : UserControl
         }
     }
 
+    private void OpenBookDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string audiobookId })
+            _viewModel.OpenBookDetails(audiobookId);
+    }
+    private void CloseBookDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CloseBookDetails();
+    private void DetailBookMenuClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.DetailBook is { } book) _viewModel.OpenBookMenu(book.Id);
+    }
+    private void EditDetailBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.BeginDetailBookEdit();
+    private void CancelDetailEditClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CancelDetailBookEdit();
+    private async void SaveDetailEditClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await _viewModel.SaveDetailBookEditAsync();
+    private async void ChooseCoverFromDetailClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.DetailBook is not { } book) return;
+        await ChooseCoverForBookAsync(book);
+    }
+    private void ShowNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.SetListeningStatusFilter("Not started");
+    private void ShowInProgressClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.SetListeningStatusFilter("In progress");
+    private void ShowFinishedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.SetListeningStatusFilter("Finished");
+
     private void BookOverflowClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book }) _viewModel.OpenBookMenu(book.Id);
@@ -830,7 +877,8 @@ public partial class MainView : UserControl
     private void BeginSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.BeginSelectionMode();
     private void ToggleSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: string audiobookId }) _viewModel.ToggleAudiobookSelection(audiobookId);
+        if (sender is CheckBox { DataContext: Audiobook book })
+            _viewModel.ToggleAudiobookSelection(book.Id);
     }
     private void SelectAllClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectAllLocalAudiobooks();
     private void ExitSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.ExitSelectionMode();
@@ -852,8 +900,8 @@ public partial class MainView : UserControl
     {
         if (_viewModel.MenuBook is not { } book) return;
         _viewModel.CloseBookMenu();
-        _viewModel.BeginEdit(book.Id);
-        _viewModel.SelectTab(0);
+        _viewModel.OpenBookDetails(book.Id);
+        _viewModel.BeginDetailBookEdit();
     }
 
     private async void ChooseCoverFromMenuClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -883,8 +931,7 @@ public partial class MainView : UserControl
         if (files.Count == 0) return;
         await using var stream = await files[0].OpenReadAsync();
         await _viewModel.ImportCoverArtAsync(book.Id, files[0].Name, stream);
-        _viewModel.OpenBookMenu(book.Id);
-        _viewModel.OpenBookInfo();
+        _viewModel.OpenBookDetails(book.Id);
     }
 
     private async Task<bool> ShowConfirmDialogAsync(string message)
