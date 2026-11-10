@@ -3,6 +3,7 @@ using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer;
 using Android.OS;
+using Android.Graphics;
 
 namespace Libation.Mobile.Android;
 
@@ -20,8 +21,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionRestore = "org.libationmobile.app.action.RESTORE";
     public const string ActionSetSleepTimer = "org.libationmobile.app.action.SET_SLEEP_TIMER";
     public const string ActionCancelSleepTimer = "org.libationmobile.app.action.CANCEL_SLEEP_TIMER";
+    public const string ActionSetArtwork = "org.libationmobile.app.action.SET_ARTWORK";
     public const string ExtraFilePath = "file_path";
     public const string ExtraTitle = "title";
+    public const string ExtraArtworkPath = "artwork_path";
     public const string ExtraPosition = "position_ms";
     public const string ExtraSpeed = "playback_speed";
     public const string ExtraAutoPlay = "auto_play";
@@ -33,6 +36,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private IExoPlayer? _player;
     private string _title = "Audiobook";
     private string? _currentFilePath;
+    private string? _coverImagePath;
+    private Bitmap? _coverBitmap;
     private float _playbackSpeed = 1f;
     private Handler? _checkpointHandler;
     private Java.Lang.Runnable? _checkpointRunnable;
@@ -56,6 +61,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _checkpointRunnable = new Java.Lang.Runnable(() =>
         {
             SavePlaybackSnapshot();
+            UpdateNotification();
             if (_checkpointRunnable is not null)
                 _checkpointHandler?.PostDelayed(_checkpointRunnable, 5_000);
         });
@@ -111,6 +117,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                 case ActionCancelSleepTimer:
                     ClearSleepTimer();
                     break;
+                case ActionSetArtwork:
+                    SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
+                    SavePlaybackSnapshot();
+                    UpdateNotification();
+                    break;
             }
         }
         catch (Exception)
@@ -137,6 +148,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (string.IsNullOrWhiteSpace(_title))
             _title = Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
+        SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
 
         // Android requires a service started with startForegroundService() to
@@ -234,6 +246,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var intent = new Intent(this, typeof(AndroidLocalAudioPlaybackService));
         intent.PutExtra(ExtraFilePath, snapshot.FilePath);
         intent.PutExtra(ExtraTitle, snapshot.Title);
+        intent.PutExtra(ExtraArtworkPath, snapshot.CoverImagePath);
         intent.PutExtra(ExtraPosition, snapshot.PositionMilliseconds);
         intent.PutExtra(ExtraSpeed, snapshot.PlaybackSpeed);
         intent.PutExtra(ExtraAutoPlay, snapshot.WasPlaying);
@@ -299,7 +312,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         try
         {
             PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
-                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying));
+                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying, _coverImagePath));
         }
         catch (Exception) { /* A checkpoint must never interrupt audio playback. */ }
     }
@@ -362,15 +375,36 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
         builder.SetSmallIcon(global::Android.Resource.Drawable.StatSysHeadset)
-            .SetContentTitle("VØRATH")
-            .SetContentText(_title)
+            .SetContentTitle(_title)
+            .SetSubText("VØRATH")
+            .SetContentText($"{FormatTime(ReadPosition())} / {FormatTime(ReadDuration())}")
             .SetContentIntent(contentPendingIntent)
             .SetOngoing(_player?.IsPlaying == true)
             .SetOnlyAlertOnce(true)
             .AddAction(global::Android.Resource.Drawable.IcMediaRew, "−15 sec", rewindPendingIntent)
             .AddAction(actionIcon, actionLabel, controlPendingIntent)
             .AddAction(global::Android.Resource.Drawable.IcMediaFf, "+15 sec", forwardPendingIntent);
+        if (_coverBitmap is not null) builder.SetLargeIcon(_coverBitmap);
+        var duration = ReadDuration();
+        if (duration > 0)
+            builder.SetProgress((int)Math.Min(duration, int.MaxValue),
+                (int)Math.Min(ReadPosition(), int.MaxValue), false);
         return builder.Build();
+    }
+
+    private void SetArtwork(string? path)
+    {
+        _coverImagePath = !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? path : null;
+        _coverBitmap?.Recycle();
+        _coverBitmap?.Dispose();
+        _coverBitmap = _coverImagePath is null ? null : BitmapFactory.DecodeFile(_coverImagePath);
+    }
+
+    private static string FormatTime(long milliseconds)
+    {
+        if (milliseconds <= 0) return "--:--";
+        var value = TimeSpan.FromMilliseconds(milliseconds);
+        return value.TotalHours >= 1 ? value.ToString(@"h\\:mm\\:ss") : value.ToString(@"m\\:ss");
     }
 
     private void UpdateNotification()
@@ -429,6 +463,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _sleepTimerRunnable = null;
         _checkpointHandler = null;
         StopPlayback(clearRecovery: false);
+        _coverBitmap?.Recycle();
+        _coverBitmap?.Dispose();
+        _coverBitmap = null;
         if (Current == this) Current = null;
         base.OnDestroy();
     }
