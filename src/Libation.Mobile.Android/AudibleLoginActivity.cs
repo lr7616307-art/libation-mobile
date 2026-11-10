@@ -184,6 +184,16 @@ public sealed class AudibleLoginActivity : Activity
 
     private sealed class AudibleLoginWebViewClient(string expectedHost, Action<string> completed) : WebViewClient
     {
+        // Amazon may submit the final marketplace redirect through a navigation
+        // path that WebView does not expose to ShouldOverrideUrlLoading (notably
+        // POST-driven redirects). Observe the top-level page start as a fallback.
+        public override void OnPageStarted(WebView? view, string? url, Bitmap? favicon)
+        {
+            base.OnPageStarted(view, url, favicon);
+            if (!string.IsNullOrWhiteSpace(url))
+                TryComplete(url);
+        }
+
         public override bool ShouldOverrideUrlLoading(WebView? view, IWebResourceRequest? request)
         {
             var url = request?.Url?.ToString();
