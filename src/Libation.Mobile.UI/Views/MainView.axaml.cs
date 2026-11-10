@@ -49,7 +49,9 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        // XAML-generated named controls can be null on some Android/Avalonia startup paths.
+        // Never let an optional seek control prevent the entire app from opening.
+        PlaybackSeekSlider?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         _activeView = new WeakReference<MainView>(this);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
@@ -78,7 +80,19 @@ public partial class MainView : UserControl
         // catalogue and restoring the playback adapter. This avoids making
         // disk initialization part of the first visible frame.
         Dispatcher.UIThread.Post(
-            async () => await InitializeAndRestorePlaybackAsync(),
+            async () =>
+            {
+                try
+                {
+                    await InitializeAndRestorePlaybackAsync();
+                }
+                catch (Exception ex)
+                {
+                    // A catalogue or playback-restore failure must not crash the UI thread.
+                    System.Diagnostics.Debug.WriteLine($"Audiobook startup initialization failed: {ex}");
+                    _viewModel.ReportAudioStatus("Your library could not be fully loaded. The app is still available; try Reload from Home.");
+                }
+            },
             DispatcherPriority.Background);
     }
 
@@ -425,7 +439,7 @@ public partial class MainView : UserControl
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
-        PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        PlaybackSeekSlider?.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         _playbackCheckpointTimer.Tick -= PlaybackCheckpointTimerTick;
