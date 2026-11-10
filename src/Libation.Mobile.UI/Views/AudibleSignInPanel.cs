@@ -16,7 +16,7 @@ internal static class AudibleSignInPanel
     {
         var marketplace = new TextBox
         {
-            PlaceholderText = "Audible marketplace, e.g. www.amazon.in",
+            PlaceholderText = "Audible marketplace country code, e.g. in, us, uk",
             Text = viewModel.Marketplace
         };
         marketplace.Bind(TextBox.TextProperty,
