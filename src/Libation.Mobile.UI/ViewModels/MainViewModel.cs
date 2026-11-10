@@ -42,6 +42,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _sortAscending = true;
     private int _catalogueFilterIndex;
     private Audiobook? _selectedBook;
+    private Audiobook? _nowPlayingBook;
 
     private static readonly Audiobook[] InitialSamples = [];
 
@@ -66,6 +67,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(SelectedBookChapterCountLabel));
         }
     }
+    public Audiobook? NowPlayingBook
+    {
+        get => _nowPlayingBook;
+        private set
+        {
+            if (_nowPlayingBook == value) return;
+            _nowPlayingBook = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(NowPlayingChapterCountLabel));
+        }
+    }
+    public string NowPlayingChapterCountLabel => NowPlayingBook is null
+        ? "Import an audiobook to begin listening"
+        : $"{NowPlayingBook.Chapters.Count} chapters";
+    public void SetNowPlayingBook(string audiobookId)
+        => NowPlayingBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
+
     public bool HasSelectedBook => SelectedBook is not null;
     public string SelectedBookAudioLabel => SelectedBook is null ? string.Empty :
         string.IsNullOrWhiteSpace(SelectedBook.AudioFilePath) ? "Audio not imported on this device" : "Local audio is ready to play";
