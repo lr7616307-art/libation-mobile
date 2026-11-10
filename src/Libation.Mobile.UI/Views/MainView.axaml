@@ -23,28 +23,28 @@
                 <StackPanel Spacing="5">
                   <TextBlock Text="{Binding AllCount}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                   <TextBlock Text="All" FontSize="12" HorizontalAlignment="Center"/>
-                  <Border Height="2" Background="#E9D5FF" IsVisible="{Binding IsAllFilter}"/>
+                  <Border Height="2" Background="#8A8790" IsVisible="{Binding IsAllFilter}"/>
                 </StackPanel>
               </Button>
               <Button Grid.Column="1" Classes="quiet-nav" MinWidth="0" Padding="2,10" Background="Transparent" BorderThickness="0" Click="ShowNotStartedClicked">
                 <StackPanel Spacing="5">
                   <TextBlock Text="{Binding NotStartedCount}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                   <TextBlock Text="Not started" FontSize="12" HorizontalAlignment="Center"/>
-                  <Border Height="2" Background="#E9D5FF" IsVisible="{Binding IsNotStartedFilter}"/>
+                  <Border Height="2" Background="#8A8790" IsVisible="{Binding IsNotStartedFilter}"/>
                 </StackPanel>
               </Button>
               <Button Grid.Column="2" Classes="quiet-nav" MinWidth="0" Padding="2,10" Background="Transparent" BorderThickness="0" Click="ShowInProgressClicked">
                 <StackPanel Spacing="5">
                   <TextBlock Text="{Binding InProgressCount}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                   <TextBlock Text="In progress" FontSize="12" HorizontalAlignment="Center"/>
-                  <Border Height="2" Background="#E9D5FF" IsVisible="{Binding IsInProgressFilter}"/>
+                  <Border Height="2" Background="#8A8790" IsVisible="{Binding IsInProgressFilter}"/>
                 </StackPanel>
               </Button>
               <Button Grid.Column="3" Classes="quiet-nav" MinWidth="0" Padding="2,10" Background="Transparent" BorderThickness="0" Click="ShowFinishedClicked">
                 <StackPanel Spacing="5">
                   <TextBlock Text="{Binding FinishedCount}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                   <TextBlock Text="Finished" FontSize="12" HorizontalAlignment="Center"/>
-                  <Border Height="2" Background="#E9D5FF" IsVisible="{Binding IsFinishedFilter}"/>
+                  <Border Height="2" Background="#8A8790" IsVisible="{Binding IsFinishedFilter}"/>
                 </StackPanel>
               </Button>
             </Grid>
@@ -421,28 +421,28 @@
           <StackPanel HorizontalAlignment="Center" Spacing="4">
             <TextBlock Text="⌂" FontSize="21" HorizontalAlignment="Center"/>
             <TextBlock Text="Home" FontSize="11" HorizontalAlignment="Center"/>
-            <Border Height="2" Background="#E9D5FF" IsVisible="{Binding IsHomeTab}"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsHomeTab}"/>
           </StackPanel>
         </Button>
         <Button Grid.Column="1" Classes="quiet-nav" MinWidth="0" Padding="2,7" Background="Transparent" BorderThickness="0" Click="AudibleLibraryTabClicked">
           <StackPanel HorizontalAlignment="Center" Spacing="4">
             <TextBlock Text="▤" FontSize="21" HorizontalAlignment="Center"/>
             <TextBlock Text="Library" FontSize="11" HorizontalAlignment="Center"/>
-            <Border Height="2" Background="#E9D5FF" IsVisible="{Binding IsAudibleLibraryTab}"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsAudibleLibraryTab}"/>
           </StackPanel>
         </Button>
         <Button Grid.Column="2" Classes="quiet-nav" MinWidth="0" Padding="2,7" Background="Transparent" BorderThickness="0" Click="AudibleAccountTabClicked">
           <StackPanel HorizontalAlignment="Center" Spacing="4">
             <TextBlock Text="♙" FontSize="21" HorizontalAlignment="Center"/>
             <TextBlock Text="Account" FontSize="11" HorizontalAlignment="Center"/>
-            <Border Height="2" Background="#E9D5FF" IsVisible="{Binding IsAudibleAccountTab}"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsAudibleAccountTab}"/>
           </StackPanel>
         </Button>
         <Button Grid.Column="3" Classes="quiet-nav" MinWidth="0" Padding="2,7" Background="Transparent" BorderThickness="0" Click="SettingsTabClicked">
           <StackPanel HorizontalAlignment="Center" Spacing="4">
             <TextBlock Text="⚙" FontSize="21" HorizontalAlignment="Center"/>
             <TextBlock Text="Settings" FontSize="11" HorizontalAlignment="Center"/>
-            <Border Height="2" Background="#E9D5FF" IsVisible="{Binding IsSettingsTab}"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsSettingsTab}"/>
           </StackPanel>
         </Button>
       </Grid>
