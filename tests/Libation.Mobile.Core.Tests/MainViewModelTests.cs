@@ -600,6 +600,81 @@ public sealed class MainViewModelTests
         Assert.Equal(0, vm.GetResumePositionMilliseconds(book.Id));
     }
 
+    [Fact]
+    public async Task NavigateBack_DismissesBookInfoBeforeBookMenu()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("manual:1", "Test book", "Test author", "", "1h", "Manually added")
+        ]);
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.SelectTab(1);
+
+        vm.OpenBookMenu("manual:1");
+        vm.OpenBookInfo();
+
+        Assert.True(vm.IsBookMenuVisible);
+        Assert.True(vm.IsInfoVisible);
+
+        Assert.True(vm.NavigateBack());
+        Assert.False(vm.IsInfoVisible);
+        Assert.True(vm.IsBookMenuVisible);
+
+        Assert.True(vm.NavigateBack());
+        Assert.False(vm.IsBookMenuVisible);
+        Assert.True(vm.IsAudibleLibraryTab);
+    }
+
+    [Fact]
+    public async Task NavigateBack_AfterSelectionModeDoesNotReopenBookMenu()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("manual:1", "Test book", "Test author", "", "1h", "Manually added")
+        ]);
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.OpenBookMenu("manual:1");
+
+        vm.BeginSelectionMode();
+
+        Assert.True(vm.IsSelectionMode);
+        Assert.False(vm.IsBookMenuVisible);
+        Assert.True(vm.NavigateBack());
+        Assert.False(vm.IsSelectionMode);
+        Assert.False(vm.IsBookMenuVisible);
+        Assert.False(vm.NavigateBack());
+    }
+
+    [Fact]
+    public async Task SaveDetailBookEdit_DoesNotLeaveAnExtraBackStep()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("manual:1", "Original title", "Test author", "", "1h", "Manually added")
+        ]);
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.SelectTab(1);
+
+        vm.OpenBookDetails("manual:1");
+        vm.BeginDetailBookEdit();
+        vm.NewTitle = "Updated title";
+        await vm.SaveDetailBookEditAsync();
+
+        Assert.True(vm.IsBookDetailsVisible);
+        Assert.False(vm.IsEditVisible);
+        Assert.Equal("Updated title", vm.DetailBook?.Title);
+
+        Assert.True(vm.NavigateBack());
+        Assert.False(vm.IsBookDetailsVisible);
+        Assert.True(vm.IsAudibleLibraryTab);
+    }
+
     private static MainViewModel CreateViewModel(string directory)
         => new(new JsonLibraryRepository(Path.Combine(directory, "library.json")),
             new JsonDownloadQueue(Path.Combine(directory, "queue.json")));
