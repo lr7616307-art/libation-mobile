@@ -80,6 +80,7 @@ public partial class MainView : UserControl
         _playingAudiobookId = currentBook.Id;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
+        if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "Ⅱ" : "▶";
         if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "Ⅱ" : "▶";
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
         if (_localAudioPlayer.IsPlaying)
@@ -126,6 +127,8 @@ public partial class MainView : UserControl
             _playingAudiobookId = book.Id;
             _viewModel.SetNowPlayingBook(book.Id);
             if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
+            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
+            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
             _playbackProgressTimer.Start();
             _viewModel.ReportAudioStatus("Playing: " + book.Title);
             UpdatePlaybackProgressUi();
@@ -143,6 +146,7 @@ public partial class MainView : UserControl
         {
             _localAudioPlayer.Pause();
             if (PlayPauseButton is not null) PlayPauseButton.Content = "▶";
+            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "▶";
             _playbackProgressTimer.Stop();
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
             UpdatePlaybackProgressUi();
@@ -776,6 +780,44 @@ public partial class MainView : UserControl
     {
         if (sender is Button { DataContext: DownloadQueueItem item })
             await _viewModel.RemoveFromQueueAsync(item.AudiobookId);
+    }
+
+    private void HomeTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectTab(0);
+    private void AudibleLibraryTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectTab(1);
+    private void AudibleAccountTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectTab(2);
+    private void SettingsTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectTab(3);
+
+    private void OpenFullPlayerClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        _viewModel.OpenFullPlayer();
+        UpdatePlaybackProgressUi();
+    }
+
+    private void CloseFullPlayerClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CloseFullPlayer();
+
+    private void OpenChaptersClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.OpenChapters();
+
+    private void CloseChaptersClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CloseChapters();
+
+    private async void ChapterSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: long startPositionMilliseconds } || _localAudioPlayer is null || _playingAudiobookId is null)
+            return;
+        try
+        {
+            _localAudioPlayer.Seek(startPositionMilliseconds);
+            await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, startPositionMilliseconds);
+            _viewModel.CloseChapters();
+            UpdatePlaybackProgressUi();
+            _viewModel.ReportAudioStatus("Jumped to selected chapter.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not open that chapter.");
+        }
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
