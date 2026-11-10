@@ -95,7 +95,7 @@ public sealed class MainViewModelTests
             new LibrarySyncService(new FakeCatalogProvider([]), repository));
 
         await vm.InitializeAsync();
-        Assert.Equal(3, vm.Books.Count);
+        Assert.Empty(vm.Books);
 
         await vm.SyncLibraryAsync();
 
@@ -245,15 +245,11 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task Delete_RemovesManualEntryButProtectsDemoEntries()
+    public async Task Delete_RemovesImportedEntry()
     {
         using var directory = new TemporaryDirectory();
         var vm = CreateViewModel(directory.Path);
         await vm.InitializeAsync();
-        var demo = vm.Books.First(x => x.Status == "Demo");
-        await vm.RemoveBookAsync(demo.Id);
-        Assert.Contains(vm.Books, x => x.Id == demo.Id);
-
         vm.NewTitle = "To delete";
         vm.NewAuthor = "Author";
         await vm.AddBookAsync();
@@ -321,6 +317,10 @@ public sealed class MainViewModelTests
         var vm = CreateViewModel(directory.Path);
         await vm.InitializeAsync();
 
+        vm.NewTitle = "Project Hail Mary";
+        vm.NewAuthor = "Andy Weir";
+        vm.NewNarrator = "Ray Porter";
+        await vm.AddBookAsync();
         vm.SearchText = "Ray Porter";
         Assert.Contains(vm.Books, x => x.Title == "Project Hail Mary");
         Assert.Single(vm.Books);
@@ -352,16 +352,19 @@ public sealed class MainViewModelTests
         using var directory = new TemporaryDirectory();
         var vm = CreateViewModel(directory.Path);
         await vm.InitializeAsync();
+        vm.NewTitle = "Project Hail Mary";
+        vm.NewAuthor = "Andy Weir";
+        await vm.AddBookAsync();
 
         vm.SearchText = "Atomic Habits";
         Assert.Empty(vm.Books);
         Assert.Equal("No matching audiobooks. Try another title, author or narrator.", vm.EmptyMessage);
-        Assert.Equal("0 of 3 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 of 1 audiobooks", vm.CatalogueSummaryLabel);
 
         vm.SearchText = "Project Hail Mary";
         Assert.Single(vm.Books);
         Assert.Empty(vm.EmptyMessage);
-        Assert.Equal("1 of 3 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("1 of 1 audiobooks", vm.CatalogueSummaryLabel);
     }
 
     [Fact]
@@ -477,6 +480,12 @@ public sealed class MainViewModelTests
         using var directory = new TemporaryDirectory();
         var vm = CreateViewModel(directory.Path);
         await vm.InitializeAsync();
+        vm.NewTitle = "Project Hail Mary";
+        vm.NewAuthor = "Andy Weir";
+        await vm.AddBookAsync();
+        vm.NewTitle = "The Three-Body Problem";
+        vm.NewAuthor = "Cixin Liu";
+        await vm.AddBookAsync();
         Assert.Equal("Project Hail Mary", vm.Books[0].Title);
         vm.ToggleSort();
         Assert.Equal("The Three-Body Problem", vm.Books[0].Title);
@@ -498,10 +507,9 @@ public sealed class MainViewModelTests
         Assert.Equal("Manual entry", vm.Books[0].Title);
         vm.CycleCatalogueFilter();
         Assert.Equal("Filter: Demo", vm.FilterLabel);
-        Assert.Equal(3, vm.Books.Count);
-        Assert.All(vm.Books, book => Assert.Equal("Demo", book.Status));
+        Assert.Empty(vm.Books);
         vm.CycleCatalogueFilter();
-        Assert.Equal(4, vm.Books.Count);
+        Assert.Single(vm.Books);
     }
 
     [Fact]
@@ -512,6 +520,9 @@ public sealed class MainViewModelTests
         var importService = new LocalAudioImportService(Path.Combine(directory.Path, "audio"));
         var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")), audioImportService: importService);
         await vm.InitializeAsync();
+        vm.NewTitle = "Project Hail Mary";
+        vm.NewAuthor = "Andy Weir";
+        await vm.AddBookAsync();
         var book = Assert.Single(vm.Books.Where(x => x.Title == "Project Hail Mary"));
         await using var audio = new MemoryStream([1, 2, 3, 4, 5]);
 
@@ -532,6 +543,9 @@ public sealed class MainViewModelTests
         var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
             audioImportService: new LocalAudioImportService(Path.Combine(directory.Path, "audio")));
         await vm.InitializeAsync();
+        vm.NewTitle = "Test book";
+        vm.NewAuthor = "Test author";
+        await vm.AddBookAsync();
         var book = vm.Books[0];
         await using var audio = new MemoryStream([1, 2, 3]);
 
@@ -549,6 +563,9 @@ public sealed class MainViewModelTests
         var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
             audioImportService: new LocalAudioImportService(Path.Combine(directory.Path, "audio")));
         await vm.InitializeAsync();
+        vm.NewTitle = "Project Hail Mary";
+        vm.NewAuthor = "Andy Weir";
+        await vm.AddBookAsync();
         var book = vm.Books.First(x => x.Title == "Project Hail Mary");
         await using var audio = new MemoryStream([1, 2, 3]);
         await vm.ImportAudioAsync(book.Id, "sample.m4b", audio);
