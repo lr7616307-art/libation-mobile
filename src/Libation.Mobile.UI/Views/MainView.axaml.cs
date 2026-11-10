@@ -128,7 +128,6 @@ public partial class MainView : UserControl
             _viewModel.SetNowPlayingBook(book.Id);
             if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
             if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
-            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
             _playbackProgressTimer.Start();
             _viewModel.ReportAudioStatus("Playing: " + book.Title);
             UpdatePlaybackProgressUi();
@@ -165,6 +164,7 @@ public partial class MainView : UserControl
         {
             _localAudioPlayer.Resume();
             if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
+            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
             _playbackProgressTimer.Start();
             var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
             if (book is not null) _viewModel.ReportAudioStatus("Playing: " + book.Title);
