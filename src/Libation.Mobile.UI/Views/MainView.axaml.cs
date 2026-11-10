@@ -830,7 +830,7 @@ public partial class MainView : UserControl
     private void BeginSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.BeginSelectionMode();
     private void ToggleSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is CheckBox { DataContext: Audiobook book }) _viewModel.ToggleAudiobookSelection(book.Id);
+        if (sender is Button { Tag: string audiobookId }) _viewModel.ToggleAudiobookSelection(audiobookId);
     }
     private void SelectAllClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectAllLocalAudiobooks();
     private void ExitSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.ExitSelectionMode();
