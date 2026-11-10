@@ -41,6 +41,8 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
             MainView.PlatformLibraryCatalogProviderFactory =
                 () => new SavedIdentityAudibleCatalogProvider(snapshots);
             MainView.PlatformLocalAudioPlayerFactory = () => new AndroidLocalAudioPlayer();
+            MainView.PlatformStartupExceptionReporter =
+                (phase, exception) => StartupDiagnostics.Record(this, phase, exception);
             MainView.PlatformWidevineDiagnosticFactory = () =>
             {
                 var result = new AndroidWidevineCapabilityProbe().Probe();
