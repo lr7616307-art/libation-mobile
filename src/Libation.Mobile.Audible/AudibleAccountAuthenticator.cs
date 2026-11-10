@@ -72,9 +72,10 @@ public sealed class AudibleAccountAuthenticator(
                 if (!Uri.TryCreate(responseUrl, UriKind.Absolute, out var responseUri)
                     || !string.Equals(responseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
                     || string.IsNullOrWhiteSpace(responseUri.Host)
-                    || !string.IsNullOrEmpty(responseUri.UserInfo)
-                    || !responseUri.IsDefaultPort)
+                    || !string.IsNullOrEmpty(responseUri.UserInfo))
                     throw new InvalidOperationException("The Audible sign-in response must be an absolute HTTPS URL without embedded credentials.");
+                if (!responseUri.IsDefaultPort)
+                    throw new InvalidOperationException("The Audible sign-in response does not match the selected marketplace callback.");
 
                 var authorizationCode = HttpUtility.ParseQueryString(responseUri.Query)["openid.oa2.authorization_code"];
                 if (!string.Equals(responseUri.Host, state.ExpectedHost, StringComparison.OrdinalIgnoreCase)
