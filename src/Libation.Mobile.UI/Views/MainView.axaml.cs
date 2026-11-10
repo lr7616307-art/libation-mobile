@@ -181,6 +181,7 @@ public partial class MainView : UserControl
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
             SetPlayerChapterPositions(book);
             _playingAudiobookId = book.Id;
+            await _viewModel.MarkPlaybackStartedAsync(book.Id);
             _viewModel.SetNowPlayingBook(book.Id);
             if (PlayPauseButton is not null) PlayPauseButton.Content = "⏸";
             if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "⏸";
