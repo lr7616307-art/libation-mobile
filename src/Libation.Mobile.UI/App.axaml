@@ -35,7 +35,7 @@
       <Setter Property="FontWeight" Value="Normal" />
     </Style>
     <Style Selector="Button.quiet-nav:pointerover">
-      <Setter Property="Background" Value="#171321" />
+      <Setter Property="Background" Value="Transparent" />
     </Style>
     <Style Selector="Button.quiet-nav:pressed">
       <Setter Property="Background" Value="#211A2D" />
