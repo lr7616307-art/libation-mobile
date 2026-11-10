@@ -77,12 +77,12 @@ jobs:
             echo "APK: $(basename "$apk")"
             echo "Size: $bytes bytes ($mib MiB)"
             sha256sum "$apk"
-          } | tee APK-SIZE.txt
+          } | tee "$apk_dir/APK-SIZE.txt"
       - name: Upload APK and size report
         uses: actions/upload-artifact@v4
         with:
           name: vorath-${{ matrix.name }}-${{ matrix.variant }}
           path: |
             src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*.apk
-            APK-SIZE.txt
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/APK-SIZE.txt
           if-no-files-found: error
