@@ -59,7 +59,9 @@ public partial class MainView : UserControl
             syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory));
         InitializeComponent();
         DataContext = _viewModel;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        // Some Android/XAML initialization paths can leave the named slider unavailable.
+        // It is optional during startup; do not let it crash construction of the whole library screen.
+        PlaybackSeekSlider?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
