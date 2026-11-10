@@ -14,7 +14,6 @@ public sealed class AudibleLoginActivity : Activity
     internal const string ExpectedHostExtra = "audible.expected_host";
     private WebView? _webView;
     private string _expectedHost = string.Empty;
-    private string _callbackUrl = string.Empty;
     private bool _finished;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -75,7 +74,7 @@ public sealed class AudibleLoginActivity : Activity
         CookieManager.Instance.SetAcceptThirdPartyCookies(_webView, true);
         _webView.SetWebViewClient(new AudibleLoginWebViewClient(
             _expectedHost,
-            url => FinishLogin(url)));
+            url => RunOnUiThread(() => FinishLogin(url))));
         root.AddView(_webView, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent, 0, 1));
 
@@ -108,21 +107,31 @@ public sealed class AudibleLoginActivity : Activity
     private void HandleCallbackProbe(string? encodedUrl)
     {
         if (_finished || string.IsNullOrWhiteSpace(encodedUrl)) return;
-        var url = encodedUrl.Trim('"').Replace("\\\\u0026", "&", StringComparison.Ordinal)
-            .Replace("\\\\/", "/", StringComparison.Ordinal);
-        if (!TryValidateCallback(url)) return;
-        FinishLogin(url);
+        var url = encodedUrl.Trim('"')
+            .Replace("\\\\u0026", "&", StringComparison.Ordinal)
+            .Replace("\\\\/", "/", StringComparison.Ordinal)
+            .Replace("\\u0026", "&", StringComparison.Ordinal)
+            .Replace("\\/", "/", StringComparison.Ordinal);
+        if (TryValidateCallback(url))
+            FinishLogin(url);
     }
 
     private bool TryValidateCallback(string url)
+        => TryParseCallback(url, _expectedHost);
+
+    private static bool TryParseCallback(string url, string expectedHost)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            || !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(uri.Host, _expectedHost, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase)
-            || !uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal))
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(uri.Host, expectedHost, StringComparison.OrdinalIgnoreCase)
+            || !uri.IsDefaultPort
+            || !string.IsNullOrEmpty(uri.UserInfo))
             return false;
-        return true;
+
+        var path = uri.AbsolutePath.TrimEnd('/');
+        var isMarketplaceLanding = string.Equals(path, "/ap/maplanding", StringComparison.OrdinalIgnoreCase);
+        var hasAuthorizationCode = uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal);
+        return isMarketplaceLanding && hasAuthorizationCode;
     }
 
     protected override void OnDestroy()
@@ -156,13 +165,33 @@ public sealed class AudibleLoginActivity : Activity
         public override bool ShouldOverrideUrlLoading(WebView? view, string? url)
             => !string.IsNullOrWhiteSpace(url) && TryComplete(url);
 
+        public override void OnPageFinished(WebView? view, string? url)
+        {
+            base.OnPageFinished(view, url);
+            if (!string.IsNullOrWhiteSpace(url) && TryComplete(url))
+                return;
+
+            // Amazon sometimes reaches the final landing page as a committed
+            // navigation rather than a cancellable URL override. Probe the
+            // committed URL after page finish instead of leaving the account
+            // authorization page visible indefinitely.
+            view?.EvaluateJavascript("window.location.href", new UrlEvaluationCallback(
+                value =>
+                {
+                    if (string.IsNullOrWhiteSpace(value)) return;
+                    var decoded = value.Trim('"')
+                        .Replace("\\\\u0026", "&", StringComparison.Ordinal)
+                        .Replace("\\\\/", "/", StringComparison.Ordinal)
+                        .Replace("\\u0026", "&", StringComparison.Ordinal)
+                        .Replace("\\/", "/", StringComparison.Ordinal);
+                    if (TryComplete(decoded))
+                        completed(decoded);
+                }));
+        }
+
         private bool TryComplete(string url)
         {
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
-                || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(uri.Host, expectedHost, StringComparison.OrdinalIgnoreCase)
-                || !uri.AbsolutePath.Contains("maplanding", StringComparison.OrdinalIgnoreCase)
-                || !uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal))
+            if (!TryParseCallback(url, expectedHost))
                 return false;
 
             completed(url);
