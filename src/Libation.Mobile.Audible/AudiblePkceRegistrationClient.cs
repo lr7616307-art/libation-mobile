@@ -2,6 +2,9 @@ using AudibleApi;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Globalization;
 
 namespace Libation.Mobile.Audible;
 
@@ -71,12 +74,32 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 CodeAlgorithm = "SHA-256",
                 ClientDomain = "DeviceLegacy"
             },
-            RequestedExtensions = ["device_info", "customer_info"]
+            RequestedExtensions = ["device_info", "customer_info"],
+            DeviceMetadata = new AndroidDeviceMetadata
+            {
+                DeviceOsFamily = "android",
+                DeviceType = AudibleOAuthFlow.AndroidDeviceType,
+                DeviceSerial = challenge.DeviceSerial,
+                Manufacturer = "Android",
+                Model = profile.Model,
+                OsVersion = GetAndroidMajorVersion(profile.OsVersion),
+                Product = profile.Model
+            },
+            UserContextMap = new Dictionary<string, string>
+            {
+                ["frc"] = CreateAndroidFrc(challenge.DeviceSerial, profile)
+            }
         };
 
-        using var response = await httpClient.PostAsJsonAsync(
-            $"https://api.{amazonDomain}/auth/register", request, JsonOptions, cancellationToken)
-            .ConfigureAwait(false);
+        using var message = new HttpRequestMessage(HttpMethod.Post, "https://api." + amazonDomain + "/auth/register")
+        {
+            Content = JsonContent.Create(request, options: JsonOptions)
+        };
+        message.Headers.TryAddWithoutValidation("Accept", "application/json");
+        message.Headers.TryAddWithoutValidation("x-amzn-identity-auth-domain", "api." + amazonDomain);
+        message.Headers.TryAddWithoutValidation("User-Agent",
+            "Mozilla/5.0 (Linux; Android " + profile.OsVersion + "; " + profile.Model + ") AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.0.0 Mobile Safari/537.36");
+        using var response = await httpClient.SendAsync(message, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException(
@@ -145,6 +168,19 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         [JsonPropertyName("registration_data")] public required RegistrationData RegistrationData { get; init; }
         [JsonPropertyName("auth_data")] public required RegistrationAuthData AuthData { get; init; }
         [JsonPropertyName("requested_extensions")] public required string[] RequestedExtensions { get; init; }
+        [JsonPropertyName("device_metadata")] public required AndroidDeviceMetadata DeviceMetadata { get; init; }
+        [JsonPropertyName("user_context_map")] public required Dictionary<string, string> UserContextMap { get; init; }
+    }
+
+    private sealed class AndroidDeviceMetadata
+    {
+        [JsonPropertyName("device_os_family")] public required string DeviceOsFamily { get; init; }
+        [JsonPropertyName("device_type")] public required string DeviceType { get; init; }
+        [JsonPropertyName("device_serial")] public required string DeviceSerial { get; init; }
+        [JsonPropertyName("manufacturer")] public required string Manufacturer { get; init; }
+        [JsonPropertyName("model")] public required string Model { get; init; }
+        [JsonPropertyName("os_version")] public required string OsVersion { get; init; }
+        [JsonPropertyName("product")] public required string Product { get; init; }
     }
 
     private sealed class RegistrationCookies
