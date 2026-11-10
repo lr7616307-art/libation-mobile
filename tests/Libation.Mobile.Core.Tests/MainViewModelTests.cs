@@ -357,6 +357,35 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task MarkPlaybackStartedAsync_ChangesNotStartedBookToInProgressAndPersistsCounts()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("local-1", "Test audiobook", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "test-audio.mp3",
+                ListeningStatus = "Not started"
+            }
+        ]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+
+        Assert.Equal(1, vm.NotStartedCount);
+        Assert.Equal(0, vm.InProgressCount);
+
+        await vm.MarkPlaybackStartedAsync("local-1");
+
+        Assert.Equal(0, vm.NotStartedCount);
+        Assert.Equal(1, vm.InProgressCount);
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("In progress", Assert.Single(await repository.GetBooksAsync()).ListeningStatus);
+
+        vm.SetListeningStatusFilter("In progress");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+    }
+
+    [Fact]
     public async Task Search_FiltersByTitleAuthorAndNarrator()
     {
         using var directory = new TemporaryDirectory();
