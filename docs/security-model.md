@@ -17,7 +17,7 @@ The sign-in flow is user-assisted and browser-based:
 - The user completes Amazon/Audible sign-in and pastes the final address-bar URL into the app.
 - The app does not collect the Amazon password in an embedded form.
 - The response URL is treated as a short-lived credential-bearing value and is not logged, persisted, exported, or placed in Android intents.
-- The pending challenge is one-time and expires. Cancellation and failed registration/persistence leave the app disconnected.
+- The pending challenge is one-time and expires. Cancellation and failed registration/persistence do not commit a new identity or report the new sign-in as successful; an already saved identity is not silently replaced.
 
 Before the pinned upstream OAuth parser is called, the mobile authenticator validates that the response is an absolute HTTPS URL with no embedded user information, uses the default port, and has the exact host associated with the selected marketplace login attempt. This rejects unrelated and deceptive suffix hosts. The upstream parser extracts the authorization-code query parameter but does not itself validate the host; marketplace host binding is enforced by the mobile layer.
 
