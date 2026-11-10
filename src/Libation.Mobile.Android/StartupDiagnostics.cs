@@ -124,11 +124,12 @@ internal static class StartupDiagnostics
         {
             try
             {
-                new AlertDialog.Builder(activity)
-                    .SetTitle("VØRATH could not start")
-                    .SetMessage($"The diagnostic screen could not be displayed ({exception.GetType().Name}). The failure was recorded in app-private storage when possible.")
-                    .SetPositiveButton("Dismiss", (_, _) => activity.Recreate())
-                    .Show();
+                var builder = new AlertDialog.Builder(activity)
+                    ?? throw new InvalidOperationException("Android could not create the diagnostic alert builder.");
+                builder.SetTitle("VØRATH could not start");
+                builder.SetMessage($"The diagnostic screen could not be displayed ({exception.GetType().Name}). The failure was recorded in app-private storage when possible.");
+                builder.SetPositiveButton("Dismiss", (_, _) => activity.Recreate());
+                builder.Show();
             }
             catch (Exception fallbackException)
             {
