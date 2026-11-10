@@ -75,11 +75,15 @@
                           <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.7"/>
                           <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
                           <TextBlock Text="{Binding Chapters.Count, StringFormat='Chapters · {0}'}" FontSize="11" Foreground="#B9A5E8"/>
-                          <Border CornerRadius="8" Padding="6,3" HorizontalAlignment="Left" Background="{Binding ListeningStatus, Converter={x:Static local:ListeningStatusBrushConverter.Instance}}">
+                          <Border CornerRadius="8" Padding="6,3" HorizontalAlignment="Left" Background="{Binding ListeningStatus, Converter={x:Static local:ListeningStatusBackgroundConverter.Instance}}">
                             <TextBlock Text="{Binding ListeningStatus}" FontSize="10" FontWeight="SemiBold"/>
                           </Border>
                         </StackPanel>
-                        <Button Grid.Column="2" Grid.RowSpan="2" Content="▶" FontSize="20" VerticalAlignment="Center" Click="PlayAudioClicked"/>
+                        <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" Spacing="6">
+                          <Button Content="⋮" FontSize="22" Padding="8,4" Background="Transparent" BorderThickness="0" Click="BookOverflowClicked"/>
+                          <Button Content="▶" FontSize="20" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}"/>
+                          <CheckBox Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Click="ToggleSelectionClicked"/>
+                        </StackPanel>
                       </Grid>
                     </Border>
                   </DataTemplate>
