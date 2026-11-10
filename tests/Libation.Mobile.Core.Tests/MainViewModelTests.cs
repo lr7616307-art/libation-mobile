@@ -600,6 +600,71 @@ public sealed class MainViewModelTests
         Assert.Equal(0, vm.GetResumePositionMilliseconds(book.Id));
     }
 
+    [Fact]
+    public async Task HomeCategories_DefaultToAllAndPlaybackMovesBookThroughStatuses()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var audioImport = new LocalAudioImportService(Path.Combine(directory.Path, "audio"));
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            audioImportService: audioImport);
+        await vm.InitializeAsync();
+
+        vm.NewTitle = "Motivational Lecture";
+        vm.NewAuthor = "Guest Speaker";
+        await vm.AddBookAsync();
+        var book = Assert.Single(vm.Books);
+        await using var audio = new MemoryStream([1, 2, 3, 4]);
+        await vm.ImportAudioAsync(book.Id, "motivational-lecture.mp3", audio);
+
+        Assert.Equal("All", vm.ListeningStatusFilter);
+        Assert.Equal(1, vm.AllCount);
+        Assert.Equal(1, vm.NotStartedCount);
+        Assert.Equal("Not started", (await repository.GetBooksAsync()).Single().ListeningStatus);
+
+        await vm.MarkPlaybackStartedAsync(book.Id);
+        Assert.Equal("In progress", (await repository.GetBooksAsync()).Single().ListeningStatus);
+        Assert.Equal(1, vm.InProgressCount);
+
+        await vm.MarkPlaybackFinishedAsync(book.Id, 1_800_000);
+        var finished = (await repository.GetBooksAsync()).Single();
+        Assert.Equal("Finished", finished.ListeningStatus);
+        Assert.Equal(1_800_000, finished.PlaybackPositionMilliseconds);
+        Assert.Equal(1, vm.FinishedCount);
+
+        vm.SetListeningStatusFilter("All");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+    }
+
+    [Fact]
+    public async Task HomeSearch_FiltersByAudiobookTitleAsUserTypes()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var audioImport = new LocalAudioImportService(Path.Combine(directory.Path, "audio"));
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            audioImportService: audioImport);
+        await vm.InitializeAsync();
+
+        vm.NewTitle = "Deep Space Lecture";
+        vm.NewAuthor = "A. Scientist";
+        await vm.AddBookAsync();
+        var book = Assert.Single(vm.Books);
+        await using var audio = new MemoryStream([1, 2, 3]);
+        await vm.ImportAudioAsync(book.Id, "deep-space.mp3", audio);
+
+        vm.SearchText = "space";
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("Deep Space Lecture", vm.FilteredLocalAudioBooks[0].Title);
+
+        vm.SearchText = "A. Scientist";
+        Assert.Empty(vm.FilteredLocalAudioBooks);
+    }
+
     private static MainViewModel CreateViewModel(string directory)
         => new(new JsonLibraryRepository(Path.Combine(directory, "library.json")),
             new JsonDownloadQueue(Path.Combine(directory, "queue.json")));
