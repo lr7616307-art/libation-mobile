@@ -934,6 +934,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception) { AudioImportStatus = "Could not save playback position."; }
     }
 
+    /// <summary>Automatically move a locally playable audiobook into the In progress state when playback begins.</summary>
+    public async Task MarkPlaybackStartedAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+        if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath) || book.ListeningStatus == "In progress")
+            return;
+
+        try
+        {
+            await _repository.UpsertAsync(book with { ListeningStatus = "In progress" }, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            AudioImportStatus = "Playback started, but listening progress could not be saved.";
+        }
+    }
+
     public long GetResumePositionMilliseconds(string audiobookId)
         => _allBooks.FirstOrDefault(x => x.Id == audiobookId)?.PlaybackPositionMilliseconds ?? 0;
 
