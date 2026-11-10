@@ -116,6 +116,60 @@ public sealed class MainViewModel : INotifyPropertyChanged
         RefreshRecentlyPlayedBooks();
     }
 
+    public async Task<bool> LoadChapterMetadataAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        var book = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+        if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath))
+            return false;
+        if (AudiobookChapterService.Normalize(book.Chapters).Count > 0)
+            return true;
+        if (_audiobookFileImportService is null)
+        {
+            AudioImportStatus = "Chapter metadata reading is unavailable on this platform.";
+            return false;
+        }
+
+        try
+        {
+            AudioImportStatus = "Checking the imported audio file for embedded chapter markers…";
+            var metadata = await _audiobookFileImportService.ReadExistingAsync(
+                book.Id, book.AudioFilePath, book.Title, cancellationToken);
+            var chapters = AudiobookChapterService.Normalize(metadata.Chapters);
+            if (chapters.Count == 0)
+            {
+                AudioImportStatus = "No embedded chapter markers were found. You can add chapter markers manually in audiobook details.";
+                return false;
+            }
+
+            await _repository.UpsertAsync(book with { Chapters = chapters }, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+            if (SelectedBook?.Id == audiobookId)
+                SelectedBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+            if (_detailBook?.Id == audiobookId)
+            {
+                _detailBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+                OnPropertyChanged(nameof(DetailBook));
+                OnPropertyChanged(nameof(DetailChapterLabel));
+                OnPropertyChanged(nameof(HasDetailBookChapters));
+                OnPropertyChanged(nameof(HasNoDetailBookChapters));
+            }
+            SetNowPlayingBook(audiobookId);
+            AudioImportStatus = $"Loaded {chapters.Count} embedded chapter markers for {book.Title}.";
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Chapter metadata read failed: {ex}");
+            AudioImportStatus = "Could not read embedded chapter markers. Playback can continue; add markers manually if needed.";
+            return false;
+        }
+    }
+
     public string AudibleSearchText
     {
         get => _audibleSearchText;
