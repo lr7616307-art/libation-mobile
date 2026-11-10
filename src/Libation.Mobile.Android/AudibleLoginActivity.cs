@@ -1,0 +1,143 @@
+using Android.App;
+using Android.OS;
+using Android.Views;
+using Android.Webkit;
+using Android.Widget;
+using Android.Graphics;
+
+namespace Libation.Mobile.Android;
+
+[Activity(Exported = false, Label = "Audible sign-in", Theme = "@android:style/Theme.Material.NoActionBar")]
+public sealed class AudibleLoginActivity : Activity
+{
+    internal const string AuthorizationUrlExtra = "audible.authorization_url";
+    internal const string ExpectedHostExtra = "audible.expected_host";
+    private WebView? _webView;
+    private string _expectedHost = string.Empty;
+    private bool _finished;
+
+    protected override void OnCreate(Bundle? savedInstanceState)
+    {
+        base.OnCreate(savedInstanceState);
+        Window?.SetStatusBarColor(Color.Rgb(35, 40, 52));
+        Window?.SetNavigationBarColor(Color.Black);
+
+        var authorizationUrl = Intent?.GetStringExtra(AuthorizationUrlExtra);
+        _expectedHost = Intent?.GetStringExtra(ExpectedHostExtra) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(authorizationUrl) || string.IsNullOrWhiteSpace(_expectedHost))
+        {
+            FinishLogin(null);
+            return;
+        }
+
+        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        root.SetBackgroundColor(Color.Black);
+
+        var header = new LinearLayout(this)
+        {
+            Orientation = Orientation.Horizontal,
+            Gravity = GravityFlags.CenterVertical
+        };
+        header.SetPadding(18, 12, 18, 12);
+        header.SetBackgroundColor(Color.Rgb(43, 49, 63));
+
+        var back = new Button(this) { Text = "‹  Back" };
+        back.SetTextColor(Color.Rgb(145, 190, 205));
+        back.SetBackgroundColor(Color.Transparent);
+        back.Click += (_, _) => FinishLogin(null);
+        header.AddView(back, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
+
+        var title = new TextView(this)
+        {
+            Text = "🇮🇳  India",
+            TextSize = 18,
+            Gravity = GravityFlags.Center
+        };
+        title.SetTextColor(Color.White);
+        header.AddView(title, new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.WrapContent, 1));
+
+        root.AddView(header, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
+
+        _webView = new WebView(this);
+        _webView.Settings.JavaScriptEnabled = true;
+        _webView.Settings.DomStorageEnabled = true;
+        _webView.Settings.AllowFileAccess = false;
+        _webView.Settings.AllowContentAccess = false;
+        _webView.Settings.MixedContentMode = MixedContentHandling.Never;
+        if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
+            _webView.Settings.SafeBrowsingEnabled = true;
+
+        CookieManager.Instance.SetAcceptCookie(true);
+        CookieManager.Instance.SetAcceptThirdPartyCookies(_webView, true);
+        _webView.SetWebViewClient(new AudibleLoginWebViewClient(
+            _expectedHost,
+            url => FinishLogin(url)));
+        root.AddView(_webView, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, 0, 1));
+
+        SetContentView(root);
+        _webView.LoadUrl(authorizationUrl);
+    }
+
+    private void FinishLogin(string? responseUrl)
+    {
+        if (_finished) return;
+        _finished = true;
+        AndroidExternalBrowserLauncher.Complete(responseUrl);
+        Finish();
+    }
+
+    public override void OnBackPressed()
+    {
+        FinishLogin(null);
+        base.OnBackPressed();
+    }
+
+    protected override void OnDestroy()
+    {
+        if (!_finished) FinishLogin(null);
+        if (_webView is not null)
+        {
+            _webView.StopLoading();
+            _webView.LoadUrl("about:blank");
+            _webView.RemoveAllViews();
+            _webView.Destroy();
+            _webView = null;
+        }
+        base.OnDestroy();
+    }
+
+    private sealed class AudibleLoginWebViewClient(string expectedHost, Action<string> completed) : WebViewClient
+    {
+        public override bool ShouldOverrideUrlLoading(WebView? view, IWebResourceRequest? request)
+        {
+            var url = request?.Url?.ToString();
+            return !string.IsNullOrWhiteSpace(url) && TryComplete(url);
+        }
+
+        public override bool ShouldOverrideUrlLoading(WebView? view, string? url)
+            => !string.IsNullOrWhiteSpace(url) && TryComplete(url);
+
+        private bool TryComplete(string url)
+        {
+            if (!global::Android.Net.Uri.TryParse(url, out var uri)
+                || !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(uri.Host, expectedHost, StringComparison.OrdinalIgnoreCase)
+                || !uri.AbsolutePath.Contains("maplanding", StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(uri.GetQueryParameter("openid.oa2.authorization_code")))
+                return false;
+
+            completed(url);
+            return true;
+        }
+
+        public override void OnReceivedSslError(WebView? view, SslErrorHandler? handler, global::Android.Webkit.SslError? error)
+        {
+            // Never bypass certificate errors on a page that handles account sign-in.
+            handler?.Cancel();
+        }
+    }
+}
