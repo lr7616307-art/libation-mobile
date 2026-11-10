@@ -34,7 +34,6 @@ public class MainActivity : AvaloniaMainActivity
         var previousFailure = StartupDiagnostics.Read(this);
         try
         {
-            base.OnCreate(savedInstanceState);
             if (Avalonia.Application.Current?.ApplicationLifetime is
                 Avalonia.Controls.ApplicationLifetimes.IActivityApplicationLifetime lifetime)
             {
@@ -43,9 +42,11 @@ public class MainActivity : AvaloniaMainActivity
                 {
                     var view = originalFactory?.Invoke() as Libation.Mobile.UI.Views.MainView;
                     ActiveMainView = view;
-                    return view ?? originalFactory?.Invoke();
+                    return view;
                 };
             }
+
+            base.OnCreate(savedInstanceState);
             if (!string.IsNullOrWhiteSpace(previousFailure))
                 StartupDiagnostics.Show(this, previousFailure);
         }
