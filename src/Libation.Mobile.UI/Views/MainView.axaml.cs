@@ -820,5 +820,115 @@ public partial class MainView : UserControl
         }
     }
 
+    private void BookOverflowClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: Audiobook book }) _viewModel.OpenBookMenu(book.Id);
+    }
+    private void CloseBookMenuClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.CloseBookMenu();
+    private void BookInfoClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.OpenBookInfo();
+    private void CloseBookInfoClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.CloseBookInfo();
+    private void BeginSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.BeginSelectionMode();
+    private void ToggleSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is CheckBox { DataContext: Audiobook book }) _viewModel.ToggleAudiobookSelection(book.Id);
+    }
+    private void SelectAllClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectAllLocalAudiobooks();
+    private void ExitSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.ExitSelectionMode();
+    private void OpenStatusPickerClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.OpenStatusPicker();
+    private void CloseStatusPickerClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.CloseStatusPicker();
+    private async void MarkFinishedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await _viewModel.ApplyListeningStatusAsync("Finished");
+    private async void MarkInProgressClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await _viewModel.ApplyListeningStatusAsync("In progress");
+    private async void MarkNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await _viewModel.ApplyListeningStatusAsync("Not started");
+
+    private async void RemoveImportedBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.MenuBook is not { } book) return;
+        _viewModel.CloseBookMenu();
+        var confirmed = await ShowConfirmDialogAsync($"Remove \"{book.Title}\" from your library?");
+        if (confirmed) await _viewModel.RemoveBookAsync(book.Id);
+    }
+
+    private void EditImportedBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.MenuBook is not { } book) return;
+        _viewModel.CloseBookMenu();
+        _viewModel.BeginEdit(book.Id);
+        _viewModel.SelectTab(0);
+    }
+
+    private async void ChooseCoverFromMenuClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.MenuBook is not { } book) return;
+        _viewModel.CloseBookMenu();
+        await ChooseCoverForBookAsync(book);
+    }
+
+    private async void ChooseCoverFromInfoClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.MenuBook is not { } book) return;
+        _viewModel.CloseBookInfo();
+        await ChooseCoverForBookAsync(book);
+    }
+
+    private async Task ChooseCoverForBookAsync(Audiobook book)
+    {
+        var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (provider is null) return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose cover artwork for " + book.Title,
+            AllowMultiple = false,
+            FileTypeFilter = [CoverImageFileType]
+        });
+        if (files.Count == 0) return;
+        await using var stream = await files[0].OpenReadAsync();
+        await _viewModel.ImportCoverArtAsync(book.Id, files[0].Name, stream);
+        _viewModel.OpenBookMenu(book.Id);
+        _viewModel.OpenBookInfo();
+    }
+
+    private async Task<bool> ShowConfirmDialogAsync(string message)
+    {
+        var dialog = new Window
+        {
+            Title = "Confirm removal",
+            Width = 340,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false
+        };
+        var result = false;
+        var yes = new Button { Content = "Remove", MinWidth = 110 };
+        var no = new Button { Content = "Cancel", MinWidth = 110 };
+        yes.Click += (_, _) => { result = true; dialog.Close(); };
+        no.Click += (_, _) => dialog.Close();
+        dialog.Content = new StackPanel
+        {
+            Margin = new Avalonia.Thickness(20),
+            Spacing = 16,
+            Children =
+            {
+                new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                new StackPanel
+                {
+                    Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                    Spacing = 10,
+                    Children = { no, yes }
+                }
+            }
+        };
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return false;
+        await dialog.ShowDialog(owner);
+        return result;
+    }
+
+    private async void RemoveSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var confirmed = await ShowConfirmDialogAsync($"Remove {_viewModel.SelectedAudiobookCountLabel} from your library?");
+        if (confirmed) await _viewModel.RemoveSelectedAudiobooksAsync();
+    }
+
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 }
