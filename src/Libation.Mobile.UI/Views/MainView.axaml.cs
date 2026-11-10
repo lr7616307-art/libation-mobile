@@ -55,7 +55,7 @@ public partial class MainView : UserControl
         Unloaded += MainViewUnloaded;
     }
 
-    private async void MainViewLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void MainViewLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
@@ -63,7 +63,13 @@ public partial class MainView : UserControl
         _playbackCheckpointTimer.Tick += PlaybackCheckpointTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _sleepTimer.Tick += SleepTimerTick;
-        await InitializeAndRestorePlaybackAsync();
+
+        // Let Avalonia present the first Home frame before opening the local
+        // catalogue and restoring the playback adapter. This avoids making
+        // disk initialization part of the first visible frame.
+        Dispatcher.UIThread.Post(
+            async () => await InitializeAndRestorePlaybackAsync(),
+            DispatcherPriority.Background);
     }
 
     private async Task InitializeAndRestorePlaybackAsync()
