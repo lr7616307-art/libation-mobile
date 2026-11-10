@@ -113,11 +113,11 @@ public sealed class AudibleLoginActivity : Activity
         _responseInput = new EditText(this)
         {
             Hint = "https://www.amazon.in/ap/maplanding?...",
-            MinLines = 3,
-            MaxLines = 6,
             Gravity = GravityFlags.Top | GravityFlags.Start,
             InputType = global::Android.Text.InputTypes.ClassText | global::Android.Text.InputTypes.TextFlagMultiLine
         };
+        _responseInput.SetMinLines(3);
+        _responseInput.SetMaxLines(6);
         _responseInput.SetTextColor(Color.White);
         _responseInput.SetHintTextColor(Color.Rgb(150, 142, 164));
         _responseInput.SetPadding(12, 12, 12, 12);
