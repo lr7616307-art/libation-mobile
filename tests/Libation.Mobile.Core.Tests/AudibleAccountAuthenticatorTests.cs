@@ -12,7 +12,6 @@ public sealed class AudibleAccountAuthenticatorTests
     public async Task BeginSignIn_AcceptsIndiaMarketplaceAndUsesItsProviderReturnHost()
     {
         var authenticator = CreateAuthenticator(new InMemorySecretStore());
-
         var challenge = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "in"));
 
         Assert.True(challenge.AuthorizationUri.IsAbsoluteUri);
@@ -49,7 +48,6 @@ public sealed class AudibleAccountAuthenticatorTests
     [InlineData("https://www.audible.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("https://www.audible.com/not-maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.audible.com/ap/maplanding")]
     public async Task CompleteSignIn_RejectsResponseOutsideExactMarketplaceCallback(string responseUrl)
     {
         var secrets = new InMemorySecretStore();
@@ -60,6 +58,22 @@ public sealed class AudibleAccountAuthenticatorTests
             () => authenticator.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
 
         Assert.Contains("marketplace callback", error.Message);
+        Assert.Equal(0, secrets.SetCalls);
+        Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
+    }
+
+    [Fact]
+    public async Task CompleteSignIn_RejectsValidCallbackWithoutAuthorizationCode()
+    {
+        var secrets = new InMemorySecretStore();
+        var authenticator = CreateAuthenticator(secrets);
+        var challenge = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "us"));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => authenticator.CompleteSignInAsync(
+                challenge.ChallengeId, "https://www.audible.com/ap/maplanding"));
+
+        Assert.Contains("authorization code", error.Message);
         Assert.Equal(0, secrets.SetCalls);
         Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
     }
