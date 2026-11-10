@@ -43,6 +43,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private int _catalogueFilterIndex;
     private Audiobook? _selectedBook;
     private Audiobook? _nowPlayingBook;
+    private string _audibleSearchText = string.Empty;
+    private int _selectedTabIndex;
+    private bool _isFullPlayerVisible;
+    private bool _isChaptersVisible;
 
     private static readonly Audiobook[] InitialSamples = [];
 
@@ -96,6 +100,66 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         NowPlayingBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
         RefreshRecentlyPlayedBooks();
+    }
+
+    public string AudibleSearchText
+    {
+        get => _audibleSearchText;
+        set
+        {
+            if (_audibleSearchText == value) return;
+            _audibleSearchText = value;
+            OnPropertyChanged();
+            RefreshAudibleBooks(_allBooks);
+        }
+    }
+    public bool IsHomeTab => _selectedTabIndex == 0 && !IsFullPlayerVisible && !IsChaptersVisible;
+    public bool IsAudibleLibraryTab => _selectedTabIndex == 1 && !IsFullPlayerVisible && !IsChaptersVisible;
+    public bool IsAudibleAccountTab => _selectedTabIndex == 2 && !IsFullPlayerVisible && !IsChaptersVisible;
+    public bool IsSettingsTab => _selectedTabIndex == 3 && !IsFullPlayerVisible && !IsChaptersVisible;
+    public bool IsFullPlayerVisible => _isFullPlayerVisible;
+    public bool IsChaptersVisible => _isChaptersVisible;
+    public bool HasNowPlayingBook => NowPlayingBook is not null;
+    public void SelectTab(int index)
+    {
+        _selectedTabIndex = Math.Clamp(index, 0, 3);
+        _isFullPlayerVisible = false;
+        _isChaptersVisible = false;
+        RaiseNavigationState();
+    }
+    public void OpenFullPlayer()
+    {
+        if (NowPlayingBook is null) return;
+        _isChaptersVisible = false;
+        _isFullPlayerVisible = true;
+        RaiseNavigationState();
+    }
+    public void OpenChapters()
+    {
+        if (NowPlayingBook is null) return;
+        _isFullPlayerVisible = false;
+        _isChaptersVisible = true;
+        RaiseNavigationState();
+    }
+    public void CloseFullPlayer()
+    {
+        _isFullPlayerVisible = false;
+        RaiseNavigationState();
+    }
+    public void CloseChapters()
+    {
+        _isChaptersVisible = false;
+        _isFullPlayerVisible = true;
+        RaiseNavigationState();
+    }
+    private void RaiseNavigationState()
+    {
+        OnPropertyChanged(nameof(IsHomeTab));
+        OnPropertyChanged(nameof(IsAudibleLibraryTab));
+        OnPropertyChanged(nameof(IsAudibleAccountTab));
+        OnPropertyChanged(nameof(IsSettingsTab));
+        OnPropertyChanged(nameof(IsFullPlayerVisible));
+        OnPropertyChanged(nameof(IsChaptersVisible));
     }
 
     public bool HasSelectedBook => SelectedBook is not null;
@@ -592,8 +656,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void RefreshAudibleBooks(IReadOnlyList<Audiobook> source)
     {
+        var query = AudibleSearchText.Trim();
         var books = source
             .Where(book => book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            .Where(book => string.IsNullOrWhiteSpace(query)
+                || book.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
+                || book.Author.Contains(query, StringComparison.OrdinalIgnoreCase))
             .OrderBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         AudibleBooks.Clear();
