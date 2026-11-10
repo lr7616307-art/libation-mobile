@@ -479,6 +479,15 @@ public partial class MainView : UserControl
             PlaybackDurationLabel.Text = duration > 0
                 ? "−" + FormatPlaybackTime(Math.Max(0, duration - position))
                 : "--:--";
+            if (MiniPlaybackProgress is not null)
+            {
+                MiniPlaybackProgress.Maximum = Math.Max(1, duration);
+                MiniPlaybackProgress.Value = duration > 0 ? Math.Min(position, duration) : 0;
+            }
+            if (MiniPlaybackTimeLabel is not null)
+                MiniPlaybackTimeLabel.Text = duration > 0
+                    ? FormatPlaybackTime(position)
+                    : "00:00";
         }
         finally { _isUpdatingPlaybackSlider = false; }
     }
