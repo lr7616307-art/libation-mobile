@@ -1,20 +1,35 @@
+using System.Web;
 using Android.App;
-using Android.OS;
-using Android.Views;
-using Android.Webkit;
-using Android.Widget;
+using Android.Content;
+using Android.Content.PM;
 using Android.Graphics;
+using Android.OS;
+using Android.Text;
+using Android.Views;
+using Android.Widget;
 
 namespace Libation.Mobile.Android;
 
-[Activity(Exported = false, Label = "Audible sign-in", Theme = "@android:style/Theme.Material.NoActionBar")]
+/// <summary>
+/// Native handoff screen for the supported Audible manual-return flow.
+/// Amazon credentials are entered only in the external browser. The final
+/// response URL is pasted by the user and kept in memory for one submission.
+/// </summary>
+[Activity(
+    Exported = false,
+    Label = "Connect Audible",
+    Theme = "@android:style/Theme.Material.NoActionBar",
+    ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize)]
 public sealed class AudibleLoginActivity : Activity
 {
     internal const string AuthorizationUrlExtra = "audible.authorization_url";
     internal const string ExpectedHostExtra = "audible.expected_host";
-    private WebView? _webView;
+    internal const string ExpectedPathExtra = "audible.expected_path";
+
+    private string _authorizationUrl = string.Empty;
     private string _expectedHost = string.Empty;
-    private string _callbackUrl = string.Empty;
+    private string _expectedPath = "/ap/maplanding";
+    private EditText? _responseInput;
     private bool _finished;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -23,70 +38,144 @@ public sealed class AudibleLoginActivity : Activity
         Window?.SetStatusBarColor(Color.Rgb(35, 40, 52));
         Window?.SetNavigationBarColor(Color.Black);
 
-        var authorizationUrl = Intent?.GetStringExtra(AuthorizationUrlExtra);
+        _authorizationUrl = Intent?.GetStringExtra(AuthorizationUrlExtra) ?? string.Empty;
         _expectedHost = Intent?.GetStringExtra(ExpectedHostExtra) ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(authorizationUrl) || string.IsNullOrWhiteSpace(_expectedHost))
+        _expectedPath = Intent?.GetStringExtra(ExpectedPathExtra) ?? "/ap/maplanding";
+        if (string.IsNullOrWhiteSpace(_authorizationUrl) || string.IsNullOrWhiteSpace(_expectedHost))
         {
             FinishLogin(null);
             return;
         }
 
-        var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
-        root.SetBackgroundColor(Color.Black);
-
-        var header = new LinearLayout(this)
+        var root = new LinearLayout(this)
         {
-            Orientation = Orientation.Horizontal,
+            Orientation = Orientation.Vertical
         };
-        header.SetGravity(GravityFlags.CenterVertical);
-        header.SetPadding(18, 12, 18, 12);
-        header.SetBackgroundColor(Color.Rgb(43, 49, 63));
-
-        var back = new Button(this) { Text = "‹  Back" };
-        back.SetTextColor(Color.Rgb(145, 190, 205));
-        back.SetBackgroundColor(Color.Transparent);
-        back.Click += (_, _) => FinishLogin(null);
-        header.AddView(back, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent));
+        root.SetPadding(24, 28, 24, 24);
+        root.SetBackgroundColor(Color.Rgb(18, 16, 25));
 
         var title = new TextView(this)
         {
-            Text = "🇮🇳  India",
-            TextSize = 18,
+            Text = "Connect your Audible account",
+            TextSize = 23,
             Gravity = GravityFlags.Center
         };
         title.SetTextColor(Color.White);
-        header.AddView(title, new LinearLayout.LayoutParams(0,
-            ViewGroup.LayoutParams.WrapContent, 1));
+        root.AddView(title, MatchWidthWrapHeight());
 
-        root.AddView(header, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
+        var marketplace = new TextView(this)
+        {
+            Text = "Marketplace: " + _expectedHost,
+            TextSize = 13,
+            Gravity = GravityFlags.Center,
+        };
+        marketplace.SetTextColor(Color.Rgb(196, 181, 253));
+        marketplace.SetPadding(0, 10, 0, 22);
+        root.AddView(marketplace, MatchWidthWrapHeight());
 
-        _webView = new WebView(this);
-        _webView.Settings.JavaScriptEnabled = true;
-        _webView.Settings.DomStorageEnabled = true;
-        _webView.Settings.AllowFileAccess = false;
-        _webView.Settings.AllowContentAccess = false;
-        _webView.Settings.MixedContentMode = MixedContentHandling.NeverAllow;
-        if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
-            _webView.Settings.SafeBrowsingEnabled = true;
+        var instructions = new TextView(this)
+        {
+            Text = "1. Open Amazon/Audible sign-in in your browser.\n2. Complete sign-in and any verification there.\n3. Return here and paste the complete final address-bar URL.\n4. Tap Complete sign-in.",
+            TextSize = 15,
+            Gravity = GravityFlags.Start
+        };
+        instructions.SetTextColor(Color.Rgb(225, 220, 235));
+        instructions.SetPadding(0, 0, 0, 18);
+        root.AddView(instructions, MatchWidthWrapHeight());
 
-        CookieManager.Instance.SetAcceptCookie(true);
-        CookieManager.Instance.SetAcceptThirdPartyCookies(_webView, true);
-        _webView.SetWebViewClient(new AudibleLoginWebViewClient(
-            _expectedHost,
-            url => FinishLogin(url)));
-        root.AddView(_webView, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MatchParent, 0, 1));
+        var openBrowser = new Button(this) { Text = "Open Amazon sign-in" };
+        openBrowser.Click += (_, _) => OpenExternalBrowser();
+        root.AddView(openBrowser, MatchWidthWrapHeight());
+
+        var privacy = new TextView(this)
+        {
+            Text = "The URL contains a short-lived authorization code. Do not share it. VØRATH does not read your password, OTP, CAPTCHA response or browser cookies.",
+            TextSize = 12
+        };
+        privacy.SetTextColor(Color.Rgb(175, 168, 190));
+        privacy.SetPadding(0, 14, 0, 10);
+        root.AddView(privacy, MatchWidthWrapHeight());
+
+        _responseInput = new EditText(this)
+        {
+            Hint = "Paste the complete final browser URL here",
+            InputType = InputTypes.ClassText | InputTypes.TextMultiLine | InputTypes.TextFlagNoSuggestions,
+            MinLines = 3,
+            MaxLines = 5,
+            Gravity = GravityFlags.Top | GravityFlags.Start
+        };
+        _responseInput.SetTextColor(Color.White);
+        _responseInput.SetHintTextColor(Color.Rgb(145, 138, 160));
+        _responseInput.SetPadding(12, 12, 12, 12);
+        root.AddView(_responseInput, MatchWidthWrapHeight());
+
+        var complete = new Button(this) { Text = "Complete sign-in" };
+        complete.Click += (_, _) => SubmitResponse();
+        root.AddView(complete, MatchWidthWrapHeight());
+
+        var cancel = new Button(this) { Text = "Cancel" };
+        cancel.Click += (_, _) => FinishLogin(null);
+        root.AddView(cancel, MatchWidthWrapHeight());
 
         SetContentView(root);
-        _webView.LoadUrl(authorizationUrl);
     }
+
+    private void OpenExternalBrowser()
+    {
+        try
+        {
+            var intent = new Intent(Intent.ActionView, global::Android.Net.Uri.Parse(_authorizationUrl));
+            StartActivity(intent);
+        }
+        catch (ActivityNotFoundException)
+        {
+            Toast.MakeText(this, "No browser is available to open Audible sign-in.", ToastLength.Long)?.Show();
+        }
+        catch (Exception)
+        {
+            Toast.MakeText(this, "Could not open the external browser.", ToastLength.Long)?.Show();
+        }
+    }
+
+    private void SubmitResponse()
+    {
+        var responseUrl = _responseInput?.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(responseUrl) || !IsExpectedCallback(responseUrl))
+        {
+            Toast.MakeText(this,
+                "Paste the complete HTTPS return URL from the selected Audible marketplace.",
+                ToastLength.Long)?.Show();
+            return;
+        }
+
+        // Clear the editable control before handing the short-lived response to
+        // the authenticator. The value is never written to preferences or logs.
+        if (_responseInput is not null) _responseInput.Text = string.Empty;
+        FinishLogin(responseUrl);
+    }
+
+    private bool IsExpectedCallback(string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(uri.Host, _expectedHost, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(uri.AbsolutePath.TrimEnd('/'), _expectedPath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !uri.IsDefaultPort)
+            return false;
+
+        return !string.IsNullOrWhiteSpace(
+            HttpUtility.ParseQueryString(uri.Query)["openid.oa2.authorization_code"]);
+    }
+
+    private static LinearLayout.LayoutParams MatchWidthWrapHeight()
+        => new(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent);
 
     private void FinishLogin(string? responseUrl)
     {
         if (_finished) return;
         _finished = true;
+        if (_responseInput is not null) _responseInput.Text = string.Empty;
         AndroidExternalBrowserLauncher.Complete(responseUrl);
         Finish();
     }
@@ -97,82 +186,11 @@ public sealed class AudibleLoginActivity : Activity
         base.OnBackPressed();
     }
 
-    public override void OnWindowFocusChanged(bool hasFocus)
-    {
-        base.OnWindowFocusChanged(hasFocus);
-        if (!hasFocus || _finished || _webView is null) return;
-        _webView.EvaluateJavascript("window.location.href", new UrlEvaluationCallback(
-            url => RunOnUiThread(() => HandleCallbackProbe(url))));
-    }
-
-    private void HandleCallbackProbe(string? encodedUrl)
-    {
-        if (_finished || string.IsNullOrWhiteSpace(encodedUrl)) return;
-        var url = encodedUrl.Trim('"').Replace("\\\\u0026", "&", StringComparison.Ordinal)
-            .Replace("\\\\/", "/", StringComparison.Ordinal);
-        if (!TryValidateCallback(url)) return;
-        FinishLogin(url);
-    }
-
-    private bool TryValidateCallback(string url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            || !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(uri.Host, _expectedHost, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase)
-            || !uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal))
-            return false;
-        return true;
-    }
-
     protected override void OnDestroy()
     {
         if (!_finished) FinishLogin(null);
-        if (_webView is not null)
-        {
-            _webView.StopLoading();
-            _webView.LoadUrl("about:blank");
-            _webView.RemoveAllViews();
-            _webView.Destroy();
-            _webView = null;
-        }
+        _responseInput?.Dispose();
+        _responseInput = null;
         base.OnDestroy();
-    }
-
-    private sealed class UrlEvaluationCallback(Action<string?> callback) : Java.Lang.Object, IValueCallback
-    {
-        public void OnReceiveValue(Java.Lang.Object? value)
-            => callback(value?.ToString());
-    }
-
-    private sealed class AudibleLoginWebViewClient(string expectedHost, Action<string> completed) : WebViewClient
-    {
-        public override bool ShouldOverrideUrlLoading(WebView? view, IWebResourceRequest? request)
-        {
-            var url = request?.Url?.ToString();
-            return !string.IsNullOrWhiteSpace(url) && TryComplete(url);
-        }
-
-        public override bool ShouldOverrideUrlLoading(WebView? view, string? url)
-            => !string.IsNullOrWhiteSpace(url) && TryComplete(url);
-
-        private bool TryComplete(string url)
-        {
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
-                || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(uri.Host, expectedHost, StringComparison.OrdinalIgnoreCase)
-                || !uri.AbsolutePath.Contains("maplanding", StringComparison.OrdinalIgnoreCase)
-                || !uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal))
-                return false;
-
-            completed(url);
-            return true;
-        }
-
-        public override void OnReceivedSslError(WebView? view, SslErrorHandler? handler, global::Android.Net.Http.SslError? error)
-        {
-            // Never bypass certificate errors on a page that handles account sign-in.
-            handler?.Cancel();
-        }
     }
 }
