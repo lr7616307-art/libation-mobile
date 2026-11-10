@@ -177,13 +177,13 @@
               <TextBlock Text="Edit audiobook" FontSize="26" FontWeight="Bold"/>
               <Button Grid.Column="1" Content="Cancel" Click="CancelDetailEditClicked"/>
             </Grid>
-            <TextBox Watermark="Title" Text="{Binding NewTitle}"/>
-            <TextBox Watermark="Author" Text="{Binding NewAuthor}"/>
-            <TextBox Watermark="Narrator" Text="{Binding NewNarrator}"/>
-            <TextBox Watermark="Duration" Text="{Binding NewLength}"/>
-            <TextBox Watermark="Series" Text="{Binding NewSeries}"/>
-            <TextBox Watermark="Genre" Text="{Binding NewGenre}"/>
-            <TextBox Watermark="Description / summary" Text="{Binding NewDescription}" AcceptsReturn="True" MinHeight="150"/>
+            <TextBox PlaceholderText="Title" Text="{Binding NewTitle}"/>
+            <TextBox PlaceholderText="Author" Text="{Binding NewAuthor}"/>
+            <TextBox PlaceholderText="Narrator" Text="{Binding NewNarrator}"/>
+            <TextBox PlaceholderText="Duration" Text="{Binding NewLength}"/>
+            <TextBox PlaceholderText="Series" Text="{Binding NewSeries}"/>
+            <TextBox PlaceholderText="Genre" Text="{Binding NewGenre}"/>
+            <TextBox PlaceholderText="Description / summary" Text="{Binding NewDescription}" AcceptsReturn="True" MinHeight="150"/>
             <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" Foreground="Tomato" TextWrapping="Wrap"/>
             <Button Content="Save changes" Click="SaveDetailEditClicked"/>
           </StackPanel>
