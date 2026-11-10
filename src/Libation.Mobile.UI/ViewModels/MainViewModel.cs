@@ -191,12 +191,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasDetailBookChapters));
         OnPropertyChanged(nameof(HasNoDetailBookChapters));
     }
-    public void CloseBookDetails()
-    {
-        _isBookDetailsVisible = false;
-        RaiseNavigationState();
-        OnPropertyChanged(nameof(IsBookDetailsVisible));
-    }
+    public void CloseBookDetails() => NavigateBack();
     public void BeginDetailBookEdit()
     {
         if (_detailBook is null) return;
@@ -209,11 +204,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void CancelDetailBookEdit()
     {
         CancelEdit();
-        _isEditVisible = false;
-        _isBookDetailsVisible = _detailBook is not null;
-        RaiseNavigationState();
-        OnPropertyChanged(nameof(IsEditVisible));
-        OnPropertyChanged(nameof(IsBookDetailsVisible));
+        if (_navigationHistory.Count > 0)
+            NavigateBack();
+        else
+        {
+            _isEditVisible = false;
+            _isBookDetailsVisible = _detailBook is not null;
+            RaiseNavigationState();
+            OnPropertyChanged(nameof(IsEditVisible));
+            OnPropertyChanged(nameof(IsBookDetailsVisible));
+        }
     }
     public async Task SaveDetailBookEditAsync(CancellationToken cancellationToken = default)
     {
@@ -259,7 +259,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(MenuBookStatus));
         OnPropertyChanged(nameof(MenuBookStatusColor));
     }
-    public void CloseBookMenu() { _isBookMenuVisible = false; OnPropertyChanged(nameof(IsBookMenuVisible)); }
+    public void CloseBookMenu()
+    {
+        _isBookMenuVisible = false;
+        OnPropertyChanged(nameof(IsBookMenuVisible));
+        if (_navigationHistory.Count > 0)
+            RestoreNavigationSnapshot(_navigationHistory.Pop());
+    }
     public void OpenBookInfo()
     {
         if (_menuBook is null) return;
@@ -268,7 +274,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsInfoVisible));
         OpenBookDetails(bookId);
     }
-    public void CloseBookInfo() { _isInfoVisible = false; OnPropertyChanged(nameof(IsInfoVisible)); }
+    public void CloseBookInfo()
+    {
+        _isInfoVisible = false;
+        OnPropertyChanged(nameof(IsInfoVisible));
+        if (_navigationHistory.Count > 0)
+            RestoreNavigationSnapshot(_navigationHistory.Pop());
+    }
     public void BeginSelectionMode()
     {
         _isBookMenuVisible = false;
@@ -406,12 +418,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         if (_isBookMenuVisible)
         {
-            CloseBookMenu();
+            _isBookMenuVisible = false;
+            OnPropertyChanged(nameof(IsBookMenuVisible));
+            if (_navigationHistory.Count > 0)
+                RestoreNavigationSnapshot(_navigationHistory.Pop());
             return true;
         }
         if (_isInfoVisible)
         {
-            CloseBookInfo();
+            _isInfoVisible = false;
+            OnPropertyChanged(nameof(IsInfoVisible));
+            if (_navigationHistory.Count > 0)
+                RestoreNavigationSnapshot(_navigationHistory.Pop());
             return true;
         }
         if (_navigationHistory.Count == 0)
