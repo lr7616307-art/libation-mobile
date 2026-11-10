@@ -73,7 +73,8 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 AuthorizationCode = authorizationCode,
                 CodeVerifier = challenge.CodeVerifier,
                 CodeAlgorithm = "SHA-256",
-                ClientDomain = "DeviceLegacy"
+                ClientDomain = "DeviceLegacy",
+                UseGlobalAuthentication = "true"
             },
             RequestedExtensions = ["device_info", "customer_info"],
             DeviceMetadata = new AndroidDeviceMetadata
@@ -208,6 +209,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         [JsonPropertyName("code_verifier")] public required string CodeVerifier { get; init; }
         [JsonPropertyName("code_algorithm")] public required string CodeAlgorithm { get; init; }
         [JsonPropertyName("client_domain")] public required string ClientDomain { get; init; }
+        [JsonPropertyName("use_global_authentication")] public required string UseGlobalAuthentication { get; init; }
     }
 
     private sealed class RegistrationEnvelope
