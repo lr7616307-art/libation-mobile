@@ -191,8 +191,8 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Resume();
-            if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
-            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
+            if (PlayPauseButton is not null) PlayPauseButton.Content = "⏸";
+            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "⏸";
             _playbackProgressTimer.Start();
             _playbackCheckpointTimer.Start();
             var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
