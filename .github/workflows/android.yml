@@ -27,8 +27,20 @@ jobs:
         include:
           - rid: android-arm
             name: ARMv7
+            variant: baseline
+            strip_native_libraries: false
+          - rid: android-arm
+            name: ARMv7
+            variant: compact
+            strip_native_libraries: true
           - rid: android-arm64
             name: ARM64
+            variant: baseline
+            strip_native_libraries: false
+          - rid: android-arm64
+            name: ARM64
+            variant: compact
+            strip_native_libraries: true
     steps:
       - uses: actions/checkout@v4
       - name: Install .NET
@@ -44,11 +56,33 @@ jobs:
         run: dotnet workload install android
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
-      - name: Build APK
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:AndroidPackageFormat=apk
-      - name: Upload APK
+      - name: Build APK (${{ matrix.variant }})
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:AndroidPackageFormat=apk -p:AndroidStripNativeLibraries=${{ matrix.strip_native_libraries }}
+      - name: Measure APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_dir="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish"
+          mapfile -t apks < <(find "$apk_dir" -maxdepth 1 -type f -name '*.apk' -print)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "Expected exactly one APK in $apk_dir; found ${#apks[@]}." >&2
+            exit 1
+          fi
+          apk="${apks[0]}"
+          bytes="$(stat -c '%s' "$apk")"
+          mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n / 1048576 }')"
+          {
+            echo "Variant: ${{ matrix.variant }}"
+            echo "RID: ${{ matrix.rid }}"
+            echo "APK: $(basename "$apk")"
+            echo "Size: $bytes bytes ($mib MiB)"
+            sha256sum "$apk"
+          } | tee APK-SIZE.txt
+      - name: Upload APK and size report
         uses: actions/upload-artifact@v4
         with:
-          name: libation-mobile-${{ matrix.name }}
-          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*.apk
+          name: vorath-${{ matrix.name }}-${{ matrix.variant }}
+          path: |
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*.apk
+            APK-SIZE.txt
           if-no-files-found: error
