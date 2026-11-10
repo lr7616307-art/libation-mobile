@@ -1,13 +1,11 @@
 using AudibleApi;
+using System.Globalization;
+using System.IO.Compression;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.IO.Compression;
-using System.Security.Cryptography;
-using System.Globalization;
-using System.IO.Compression;
-using System.Security.Cryptography;
-using System.Globalization;
 
 namespace Libation.Mobile.Audible;
 
