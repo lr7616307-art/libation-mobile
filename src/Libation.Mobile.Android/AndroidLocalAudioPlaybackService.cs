@@ -404,7 +404,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         if (milliseconds <= 0) return "--:--";
         var value = TimeSpan.FromMilliseconds(milliseconds);
-        return value.TotalHours >= 1 ? value.ToString(@"h\\:mm\\:ss") : value.ToString(@"m\\:ss");
+        return value.TotalHours >= 1 ? value.ToString(@"h\:mm\:ss") : value.ToString(@"m\:ss");
     }
 
     private void UpdateNotification()
