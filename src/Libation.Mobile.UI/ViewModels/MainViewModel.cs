@@ -990,9 +990,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(NotStartedCount));
         OnPropertyChanged(nameof(InProgressCount));
         OnPropertyChanged(nameof(FinishedCount));
-        OnPropertyChanged(nameof(NotStartedTabLabel));
-        OnPropertyChanged(nameof(InProgressTabLabel));
-        OnPropertyChanged(nameof(FinishedTabLabel));
         RefreshRecentlyPlayedBooks();
         OnPropertyChanged(nameof(HasLocalAudioBooks));
         OnPropertyChanged(nameof(HasNoLocalAudioBooks));
