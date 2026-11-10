@@ -1,4 +1,5 @@
-using AudibleApi;\nusing System.Net.Http.Json;
+using AudibleApi;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
