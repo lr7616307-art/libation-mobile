@@ -33,7 +33,10 @@ public partial class MainView : UserControl
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
-        _viewModel = new MainViewModel(repository, queue, syncService, new LocalAudioImportService(audioDirectory), new CoverArtImportService(Path.Combine(dataDirectory, "covers")), syncStateStore, PlatformWidevineDiagnosticFactory);
+        var coverDirectory = Path.Combine(dataDirectory, "covers");
+        var audioImport = new LocalAudioImportService(audioDirectory);
+        _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
+            syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory));
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
@@ -74,6 +77,7 @@ public partial class MainView : UserControl
             return;
 
         _playingAudiobookId = currentBook.Id;
+        _viewModel.SetNowPlayingBook(currentBook.Id);
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
         if (_localAudioPlayer.IsPlaying)
             _playbackProgressTimer.Start();
@@ -116,6 +120,8 @@ public partial class MainView : UserControl
         {
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _playingAudiobookId = book.Id;
+            _viewModel.SetNowPlayingBook(book.Id);
+            if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
             _playbackProgressTimer.Start();
             _viewModel.ReportAudioStatus("Playing: " + book.Title);
             UpdatePlaybackProgressUi();
@@ -132,6 +138,7 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Pause();
+            if (PlayPauseButton is not null) PlayPauseButton.Content = "▶";
             _playbackProgressTimer.Stop();
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
             UpdatePlaybackProgressUi();
@@ -149,6 +156,7 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Resume();
+            if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
             _playbackProgressTimer.Start();
             var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
             if (book is not null) _viewModel.ReportAudioStatus("Playing: " + book.Title);
@@ -637,6 +645,31 @@ public partial class MainView : UserControl
     {
         if (sender is Button { DataContext: Audiobook book } && book.CanDelete)
             await _viewModel.RemoveBookAsync(book.Id);
+    }
+
+    private void TogglePlaybackClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_localAudioPlayer?.IsPlaying == true)
+            PauseAudioClicked(sender, e);
+        else if (_playingAudiobookId is not null)
+            ResumeAudioClicked(sender, e);
+        else
+            _viewModel.ReportAudioStatus("Choose an audiobook in Library and tap Play first.");
+    }
+
+    private async void ImportAudiobookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (provider is null) return;
+        var files = await provider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Import an audiobook",
+            AllowMultiple = false,
+            FileTypeFilter = [AudioFileType]
+        });
+        if (files.Count == 0) return;
+        await using var stream = await files[0].OpenReadAsync();
+        await _viewModel.ImportAudiobookAsync(files[0].Name, stream);
     }
 
     private async void ImportAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
