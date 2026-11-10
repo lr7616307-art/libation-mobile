@@ -13,6 +13,10 @@ In AudibleApi 14.1.2, `ExternalLogin` exposes:
 
 The `ILoginExternal.GetResponseUrl(loginUrl, signInCookies)` callback is synchronous. Importantly, the pinned Libation desktop `LoginExternalOptions.CliLoginExternal` implementation does **not** install or forward `signInCookies` to its browser. It prints the login URL, asks the user to complete sign-in in their browser, and asks the user to paste the final address-bar URL. It then validates that the response is an absolute URL and returns it to AudibleApi.
 
+## PKCE compatibility boundary
+
+The pinned AudibleApi 14.1.2 `ExternalLogin` implementation generates its own provider authorization URL and parses Audible's `openid.oa2.authorization_code` response. The inspected public API does not expose a verified way to inject a PKCE code challenge/verifier or replace the provider return URI. Do not bolt generic Login with Amazon OAuth or an app-generated PKCE callback onto this flow: that would not produce the AudibleApi device-registration identity required by the app. Pass 5 therefore uses the provider-generated Audible authorization flow with a trusted external browser and explicit manual return. Revisit PKCE only if a later supported AudibleApi version or provider contract exposes a compatible extension point.
+
 Therefore, cookie injection into Android's external browser is not a prerequisite for reproducing the existing supported Libation desktop workflow. The earlier handoff audit overstated this requirement. The cookie collection must still be treated as sensitive and must never be leaked; mobile should not invent a new cookie transport.
 
 ## Implemented mobile UX
