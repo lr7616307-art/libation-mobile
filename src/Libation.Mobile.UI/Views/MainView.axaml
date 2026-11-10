@@ -89,7 +89,7 @@
                         <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" Spacing="6">
                           <Button Content="⋮" FontSize="22" Padding="8,4" Background="Transparent" BorderThickness="0" Click="BookOverflowClicked"/>
                           <Button Content="▶" FontSize="20" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}"/>
-                          <CheckBox Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" IsChecked="{Binding IsSelectedForBulkAction}" Tag="{Binding Id}" Click="ToggleSelectionClicked"/>
+                          <CheckBox Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" IsChecked="{Binding IsSelectedForBulkAction, Mode=OneWay}" Click="ToggleSelectionClicked"/>
                         </StackPanel>
                       </Grid>
                     </Border>
@@ -158,7 +158,7 @@
             </Grid>
             <StackPanel Spacing="8">
               <TextBlock Text="CHAPTERS IN THIS FILE" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
-              <TextBlock Text="No chapter markers were found in this audiobook." FontSize="12" Opacity="0.65" IsVisible="{Binding DetailBook.Chapters.Count, Converter={x:Static local:ZeroCountVisibilityConverter.Instance}}"/>
+              <TextBlock Text="No chapter markers were found in this audiobook." FontSize="12" Opacity="0.65" IsVisible="{Binding HasNoDetailBookChapters}"/>
               <ItemsControl ItemsSource="{Binding DetailBook.Chapters}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
