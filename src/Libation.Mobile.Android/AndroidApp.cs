@@ -46,15 +46,16 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         };
     }
 
-    private sealed class PlatformServices(Context context)
+    private sealed class PlatformServices
     {
-        private readonly AndroidSecretStore _secrets = new(context);
+        private readonly AndroidSecretStore _secrets;
         private readonly AudibleIdentitySnapshotStore _snapshots;
         private readonly AccountConnectionService _connection;
         private readonly AndroidExternalBrowserLauncher _browser;
 
-        public PlatformServices(Context context) : this(context)
+        public PlatformServices(Context context)
         {
+            _secrets = new AndroidSecretStore(context);
             _snapshots = new AudibleIdentitySnapshotStore(_secrets);
             var authenticator = new AudibleAccountAuthenticator(_snapshots, new SystemDateTime());
             _connection = new AccountConnectionService(authenticator, new AccountSessionStore(_secrets));
