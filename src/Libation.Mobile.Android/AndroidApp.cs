@@ -1,4 +1,5 @@
 using Android.Runtime;
+using Android.Content;
 using Avalonia;
 using Avalonia.Android;
 using Dinah.Core;
