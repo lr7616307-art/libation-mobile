@@ -934,6 +934,16 @@ public partial class MainView : UserControl
 
     /// <summary>Called by the Android host before it delegates Back to the OS.</summary>
     public bool HandleAndroidBack() => _viewModel.NavigateBack();
+
+    protected override void OnKeyDown(Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key == Avalonia.Input.Key.Escape && HandleAndroidBack())
+        {
+            e.Handled = true;
+            return;
+        }
+        base.OnKeyDown(e);
+    }
     private void BeginSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.BeginSelectionMode();
     private void ToggleSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
