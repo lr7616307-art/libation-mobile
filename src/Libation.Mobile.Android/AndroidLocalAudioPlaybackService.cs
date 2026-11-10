@@ -146,7 +146,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         StopPlayer();
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
-            _title = Path.GetFileNameWithoutExtension(path);
+            _title = System.IO.Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
