@@ -37,6 +37,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private const string ChannelId = "libation_audiobook_playback";
     private const int NotificationId = 4102;
+    private const string NotificationIconResourceName = "vorath_notification";
     private IExoPlayer? _player;
     private string _title = "Audiobook";
     private string? _currentFilePath;
@@ -421,7 +422,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             this, 4105, forwardIntent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
-        builder.SetSmallIcon(global::Android.Resource.Drawable.StatSysHeadset)
+        builder.SetSmallIcon(Resource.Drawable.vorath_notification)
             .SetContentTitle(_title)
             .SetSubText("VØRATH")
             .SetContentText($"{FormatTime(ReadPosition())} / {FormatTime(ReadDuration())}")
