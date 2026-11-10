@@ -9,6 +9,7 @@ public static class EncryptedSecretEnvelope
     public const byte CurrentVersion = 2;
     public const int GcmIvLength = 12;
     public const int GcmTagLength = 16;
+    public const int MaximumPlaintextBytes = 128 * 1024;
 
     public static byte[] Encode(byte[] iv, byte[] ciphertextAndTag)
     {
