@@ -886,6 +886,9 @@ public partial class MainView : UserControl
         if (_viewModel.DetailBook is not { } book) return;
         await ChooseCoverForBookAsync(book);
     }
+    private void ShowAllClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.SetListeningStatusFilter("All");
+
     private void ShowNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.SetListeningStatusFilter("Not started");
     private void ShowInProgressClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
