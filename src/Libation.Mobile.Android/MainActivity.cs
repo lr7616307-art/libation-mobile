@@ -14,6 +14,17 @@ namespace Libation.Mobile.Android;
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 public class MainActivity : AvaloniaMainActivity
 {
+    protected override void OnBackPressed()
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime is
+            Avalonia.Controls.ApplicationLifetimes.IActivityApplicationLifetime lifetime
+            && lifetime.MainView is Libation.Mobile.UI.Views.MainView mainView
+            && mainView.HandleAndroidBack())
+            return;
+
+        base.OnBackPressed();
+    }
+
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         StartupDiagnostics.Install(this);
