@@ -37,7 +37,8 @@ public partial class MainView : UserControl
         var audioImport = new LocalAudioImportService(audioDirectory);
         _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
             syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory));
-        _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
+        // The Android player can restore a foreground service. Defer creating it
+        // until Loaded so Activity and Avalonia view initialization have completed.
         InitializeComponent();
         DataContext = _viewModel;
         PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
@@ -60,7 +61,20 @@ public partial class MainView : UserControl
         _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _sleepTimer.Tick += SleepTimerTick;
-        await InitializeAndRestorePlaybackAsync();
+
+        try
+        {
+            await InitializeAndRestorePlaybackAsync();
+        }
+        catch (Exception exception)
+        {
+            // A service-restore or UI-load issue should not terminate the whole
+            // application. Keep the library screen available and persist details.
+            try { PlatformStartupExceptionReporter?.Invoke("MainView.Loaded", exception); }
+            catch (Exception) { /* Diagnostics must never cause a second startup failure. */ }
+            _viewModel.ReportAudioStatus(
+                $"Startup initialization failed ({exception.GetType().Name}). The library remains available; see diagnostics.");
+        }
     }
 
     private async Task InitializeAndRestorePlaybackAsync()
