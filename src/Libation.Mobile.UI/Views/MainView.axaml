@@ -411,33 +411,42 @@
       </Border>
     </Border>
 
-    <Border Grid.Row="2" Background="#0B0911" BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="6,5">
-      <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="0">
-        <Button Grid.Column="0" Classes="quiet-nav" MinWidth="0" Padding="2,7" Background="Transparent" BorderThickness="0" Click="HomeTabClicked">
-          <StackPanel HorizontalAlignment="Center" Spacing="4">
-            <TextBlock Text="⌂" FontSize="21" HorizontalAlignment="Center"/>
-            <TextBlock Text="Home" FontSize="11" HorizontalAlignment="Center"/>
+    <Border Grid.Row="2" HorizontalAlignment="Stretch" Background="#0B0911"
+            BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="4,2">
+      <Grid HorizontalAlignment="Stretch" ColumnDefinitions="*,*,*,*" ColumnSpacing="0">
+        <Button Grid.Column="0" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,4"
+                Background="Transparent" BorderThickness="0" Click="HomeTabClicked">
+          <StackPanel Width="*" HorizontalAlignment="Center" Spacing="3">
+            <TextBlock Text="⌂" FontSize="20" HorizontalAlignment="Center"/>
+            <TextBlock Text="Home" FontSize="10" HorizontalAlignment="Center"/>
             <Border Height="2" Background="#8A8790" IsVisible="{Binding IsHomeTab}"/>
           </StackPanel>
         </Button>
-        <Button Grid.Column="1" Classes="quiet-nav" MinWidth="0" Padding="2,7" Background="Transparent" BorderThickness="0" Click="AudibleLibraryTabClicked">
-          <StackPanel HorizontalAlignment="Center" Spacing="4">
-            <TextBlock Text="▤" FontSize="21" HorizontalAlignment="Center"/>
-            <TextBlock Text="Library" FontSize="11" HorizontalAlignment="Center"/>
+        <Button Grid.Column="1" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,4"
+                Background="Transparent" BorderThickness="0" Click="AudibleLibraryTabClicked">
+          <StackPanel HorizontalAlignment="Center" Spacing="3">
+            <TextBlock Text="▤" FontSize="20" HorizontalAlignment="Center"/>
+            <TextBlock Text="Library" FontSize="10" HorizontalAlignment="Center"/>
             <Border Height="2" Background="#8A8790" IsVisible="{Binding IsAudibleLibraryTab}"/>
           </StackPanel>
         </Button>
-        <Button Grid.Column="2" Classes="quiet-nav" MinWidth="0" Padding="2,7" Background="Transparent" BorderThickness="0" Click="AudibleAccountTabClicked">
-          <StackPanel HorizontalAlignment="Center" Spacing="4">
-            <TextBlock Text="♙" FontSize="21" HorizontalAlignment="Center"/>
-            <TextBlock Text="Account" FontSize="11" HorizontalAlignment="Center"/>
+        <Button Grid.Column="2" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,4"
+                Background="Transparent" BorderThickness="0" Click="AudibleAccountTabClicked">
+          <StackPanel HorizontalAlignment="Center" Spacing="3">
+            <TextBlock Text="♙" FontSize="20" HorizontalAlignment="Center"/>
+            <TextBlock Text="Account" FontSize="10" HorizontalAlignment="Center"/>
             <Border Height="2" Background="#8A8790" IsVisible="{Binding IsAudibleAccountTab}"/>
           </StackPanel>
         </Button>
-        <Button Grid.Column="3" Classes="quiet-nav" MinWidth="0" Padding="2,7" Background="Transparent" BorderThickness="0" Click="SettingsTabClicked">
-          <StackPanel HorizontalAlignment="Center" Spacing="4">
-            <TextBlock Text="⚙" FontSize="21" HorizontalAlignment="Center"/>
-            <TextBlock Text="Settings" FontSize="11" HorizontalAlignment="Center"/>
+        <Button Grid.Column="3" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,4"
+                Background="Transparent" BorderThickness="0" Click="SettingsTabClicked">
+          <StackPanel HorizontalAlignment="Center" Spacing="3">
+            <TextBlock Text="⚙" FontSize="20" HorizontalAlignment="Center"/>
+            <TextBlock Text="Settings" FontSize="10" HorizontalAlignment="Center"/>
             <Border Height="2" Background="#8A8790" IsVisible="{Binding IsSettingsTab}"/>
           </StackPanel>
         </Button>
