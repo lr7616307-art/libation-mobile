@@ -4,7 +4,6 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Libation.Mobile.Core;
 using Libation.Mobile.UI.ViewModels;
-using Avalonia;
 
 namespace Libation.Mobile.UI.Views;
 
@@ -21,8 +20,6 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
-    private bool _isSeeking;
-    private long _lastSeekRequestTicks;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
     private static readonly FilePickerFileType CoverImageFileType = new("Audiobook cover image") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"] };
@@ -43,7 +40,7 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        PlaybackSeekSlider.PropertyChanged += PlaybackSeekSliderPropertyChanged;
+        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -83,8 +80,6 @@ public partial class MainView : UserControl
         _playingAudiobookId = currentBook.Id;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
-        if (_localAudioPlayer is AndroidLocalAudioPlayer restoredPlayer)
-            restoredPlayer.SetChapterPositions(currentBook.Chapters.Select(chapter => chapter.StartPositionMilliseconds));
         if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "Ⅱ" : "▶";
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
         if (_localAudioPlayer.IsPlaying)
@@ -128,8 +123,6 @@ public partial class MainView : UserControl
         {
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
-            if (_localAudioPlayer is AndroidLocalAudioPlayer androidPlayer)
-                androidPlayer.SetChapterPositions(book.Chapters.Select(chapter => chapter.StartPositionMilliseconds));
             _playingAudiobookId = book.Id;
             _viewModel.SetNowPlayingBook(book.Id);
             if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
@@ -382,7 +375,7 @@ public partial class MainView : UserControl
     {
         _playbackProgressTimer.Stop();
         _sleepTimer.Stop();
-        PlaybackSeekSlider.PropertyChanged -= PlaybackSeekSliderPropertyChanged;
+        PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         if (_localAudioPlayer is null) return;
@@ -472,10 +465,9 @@ public partial class MainView : UserControl
         return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
     }
 
-    private void PlaybackSeekSliderPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    private void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
-        if (e.Property != RangeBase.ValueProperty || _isUpdatingPlaybackSlider
-            || _localAudioPlayer is null || _playingAudiobookId is null)
+        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
             return;
 
         var target = Math.Max(0, (long)PlaybackSeekSlider.Value);
@@ -485,6 +477,7 @@ public partial class MainView : UserControl
         UpdateCurrentChapterUi(target, duration);
         if (PlaybackPositionLabel is not null)
             PlaybackPositionLabel.Text = FormatPlaybackTime(target);
+        _ = _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
     }
 
     private async void SeekToSelectedPositionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
