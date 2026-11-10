@@ -5,8 +5,8 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.UI.ViewModels;
 
 /// <summary>
-/// Coordinates the in-app Audible sign-in window. Credentials remain on the
-/// Amazon page; only the final HTTPS callback URL reaches the auth adapter.
+/// Coordinates Audible sign-in. Credentials remain on Amazon's trusted browser
+/// page; only the final, user-submitted HTTPS response URL reaches the auth adapter.
 /// </summary>
 public sealed class AudibleSignInViewModel : INotifyPropertyChanged
 {
@@ -53,6 +53,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         AccountConnectionStatus.ReauthenticationRequired => "Sign-in required",
         _ => "Not connected"
     };
+
     public async Task<string> GetDisplayStateAsync()
     {
         await LoadStatusAsync();
@@ -71,7 +72,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
                 AccountConnectionStatus.Connected => "Audible account connected.",
                 AccountConnectionStatus.Expired => "Your Audible session has expired. Sign in again to restore access.",
                 AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
-                _ => "Sign in to Audible India to access your library."
+                _ => "Sign in to Audible to access your library."
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -88,12 +89,26 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         try
         {
             IsBusy = true;
-            Status = "Preparing secure Audible India sign-in…";
+
+            // India is the default. Android presents India, US and UK choices
+            // before generating the marketplace-specific Audible challenge.
+            if (_browser is IAudibleMarketplaceSelector selector)
+            {
+                var selectedMarketplace = await selector.SelectMarketplaceAsync(Marketplace, cancellationToken);
+                if (string.IsNullOrWhiteSpace(selectedMarketplace))
+                {
+                    Status = "Audible sign-in cancelled before opening the browser.";
+                    return;
+                }
+                Marketplace = selectedMarketplace;
+            }
+
+            Status = $"Preparing secure Audible {Marketplace.ToUpperInvariant()} sign-in…";
             var request = new AccountSignInRequest("audible-mobile", Marketplace.Trim());
             var challenge = await _connection.BeginSignInAsync(request, cancellationToken);
             challengeId = challenge.ChallengeId;
 
-            Status = "Sign in on the Amazon page. Your password and verification codes are not read by this app.";
+            Status = "Complete sign-in in Amazon's browser, then paste the final address-bar URL into VØRATH. Your password and verification codes are never entered here.";
             var responseUrl = await _browser.OpenAsync(challenge.AuthorizationUri, cancellationToken);
             if (string.IsNullOrWhiteSpace(responseUrl))
             {
@@ -103,13 +118,13 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
                 return;
             }
 
-            Status = "Completing secure Audible sign-in…";
+            Status = "Completing secure Audible device registration…";
             var state = await _connection.CompleteSignInAsync(challenge.ChallengeId, responseUrl, cancellationToken);
             _lastState = state;
             OnPropertyChanged(nameof(ConnectionStatusLabel));
             challengeId = null;
             Status = state.Status == AccountConnectionStatus.Connected
-                ? "Audible account connected. Your encrypted account identity is saved."
+                ? "Audible account connected. Your encrypted device identity is saved."
                 : "Sign-in completed, but the account needs attention.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

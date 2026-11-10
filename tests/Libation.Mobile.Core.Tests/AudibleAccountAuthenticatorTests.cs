@@ -1,3 +1,4 @@
+using System.Web;
 using Dinah.Core;
 using Libation.Mobile.Audible;
 using Libation.Mobile.Core;
@@ -8,7 +9,7 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleAccountAuthenticatorTests
 {
     [Fact]
-    public async Task BeginSignIn_AcceptsIndiaMarketplaceCountryCode()
+    public async Task BeginSignIn_AcceptsIndiaMarketplaceAndUsesItsProviderReturnHost()
     {
         var authenticator = CreateAuthenticator(new InMemorySecretStore());
 
@@ -16,12 +17,16 @@ public sealed class AudibleAccountAuthenticatorTests
 
         Assert.True(challenge.AuthorizationUri.IsAbsoluteUri);
         Assert.Equal(Uri.UriSchemeHttps, challenge.AuthorizationUri.Scheme);
+        var returnTo = HttpUtility.ParseQueryString(challenge.AuthorizationUri.Query)["openid.return_to"];
+        Assert.True(Uri.TryCreate(returnTo, UriKind.Absolute, out var callback));
+        Assert.Equal("www.audible.in", callback!.Host);
+        Assert.Equal("/ap/maplanding", callback.AbsolutePath);
         var fixedNow = new DateTimeOffset(2026, 11, 10, 12, 0, 0, TimeSpan.Zero);
         Assert.Equal(fixedNow.AddMinutes(10), challenge.ExpiresAtUtc);
     }
 
     [Theory]
-    [InlineData("http://www.amazon.com/ap/signin")]
+    [InlineData("http://www.audible.com/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("not-a-url")]
     [InlineData("/relative/callback")]
     public async Task CompleteSignIn_RejectsNonAbsoluteHttpsResponseWithoutPersistingIdentity(string responseUrl)
@@ -40,9 +45,12 @@ public sealed class AudibleAccountAuthenticatorTests
 
     [Theory]
     [InlineData("https://evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.amazon.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.amazon.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
-    public async Task CompleteSignIn_RejectsResponseOutsideSelectedMarketplaceHost(string responseUrl)
+    [InlineData("https://www.audible.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.com/not-maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.com/ap/maplanding")]
+    public async Task CompleteSignIn_RejectsResponseOutsideExactMarketplaceCallback(string responseUrl)
     {
         var secrets = new InMemorySecretStore();
         var authenticator = CreateAuthenticator(secrets);
@@ -51,7 +59,7 @@ public sealed class AudibleAccountAuthenticatorTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => authenticator.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
 
-        Assert.Contains("sign-in response", error.Message);
+        Assert.Contains("marketplace callback", error.Message);
         Assert.Equal(0, secrets.SetCalls);
         Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
     }
@@ -67,7 +75,7 @@ public sealed class AudibleAccountAuthenticatorTests
             () => authenticator.CompleteSignInAsync(challenge.ChallengeId, "http://example.com/callback"));
 
         var replayError = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => authenticator.CompleteSignInAsync(challenge.ChallengeId, "https://www.amazon.com/"));
+            () => authenticator.CompleteSignInAsync(challenge.ChallengeId, "https://www.audible.com/ap/maplanding?openid.oa2.authorization_code=fake"));
 
         Assert.Contains("missing, expired, or already used", replayError.Message);
         Assert.Equal(0, secrets.SetCalls);
