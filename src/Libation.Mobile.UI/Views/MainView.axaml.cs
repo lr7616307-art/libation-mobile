@@ -117,11 +117,11 @@ public partial class MainView : UserControl
         if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
         if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
+        // Keep the lightweight UI poll alive while paused as well, so play/pause
+        // changes made from the Android notification are reflected in the app.
+        _playbackProgressTimer.Start();
         if (_localAudioPlayer.IsPlaying)
-        {
-            _playbackProgressTimer.Start();
             _playbackCheckpointTimer.Start();
-        }
         RestoreSleepTimerUi();
         UpdatePlaybackProgressUi();
     }
@@ -204,7 +204,7 @@ public partial class MainView : UserControl
             _localAudioPlayer.Pause();
             if (PlayPauseButton is not null) PlayPauseButton.Content = "▶";
             if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "▶";
-            _playbackProgressTimer.Stop();
+            // Keep UI polling active while paused so notification controls stay in sync.
             _playbackCheckpointTimer.Stop();
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
             UpdatePlaybackProgressUi();
@@ -373,7 +373,7 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Pause();
-            _playbackProgressTimer.Stop();
+            // Keep UI polling active while paused so notification controls stay in sync.
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
             UpdatePlaybackProgressUi();
             _viewModel.ReportAudioStatus("Sleep timer finished. Playback paused and position saved.");
@@ -398,7 +398,7 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.SetPlaybackSpeed(nextSpeed);
-            PlaybackSpeedButton.Content = $"Speed · {nextSpeed:0.##}×";
+            UpdatePlaybackProgressUi();
             _viewModel.ReportAudioStatus($"Playback speed set to {nextSpeed:0.##}×.");
         }
         catch (Exception)
@@ -466,28 +466,45 @@ public partial class MainView : UserControl
 
     private void UpdatePlaybackProgressUi()
     {
+        var player = _localAudioPlayer;
+        var position = Math.Max(0, player?.PositionMilliseconds ?? 0);
+        var duration = Math.Max(0, player?.DurationMilliseconds ?? 0);
+        var isPlaying = player?.IsPlaying == true;
+
+        // These controls are refreshed by the 500 ms UI timer, including while
+        // paused, so Android notification actions cannot leave stale icons.
+        if (PlayPauseButton is not null)
+            PlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+        if (MiniPlayPauseButton is not null)
+            MiniPlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+        if (PlaybackSpeedButton is not null)
+        {
+            var speed = player?.PlaybackSpeed ?? 1f;
+            PlaybackSpeedButton.Content = $"{speed:0.##}×";
+        }
+
         if (PlaybackSeekSlider is null || PlaybackPositionLabel is null || PlaybackDurationLabel is null)
             return;
 
-        var position = Math.Max(0, _localAudioPlayer?.PositionMilliseconds ?? 0);
-        var duration = Math.Max(0, _localAudioPlayer?.DurationMilliseconds ?? 0);
         var chapterRange = GetCurrentChapterRange(position, duration);
         var chapterElapsed = Math.Max(0, position - chapterRange.Start);
         var chapterDuration = Math.Max(0, chapterRange.End - chapterRange.Start);
         UpdateCurrentChapterUi(position, duration);
-        if (PlaybackSpeedButton is not null)
-        {
-            var speed = _localAudioPlayer?.PlaybackSpeed ?? 1f;
-            PlaybackSpeedButton.Content = $"Speed · {speed:0.##}×";
-        }
+
         _isUpdatingPlaybackSlider = true;
         try
         {
             PlaybackSeekSlider.Maximum = Math.Max(1, chapterDuration);
             PlaybackSeekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
             PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
-            PlaybackPositionLabel.Text = FormatPlaybackTime(chapterElapsed);
-            PlaybackDurationLabel.Text = chapterDuration > 0 ? FormatPlaybackTime(chapterDuration) : "--:--";
+
+            // The time row shows whole-book elapsed / total / remaining.
+            PlaybackPositionLabel.Text = FormatPlaybackTime(position);
+            PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
+            if (PlaybackRemainingLabel is not null)
+                PlaybackRemainingLabel.Text = duration > 0
+                    ? "−" + FormatPlaybackTime(Math.Max(0, duration - position))
+                    : "−--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
     }

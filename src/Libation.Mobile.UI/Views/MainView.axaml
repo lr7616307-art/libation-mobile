@@ -294,9 +294,10 @@
                 <TextBlock x:Name="CurrentChapterTitleLabel" Text="Ready when you are" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
                 <TextBlock x:Name="ChapterProgressLabel" Text="{Binding NowPlayingChapterCountLabel}" FontSize="12" TextAlignment="Center" Opacity="0.65"/>
                 <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0" IsEnabled="False"/>
-                <Grid ColumnDefinitions="*,*">
-                  <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="12"/>
-                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="12" HorizontalAlignment="Right"/>
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                  <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="11" HorizontalAlignment="Left"/>
+                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="11" HorizontalAlignment="Center"/>
+                  <TextBlock x:Name="PlaybackRemainingLabel" Grid.Column="2" Text="−--:--" FontSize="11" HorizontalAlignment="Right"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="3">
                   <Button Grid.Column="0" Content="⏮" FontSize="22" Click="PreviousChapterClicked"/>
