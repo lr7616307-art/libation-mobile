@@ -67,8 +67,10 @@ public sealed class AudibleAccountAuthenticator(
                     || !string.IsNullOrEmpty(responseUri.UserInfo)
                     || !responseUri.IsDefaultPort)
                     throw new InvalidOperationException("The Audible sign-in response must be an absolute HTTPS URL without embedded credentials.");
-                if (!string.Equals(responseUri.Host, state.ExpectedHost, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("The Audible sign-in response must come from the selected marketplace's Amazon sign-in host.");
+                if (!HostsMatch(responseUri.Host, state.ExpectedHost))
+                    throw new InvalidOperationException("The Audible sign-in response must come from the selected marketplace's Audible host.");
+                // Audible India and some other marketplaces alternate between
+                // www.audible.<tld> and audible.<tld> for the same maplanding callback.
                 var createdIdentity = state.Login.Login(responseUrl);
                 var authorization = createdIdentity.Authorization
                     ?? throw new InvalidOperationException("Audible did not return an authorization code.");
@@ -190,6 +192,15 @@ public sealed class AudibleAccountAuthenticator(
             DeviceName = identity.DeviceName,
             StoreAuthenticationCookie = identity.StoreAuthenticationCookie.Reveal() ?? string.Empty
         };
+    }
+
+    private static bool HostsMatch(string actual, string expected)
+    {
+        static string Normalize(string host)
+            => host.Trim().TrimEnd('.').StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                ? host.Trim().TrimEnd('.').Substring(4)
+                : host.Trim().TrimEnd('.');
+        return string.Equals(Normalize(actual), Normalize(expected), StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed record PendingLogin(ExternalLogin Login, DateTime ExpiresAtUtc, string ExpectedHost);
