@@ -132,12 +132,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsChaptersVisible => _isChaptersVisible;
     public bool IsBookDetailsVisible => _isBookDetailsVisible;
     public Audiobook? DetailBook => _detailBook;
-    public string DetailBookDescription => string.IsNullOrWhiteSpace(_detailBook?.Description)
-        ? "No summary was embedded in this audiobook file."
-        : System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Replace(_detailBook.Description, "<[^>]+>", " ").Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase)).Trim();
+    public string DetailBookDescription
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_detailBook?.Description))
+                return "No summary was embedded in this audiobook file.";
+            var decoded = System.Net.WebUtility.HtmlDecode(_detailBook.Description);
+            var plainText = System.Text.RegularExpressions.Regex.Replace(decoded, "<[^>]+>", " ");
+            return System.Text.RegularExpressions.Regex.Replace(plainText.Replace('\u00A0', ' '), @"\s+", " ").Trim();
+        }
+    }
     public string DetailFileSizeLabel => _detailBook?.FileSizeBytes > 0 ? $"{_detailBook.FileSizeBytes / 1048576d:0.0} MB" : "File size unavailable";
     public string DetailDurationLabel => string.IsNullOrWhiteSpace(_detailBook?.Length) ? "Duration unavailable" : _detailBook.Length;
     public string DetailChapterLabel => $"{_detailBook?.Chapters.Count ?? 0} chapters";
+    public bool HasDetailBookChapters => (_detailBook?.Chapters.Count ?? 0) > 0;
+    public bool HasNoDetailBookChapters => !HasDetailBookChapters;
     public int NotStartedCount => LocalAudioBooks.Count(book => book.ListeningStatus == "Not started");
     public int InProgressCount => LocalAudioBooks.Count(book => book.ListeningStatus == "In progress");
     public int FinishedCount => LocalAudioBooks.Count(book => book.ListeningStatus == "Finished");
@@ -175,6 +185,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(DetailFileSizeLabel));
         OnPropertyChanged(nameof(DetailDurationLabel));
         OnPropertyChanged(nameof(DetailChapterLabel));
+        OnPropertyChanged(nameof(HasDetailBookChapters));
+        OnPropertyChanged(nameof(HasNoDetailBookChapters));
     }
     public void CloseBookDetails()
     {
@@ -264,13 +276,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (!_isSelectionMode) return;
         if (!_selectedAudiobookIds.Add(audiobookId)) _selectedAudiobookIds.Remove(audiobookId);
         RaiseSelectionState();
+        RefreshLocalAudioBooks(_allBooks);
     }
     public void SelectAllLocalAudiobooks()
     {
         foreach (var book in LocalAudioBooks) _selectedAudiobookIds.Add(book.Id);
         RaiseSelectionState();
+        RefreshLocalAudioBooks(_allBooks);
     }
-    public void ExitSelectionMode() { _isSelectionMode = false; _isStatusPickerVisible = false; _selectedAudiobookIds.Clear(); RaiseSelectionState(); OnPropertyChanged(nameof(IsStatusPickerVisible)); }
+    public void ExitSelectionMode()
+    {
+        _isSelectionMode = false;
+        _isStatusPickerVisible = false;
+        _selectedAudiobookIds.Clear();
+        RaiseSelectionState();
+        RefreshLocalAudioBooks(_allBooks);
+        OnPropertyChanged(nameof(IsStatusPickerVisible));
+    }
     public void OpenStatusPicker() { if (!_selectedAudiobookIds.Any()) return; _isStatusPickerVisible = true; OnPropertyChanged(nameof(IsStatusPickerVisible)); }
     public void CloseStatusPicker() { _isStatusPickerVisible = false; OnPropertyChanged(nameof(IsStatusPickerVisible)); }
     public async Task ApplyListeningStatusAsync(string status, CancellationToken cancellationToken = default)
