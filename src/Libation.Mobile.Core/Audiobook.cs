@@ -36,6 +36,9 @@ public sealed record Audiobook(
     /// <summary>Last known playback position in milliseconds for resuming local audio.</summary>
     public long PlaybackPositionMilliseconds { get; init; }
 
+    /// <summary>Local listening state: Not started, In progress, or Finished.</summary>
+    public string ListeningStatus { get; init; } = "Not started";
+
     /// <summary>Provider catalogue entries currently have no verified full-audiobook download source.</summary>
     [JsonIgnore]
     public bool IsProviderCatalogueEntry => Id.StartsWith("provider:", StringComparison.Ordinal);
