@@ -2,8 +2,8 @@ namespace Libation.Mobile.Core;
 
 /// <summary>
 /// Opens the provider-generated HTTPS authorization page in an in-app browser
-/// and returns the final marketplace callback URL. Implementations must never
-/// inspect, log, or expose credentials entered into the provider page.
+/// and returns the final marketplace callback URL. Implementations may ask the
+/// user to paste that URL, but must never inspect, log, or expose provider credentials.
 /// </summary>
 public interface IExternalBrowserLauncher
 {
