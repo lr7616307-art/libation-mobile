@@ -26,7 +26,20 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         // Audible identity and the minimum account session use encrypted storage.
         var secrets = new AndroidSecretStore(this);
         var snapshots = new AudibleIdentitySnapshotStore(secrets);
-        var authenticator = new AudibleAccountAuthenticator(snapshots, new SystemDateTime());
+        var packageInfo = PackageManager?.GetPackageInfo(PackageName!, 0);
+        var appVersion = packageInfo?.VersionName ?? "unknown";
+        var osVersion = Build.VERSION.Release ?? "unknown";
+        var model = string.IsNullOrWhiteSpace(Build.Model) ? "Android device" : Build.Model;
+        var deviceName = string.IsNullOrWhiteSpace(Build.Device) ? model : Build.Device;
+        var profile = new AudibleAndroidDeviceProfile(
+            model,
+            osVersion,
+            appVersion,
+            appVersion,
+            deviceName);
+        var registrationClient = new AudiblePkceRegistrationClient(new HttpClient());
+        var authenticator = new AudibleAccountAuthenticator(
+            snapshots, registrationClient, profile, new SystemDateTime());
         var connection = new AccountConnectionService(authenticator, new AccountSessionStore(secrets));
         var browser = new AndroidExternalBrowserLauncher(this);
 
