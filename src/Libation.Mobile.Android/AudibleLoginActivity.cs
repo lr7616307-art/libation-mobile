@@ -99,7 +99,7 @@ public sealed class AudibleLoginActivity : Activity
         _responseInput = new EditText(this)
         {
             Hint = "Paste the complete final browser URL here",
-            InputType = InputTypes.ClassText | InputTypes.TextMultiLine | InputTypes.TextFlagNoSuggestions,
+            InputType = InputTypes.ClassText | InputTypes.TextFlagMultiLine | InputTypes.TextFlagNoSuggestions,
             MinLines = 3,
             MaxLines = 5,
             Gravity = GravityFlags.Top | GravityFlags.Start
