@@ -172,7 +172,7 @@
                   <Button Grid.Column="4" Content="▶|" Click="NextChapterClicked"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
-                  <Button Grid.Column="0" Content="Speed" Click="PlaybackSpeedClicked"/>
+                  <Button x:Name="PlaybackSpeedButton" Grid.Column="0" Content="Speed · 1.0×" Click="PlaybackSpeedClicked"/>
                   <Button x:Name="SleepTimerButton" Grid.Column="1" Content="Timer" Click="SleepTimerClicked"/>
                   <Button Grid.Column="2" Content="Chapters" Click="OpenChaptersClicked"/>
                 </Grid>
