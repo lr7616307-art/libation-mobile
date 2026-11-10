@@ -12,7 +12,8 @@ public partial class MainView : UserControl
     private readonly MainViewModel _viewModel;
     private ILocalAudioPlayer? _localAudioPlayer;
     private string? _playingAudiobookId;
-    private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly DispatcherTimer _playbackCheckpointTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly DispatcherTimer _sleepTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private DateTimeOffset? _sleepTimerEndsAt;
     private static readonly int[] SleepTimerMinutes = [15, 30, 45, 60];
@@ -58,6 +59,8 @@ public partial class MainView : UserControl
     {
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
+        _playbackCheckpointTimer.Tick -= PlaybackCheckpointTimerTick;
+        _playbackCheckpointTimer.Tick += PlaybackCheckpointTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _sleepTimer.Tick += SleepTimerTick;
         await InitializeAndRestorePlaybackAsync();
@@ -80,11 +83,15 @@ public partial class MainView : UserControl
         _playingAudiobookId = currentBook.Id;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
-        if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "Ⅱ" : "▶";
-        if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "Ⅱ" : "▶";
+        SetPlayerChapterPositions(currentBook);
+        if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
+        if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
         if (_localAudioPlayer.IsPlaying)
+        {
             _playbackProgressTimer.Start();
+            _playbackCheckpointTimer.Start();
+        }
         RestoreSleepTimerUi();
         UpdatePlaybackProgressUi();
     }
@@ -142,11 +149,13 @@ public partial class MainView : UserControl
         {
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
+            SetPlayerChapterPositions(book);
             _playingAudiobookId = book.Id;
             _viewModel.SetNowPlayingBook(book.Id);
-            if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
-            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
+            if (PlayPauseButton is not null) PlayPauseButton.Content = "⏸";
+            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "⏸";
             _playbackProgressTimer.Start();
+            _playbackCheckpointTimer.Start();
             _viewModel.ReportAudioStatus("Playing: " + book.Title);
             UpdatePlaybackProgressUi();
         }
@@ -165,6 +174,7 @@ public partial class MainView : UserControl
             if (PlayPauseButton is not null) PlayPauseButton.Content = "▶";
             if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "▶";
             _playbackProgressTimer.Stop();
+            _playbackCheckpointTimer.Stop();
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
             UpdatePlaybackProgressUi();
             _viewModel.ReportAudioStatus("Playback paused. Your position has been saved.");
@@ -181,9 +191,10 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Resume();
-            if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
-            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
+            if (PlayPauseButton is not null) PlayPauseButton.Content = "⏸";
+            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "⏸";
             _playbackProgressTimer.Start();
+            _playbackCheckpointTimer.Start();
             var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
             if (book is not null) _viewModel.ReportAudioStatus("Playing: " + book.Title);
             UpdatePlaybackProgressUi();
@@ -396,10 +407,12 @@ public partial class MainView : UserControl
     private async void MainViewUnloaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         _playbackProgressTimer.Stop();
+        _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
         PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
+        _playbackCheckpointTimer.Tick -= PlaybackCheckpointTimerTick;
         if (_localAudioPlayer is null) return;
         try
         {
@@ -427,6 +440,9 @@ public partial class MainView : UserControl
 
         var position = Math.Max(0, _localAudioPlayer?.PositionMilliseconds ?? 0);
         var duration = Math.Max(0, _localAudioPlayer?.DurationMilliseconds ?? 0);
+        var chapterRange = GetCurrentChapterRange(position, duration);
+        var chapterElapsed = Math.Max(0, position - chapterRange.Start);
+        var chapterDuration = Math.Max(0, chapterRange.End - chapterRange.Start);
         UpdateCurrentChapterUi(position, duration);
         if (PlaybackSpeedButton is not null)
         {
@@ -436,13 +452,31 @@ public partial class MainView : UserControl
         _isUpdatingPlaybackSlider = true;
         try
         {
-            PlaybackSeekSlider.Maximum = Math.Max(1, duration);
-            PlaybackSeekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
+            PlaybackSeekSlider.Maximum = Math.Max(1, chapterDuration);
+            PlaybackSeekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
             PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
-            PlaybackPositionLabel.Text = FormatPlaybackTime(position);
-            PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
+            PlaybackPositionLabel.Text = FormatPlaybackTime(chapterElapsed);
+            PlaybackDurationLabel.Text = chapterDuration > 0 ? FormatPlaybackTime(chapterDuration) : "--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
+    }
+
+    private (long Start, long End) GetCurrentChapterRange(long positionMilliseconds, long durationMilliseconds)
+    {
+        var book = _playingAudiobookId is null ? null : _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
+        var chapters = AudiobookChapterService.Normalize(book?.Chapters, durationMilliseconds);
+        var index = AudiobookChapterService.FindCurrentChapterIndex(chapters, positionMilliseconds);
+        if (chapters.Count == 0 || index < 0) return (0, Math.Max(0, durationMilliseconds));
+        var start = chapters[index].StartPositionMilliseconds;
+        var end = index + 1 < chapters.Count ? chapters[index + 1].StartPositionMilliseconds : durationMilliseconds;
+        return (start, Math.Max(start, end));
+    }
+
+    private void SetPlayerChapterPositions(Audiobook book)
+    {
+        if (_localAudioPlayer is not IChapterPositionAudioPlayer chapterPlayer) return;
+        var chapters = AudiobookChapterService.Normalize(book.Chapters, _localAudioPlayer.DurationMilliseconds);
+        chapterPlayer.SetChapterPositions(chapters.Select(chapter => chapter.StartPositionMilliseconds));
     }
 
     private void UpdateCurrentChapterUi(long positionMilliseconds, long durationMilliseconds)
@@ -492,13 +526,13 @@ public partial class MainView : UserControl
         if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
             return;
 
-        var target = Math.Max(0, (long)PlaybackSeekSlider.Value);
         var duration = _localAudioPlayer.DurationMilliseconds;
+        var chapterRange = GetCurrentChapterRange(_localAudioPlayer.PositionMilliseconds, duration);
+        var target = Math.Max(0, chapterRange.Start + (long)PlaybackSeekSlider.Value);
         if (duration > 0) target = Math.Min(target, duration);
         _localAudioPlayer.Seek(target);
         UpdateCurrentChapterUi(target, duration);
-        if (PlaybackPositionLabel is not null)
-            PlaybackPositionLabel.Text = FormatPlaybackTime(target);
+        UpdatePlaybackProgressUi();
         _ = _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
     }
 
@@ -585,23 +619,15 @@ public partial class MainView : UserControl
         }
     }
 
-    private async void PlaybackProgressTimerTick(object? sender, EventArgs e)
+    private void PlaybackProgressTimerTick(object? sender, EventArgs e) => UpdatePlaybackProgressUi();
+
+    private async void PlaybackCheckpointTimerTick(object? sender, EventArgs e)
     {
         if (_isSavingPlaybackPosition || _localAudioPlayer is null || _playingAudiobookId is null) return;
         _isSavingPlaybackPosition = true;
-        try
-        {
-            await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
-            UpdatePlaybackProgressUi();
-        }
-        catch (Exception)
-        {
-            // Progress checkpoints are best-effort; playback continues uninterrupted.
-        }
-        finally
-        {
-            _isSavingPlaybackPosition = false;
-        }
+        try { await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds); }
+        catch (Exception) { /* Checkpoint failure must not interrupt playback. */ }
+        finally { _isSavingPlaybackPosition = false; }
     }
 
     private async void ExportBackupClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

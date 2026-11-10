@@ -45,6 +45,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private float _playbackSpeed = 1f;
     private Handler? _checkpointHandler;
     private Java.Lang.Runnable? _checkpointRunnable;
+    private Java.Lang.Runnable? _notificationRunnable;
     private Java.Lang.Runnable? _sleepTimerRunnable;
     private long? _sleepDeadlineUtcTicks;
     private long? _sleepChapterPositionMilliseconds;
@@ -65,11 +66,17 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _checkpointRunnable = new Java.Lang.Runnable(() =>
         {
             SavePlaybackSnapshot();
-            UpdateNotification();
             if (_checkpointRunnable is not null)
                 _checkpointHandler?.PostDelayed(_checkpointRunnable, 5_000);
         });
         _checkpointHandler.PostDelayed(_checkpointRunnable, 5_000);
+        _notificationRunnable = new Java.Lang.Runnable(() =>
+        {
+            UpdateNotification();
+            if (_notificationRunnable is not null)
+                _checkpointHandler?.PostDelayed(_notificationRunnable, 1_000);
+        });
+        _checkpointHandler.PostDelayed(_notificationRunnable, 1_000);
         RestoreSleepTimer();
         _sleepTimerRunnable = new Java.Lang.Runnable(CheckSleepTimer);
         _checkpointHandler.PostDelayed(_sleepTimerRunnable, 1_000);
@@ -424,7 +431,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         builder.SetSmallIcon(Resource.Drawable.vorath_notification)
             .SetContentTitle(_title)
             .SetSubText("VØRATH")
-            .SetContentText($"{FormatTime(ReadPosition())} / {FormatTime(ReadDuration())}")
+            .SetContentText(FormatChapterProgressText())
             .SetContentIntent(contentPendingIntent)
             .SetOngoing(_player?.IsPlaying == true)
             .SetOnlyAlertOnce(true)
@@ -434,6 +441,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             .AddAction(global::Android.Resource.Drawable.IcMediaFf, "+10 sec", forwardPendingIntent)
             .AddAction(global::Android.Resource.Drawable.IcMediaNext, "Next chapter", nextPendingIntent);
         if (_coverBitmap is not null) builder.SetLargeIcon(_coverBitmap);
+        // Android's media style gives the expanded notification a dedicated artwork area.
+        builder.SetStyle(new Notification.MediaStyle().SetShowActionsInCompactView(0, 2, 4));
         var duration = ReadDuration();
         if (duration > 0)
             builder.SetProgress((int)Math.Min(duration, int.MaxValue),
@@ -454,6 +463,19 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (milliseconds <= 0) return "--:--";
         var value = TimeSpan.FromMilliseconds(milliseconds);
         return value.TotalHours >= 1 ? value.ToString(@"h\:mm\:ss") : value.ToString(@"m\:ss");
+    }
+    
+    private string FormatChapterProgressText()
+    {
+        var position = ReadPosition();
+        var duration = ReadDuration();
+        if (_chapterPositions.Length == 0)
+            return $"{FormatTime(position)} / {FormatTime(duration)}";
+        var index = Array.FindLastIndex(_chapterPositions, start => start <= position);
+        if (index < 0) return $"{FormatTime(position)} / {FormatTime(duration)}";
+        var start = _chapterPositions[index];
+        var end = index + 1 < _chapterPositions.Length ? _chapterPositions[index + 1] : duration;
+        return $"{FormatTime(Math.Max(0, position - start))} / {FormatTime(Math.Max(0, end - start))}";
     }
 
     private void UpdateNotification()
@@ -504,10 +526,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         SavePlaybackSnapshot();
         if (_checkpointRunnable is not null)
             _checkpointHandler?.RemoveCallbacks(_checkpointRunnable);
+        if (_notificationRunnable is not null)
+            _checkpointHandler?.RemoveCallbacks(_notificationRunnable);
         if (_sleepTimerRunnable is not null)
             _checkpointHandler?.RemoveCallbacks(_sleepTimerRunnable);
         _checkpointRunnable?.Dispose();
         _checkpointRunnable = null;
+        _notificationRunnable?.Dispose();
+        _notificationRunnable = null;
         _sleepTimerRunnable?.Dispose();
         _sleepTimerRunnable = null;
         _checkpointHandler = null;

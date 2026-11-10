@@ -267,7 +267,7 @@
             </Grid>
             <Border CornerRadius="24" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="14">
-                <Image Width="280" Height="280" HorizontalAlignment="Center" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                <Image Width="320" Height="320" HorizontalAlignment="Center" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
                 <TextBlock Text="{Binding NowPlayingBook.Title}" FontSize="24" FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="16" TextAlignment="Center" Opacity="0.7"/>
                 <TextBlock x:Name="CurrentChapterTitleLabel" Text="Ready when you are" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
@@ -278,11 +278,11 @@
                   <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="12" HorizontalAlignment="Right"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="3">
-                  <Button Grid.Column="0" Content="|◀" Click="PreviousChapterClicked"/>
-                  <Button Grid.Column="1" Content="⟲ 10" Click="RewindAudioClicked"/>
+                  <Button Grid.Column="0" Content="⏮" FontSize="22" Click="PreviousChapterClicked"/>
+                  <Button Grid.Column="1" Content="↶" FontSize="22" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked"/>
                   <Button x:Name="PlayPauseButton" Grid.Column="2" Content="▶" FontSize="25" Click="TogglePlaybackClicked"/>
-                  <Button Grid.Column="3" Content="10 ⟳" Click="ForwardAudioClicked"/>
-                  <Button Grid.Column="4" Content="▶|" Click="NextChapterClicked"/>
+                  <Button Grid.Column="3" Content="↷" FontSize="22" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked"/>
+                  <Button Grid.Column="4" Content="⏭" FontSize="22" Click="NextChapterClicked"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
                   <Button x:Name="PlaybackSpeedButton" Grid.Column="0" Content="Speed · 1.0×" Click="PlaybackSpeedClicked"/>
@@ -328,7 +328,7 @@
             <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="10" Opacity="0.65" MaxLines="1"/>
           </StackPanel>
         </Button>
-        <Button x:Name="MiniRewindButton" Grid.Column="2" Content="⟲ 10" FontSize="13" Padding="8" Click="RewindAudioClicked"/>
+        <Button x:Name="MiniRewindButton" Grid.Column="2" Content="↶" FontSize="20" ToolTip.Tip="Rewind 10 seconds" Padding="8" Click="RewindAudioClicked"/>
         <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="20" Padding="10" Click="TogglePlaybackClicked"/>
       </Grid>
     </Border>
