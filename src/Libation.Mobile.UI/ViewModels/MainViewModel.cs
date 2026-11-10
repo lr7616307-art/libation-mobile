@@ -49,6 +49,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     public ObservableCollection<Audiobook> Books { get; } = [];
     public ObservableCollection<Audiobook> LocalAudioBooks { get; } = [];
+    public ObservableCollection<Audiobook> AudibleBooks { get; } = [];
+    public ObservableCollection<Audiobook> RecentlyPlayedBooks { get; } = [];
+    public bool HasAudibleBooks => AudibleBooks.Count > 0;
+    public bool HasNoAudibleBooks => !HasAudibleBooks;
+    public bool HasRecentlyPlayedBooks => RecentlyPlayedBooks.Count > 0;
+    public bool HasNoRecentlyPlayedBooks => !HasRecentlyPlayedBooks;
+    public string AudibleLibraryEmptyMessage => HasAudibleBooks ? string.Empty : "Your Audible library will appear here after you sign in and sync.";
     public bool HasLocalAudioBooks => LocalAudioBooks.Count > 0;
     public bool HasNoLocalAudioBooks => !HasLocalAudioBooks;
     public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "Your library is empty. Import an audiobook file to get started.";
@@ -86,7 +93,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ? "Import an audiobook to begin listening"
         : $"{NowPlayingBook.Chapters.Count} chapters";
     public void SetNowPlayingBook(string audiobookId)
-        => NowPlayingBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
+    {
+        NowPlayingBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
+        RefreshRecentlyPlayedBooks();
+    }
 
     public bool HasSelectedBook => SelectedBook is not null;
     public string SelectedBookAudioLabel => SelectedBook is null ? string.Empty :
@@ -159,6 +169,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var stored = await _repository.GetBooksAsync(cancellationToken);
             _allBooks = stored;
             ApplyFilter(_allBooks);
+            RefreshAudibleBooks(_allBooks);
             await ReloadQueueAsync(cancellationToken);
             LastSuccessfulSync = DateTimeOffset.UtcNow;
             var timestampSaved = true;
@@ -254,6 +265,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 await _repository.RemoveAsync(demo.Id, cancellationToken);
             _allBooks = await _repository.GetBooksAsync(cancellationToken);
             ApplyFilter(_allBooks);
+            RefreshAudibleBooks(_allBooks);
             await ReloadQueueAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -578,6 +590,32 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(QueueSummaryLabel));
     }
 
+    private void RefreshAudibleBooks(IReadOnlyList<Audiobook> source)
+    {
+        var books = source
+            .Where(book => book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            .OrderBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        AudibleBooks.Clear();
+        foreach (var book in books) AudibleBooks.Add(book);
+        OnPropertyChanged(nameof(HasAudibleBooks));
+        OnPropertyChanged(nameof(HasNoAudibleBooks));
+        OnPropertyChanged(nameof(AudibleLibraryEmptyMessage));
+    }
+
+    private void RefreshRecentlyPlayedBooks()
+    {
+        var books = _allBooks
+            .Where(book => !string.IsNullOrWhiteSpace(book.AudioFilePath) && book.PlaybackPositionMilliseconds > 0)
+            .OrderByDescending(book => book.PlaybackPositionMilliseconds)
+            .ThenBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        RecentlyPlayedBooks.Clear();
+        foreach (var book in books) RecentlyPlayedBooks.Add(book);
+        OnPropertyChanged(nameof(HasRecentlyPlayedBooks));
+        OnPropertyChanged(nameof(HasNoRecentlyPlayedBooks));
+    }
+
     private void RefreshLocalAudioBooks(IReadOnlyList<Audiobook> source)
     {
         var localBooks = source
@@ -586,6 +624,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             .ToArray();
         LocalAudioBooks.Clear();
         foreach (var book in localBooks) LocalAudioBooks.Add(book);
+        RefreshRecentlyPlayedBooks();
         OnPropertyChanged(nameof(HasLocalAudioBooks));
         OnPropertyChanged(nameof(HasNoLocalAudioBooks));
         OnPropertyChanged(nameof(LocalAudioEmptyMessage));
