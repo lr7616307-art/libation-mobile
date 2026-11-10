@@ -646,6 +646,79 @@ public sealed class MainViewModelTests
         Assert.Equal(0, vm.GetResumePositionMilliseconds(book.Id));
     }
 
+    [Fact]
+    public async Task TryNavigateBack_ClearsSearchBeforeLeavingHome()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.NewTitle = "Searchable title";
+        vm.NewAuthor = "Author";
+        await vm.AddBookAsync();
+        vm.SearchText = "Searchable";
+        Assert.Single(vm.Books);
+
+        Assert.True(vm.TryNavigateBack());
+
+        Assert.Equal(string.Empty, vm.SearchText);
+        Assert.Single(vm.Books);
+    }
+
+    [Fact]
+    public async Task TryNavigateBack_ClosesNestedPlayerAndReturnsToHomeWithoutChangingPlaybackBook()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.NewTitle = "Now playing";
+        vm.NewAuthor = "Author";
+        await vm.AddBookAsync();
+        var book = Assert.Single(vm.Books);
+        vm.SetNowPlayingBook(book.Id);
+        vm.SelectTab(2);
+        vm.OpenFullPlayer();
+        vm.OpenChapters();
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.True(vm.IsFullPlayerVisible);
+        Assert.False(vm.IsChaptersVisible);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsFullPlayerVisible);
+        Assert.Equal(book.Id, vm.NowPlayingBook?.Id);
+    }
+
+    [Fact]
+    public async Task ConfirmPendingRemoval_RemovesBookAndClosesStaleDetailsAndMenu()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+        vm.NewTitle = "Imported title";
+        vm.NewAuthor = "Author";
+        await vm.AddBookAsync();
+        var book = Assert.Single(vm.Books);
+        vm.OpenBookMenu(book.Id);
+        vm.OpenBookDetails(book.Id);
+        vm.RequestRemoveBook(book.Id);
+
+        Assert.True(vm.IsRemovalConfirmationVisible);
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsRemovalConfirmationVisible);
+        Assert.Single(vm.Books);
+
+        vm.RequestRemoveBook(book.Id);
+        await vm.ConfirmPendingRemovalAsync();
+
+        Assert.False(vm.IsRemovalConfirmationVisible);
+        Assert.False(vm.IsBookDetailsVisible);
+        Assert.Null(vm.DetailBook);
+        Assert.Null(vm.MenuBook);
+        Assert.Empty(vm.Books);
+        Assert.Empty(await repository.GetBooksAsync());
+    }
+
     private static MainViewModel CreateViewModel(string directory)
         => new(new JsonLibraryRepository(Path.Combine(directory, "library.json")),
             new JsonDownloadQueue(Path.Combine(directory, "queue.json")));

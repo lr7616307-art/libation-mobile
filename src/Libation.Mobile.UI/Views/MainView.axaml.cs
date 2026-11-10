@@ -10,6 +10,14 @@ namespace Libation.Mobile.UI.Views;
 public partial class MainView : UserControl
 {
     private readonly MainViewModel _viewModel;
+    private static WeakReference<MainView>? _activeView;
+    
+    public static bool TryHandleSystemBack()
+    {
+        return _activeView is not null
+            && _activeView.TryGetTarget(out var view)
+            && view._viewModel.TryNavigateBack();
+    }
     private ILocalAudioPlayer? _localAudioPlayer;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -41,7 +49,10 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        // XAML-generated named controls can be null on some Android/Avalonia startup paths.
+        // Never let an optional seek control prevent the entire app from opening.
+        PlaybackSeekSlider?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        _activeView = new WeakReference<MainView>(this);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -51,6 +62,7 @@ public partial class MainView : UserControl
         _viewModel = new MainViewModel(repository, downloadQueue, syncService);
         InitializeComponent();
         DataContext = _viewModel;
+        _activeView = new WeakReference<MainView>(this);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -68,7 +80,19 @@ public partial class MainView : UserControl
         // catalogue and restoring the playback adapter. This avoids making
         // disk initialization part of the first visible frame.
         Dispatcher.UIThread.Post(
-            async () => await InitializeAndRestorePlaybackAsync(),
+            async () =>
+            {
+                try
+                {
+                    await InitializeAndRestorePlaybackAsync();
+                }
+                catch (Exception ex)
+                {
+                    // A catalogue or playback-restore failure must not crash the UI thread.
+                    System.Diagnostics.Debug.WriteLine($"Audiobook startup initialization failed: {ex}");
+                    _viewModel.ReportAudioStatus("Your library could not be fully loaded. The app is still available; try Reload from Home.");
+                }
+            },
             DispatcherPriority.Background);
     }
 
@@ -415,7 +439,7 @@ public partial class MainView : UserControl
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
-        PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        PlaybackSeekSlider?.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         _playbackCheckpointTimer.Tick -= PlaybackCheckpointTimerTick;
@@ -923,12 +947,11 @@ public partial class MainView : UserControl
     private async void MarkInProgressClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await _viewModel.ApplyListeningStatusAsync("In progress");
     private async void MarkNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await _viewModel.ApplyListeningStatusAsync("Not started");
 
-    private async void RemoveImportedBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void RemoveImportedBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_viewModel.MenuBook is not { } book) return;
         _viewModel.CloseBookMenu();
-        var confirmed = await ShowConfirmDialogAsync($"Remove \"{book.Title}\" from your library?");
-        if (confirmed) await _viewModel.RemoveBookAsync(book.Id);
+        _viewModel.RequestRemoveBook(book.Id);
     }
 
     private void EditImportedBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -969,48 +992,14 @@ public partial class MainView : UserControl
         _viewModel.OpenBookDetails(book.Id);
     }
 
-    private async Task<bool> ShowConfirmDialogAsync(string message)
-    {
-        var dialog = new Window
-        {
-            Title = "Confirm removal",
-            Width = 340,
-            SizeToContent = SizeToContent.Height,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            CanResize = false
-        };
-        var result = false;
-        var yes = new Button { Content = "Remove", MinWidth = 110 };
-        var no = new Button { Content = "Cancel", MinWidth = 110 };
-        yes.Click += (_, _) => { result = true; dialog.Close(); };
-        no.Click += (_, _) => dialog.Close();
-        dialog.Content = new StackPanel
-        {
-            Margin = new Avalonia.Thickness(20),
-            Spacing = 16,
-            Children =
-            {
-                new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-                new StackPanel
-                {
-                    Orientation = Avalonia.Layout.Orientation.Horizontal,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                    Spacing = 10,
-                    Children = { no, yes }
-                }
-            }
-        };
-        var owner = TopLevel.GetTopLevel(this) as Window;
-        if (owner is null) return false;
-        await dialog.ShowDialog(owner);
-        return result;
-    }
+    private void RemoveSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.RequestRemoveSelectedAudiobooks();
 
-    private async void RemoveSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var confirmed = await ShowConfirmDialogAsync($"Remove {_viewModel.SelectedAudiobookCountLabel} from your library?");
-        if (confirmed) await _viewModel.RemoveSelectedAudiobooksAsync();
-    }
+    private async void ConfirmRemovalClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await _viewModel.ConfirmPendingRemovalAsync();
+
+    private void CancelRemovalClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CancelPendingRemoval();
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 }

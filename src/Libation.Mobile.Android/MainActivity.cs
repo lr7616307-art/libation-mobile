@@ -1,6 +1,7 @@
 using Android.App;
 using Android.Content.PM;
 using Avalonia.Android;
+using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.Android;
 
@@ -13,4 +14,13 @@ namespace Libation.Mobile.Android;
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 public class MainActivity : AvaloniaMainActivity
 {
+    public override void OnBackPressed()
+    {
+        // Consume Back while an app page, overlay, search, or player screen
+        // can handle it. Do not finish the activity and tear down playback.
+        if (MainView.TryHandleSystemBack())
+            return;
+
+        base.OnBackPressed();
+    }
 }

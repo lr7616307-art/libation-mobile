@@ -55,6 +55,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _isInfoVisible;
     private bool _isSelectionMode;
     private bool _isStatusPickerVisible;
+    private string[] _pendingRemovalIds = [];
+    private string _removalConfirmationMessage = string.Empty;
+    private bool _isRemovalConfirmationVisible;
     private readonly HashSet<string> _selectedAudiobookIds = new(StringComparer.Ordinal);
 
     private static readonly Audiobook[] InitialSamples = [];
@@ -238,6 +241,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsInfoVisible => _isInfoVisible;
     public bool IsSelectionMode => _isSelectionMode;
     public bool IsStatusPickerVisible => _isStatusPickerVisible;
+    public bool IsRemovalConfirmationVisible => _isRemovalConfirmationVisible;
+    public string RemovalConfirmationMessage => _removalConfirmationMessage;
     public bool HasSelectedAudiobooks => _selectedAudiobookIds.Count > 0;
     public string SelectedAudiobookCountLabel => $"{_selectedAudiobookIds.Count} selected";
     public bool IsMenuBookSelected => _menuBook is not null && _selectedAudiobookIds.Contains(_menuBook.Id);
@@ -299,6 +304,48 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     public void OpenStatusPicker() { if (!_selectedAudiobookIds.Any()) return; _isStatusPickerVisible = true; OnPropertyChanged(nameof(IsStatusPickerVisible)); }
     public void CloseStatusPicker() { _isStatusPickerVisible = false; OnPropertyChanged(nameof(IsStatusPickerVisible)); }
+    public void RequestRemoveBook(string audiobookId)
+    {
+        var book = _allBooks.FirstOrDefault(item => item.Id == audiobookId && item.CanDelete);
+        if (book is null) return;
+        _pendingRemovalIds = [book.Id];
+        _removalConfirmationMessage = $"Remove \"{book.Title}\" from your library?";
+        _isRemovalConfirmationVisible = true;
+        OnPropertyChanged(nameof(RemovalConfirmationMessage));
+        OnPropertyChanged(nameof(IsRemovalConfirmationVisible));
+    }
+
+    public void RequestRemoveSelectedAudiobooks()
+    {
+        var selected = _allBooks.Where(book => book.CanDelete && _selectedAudiobookIds.Contains(book.Id)).ToArray();
+        if (selected.Length == 0) return;
+        _pendingRemovalIds = selected.Select(book => book.Id).ToArray();
+        _removalConfirmationMessage = $"Remove {selected.Length} selected audiobook(s) from your library?";
+        _isRemovalConfirmationVisible = true;
+        OnPropertyChanged(nameof(RemovalConfirmationMessage));
+        OnPropertyChanged(nameof(IsRemovalConfirmationVisible));
+    }
+
+    public void CancelPendingRemoval()
+    {
+        _pendingRemovalIds = [];
+        _removalConfirmationMessage = string.Empty;
+        _isRemovalConfirmationVisible = false;
+        OnPropertyChanged(nameof(RemovalConfirmationMessage));
+        OnPropertyChanged(nameof(IsRemovalConfirmationVisible));
+    }
+
+    public async Task ConfirmPendingRemovalAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_isRemovalConfirmationVisible || _pendingRemovalIds.Length == 0) return;
+        var ids = _pendingRemovalIds.ToArray();
+        CancelPendingRemoval();
+        foreach (var id in ids)
+            await RemoveBookAsync(id, cancellationToken);
+        if (_isSelectionMode) ExitSelectionMode();
+        AudioImportStatus = $"Removed {ids.Length} audiobook(s).";
+    }
+
     public async Task ApplyListeningStatusAsync(string status, CancellationToken cancellationToken = default)
     {
         if (status is not ("Finished" or "In progress" or "Not started")) return;
@@ -338,6 +385,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasNowPlayingBook => NowPlayingBook is not null;
+
+    /// <summary>Handles one Android system Back press without tearing down the activity or player.</summary>
+    public bool TryNavigateBack()
+    {
+        if (IsRemovalConfirmationVisible) { CancelPendingRemoval(); return true; }
+        if (_isStatusPickerVisible) { CloseStatusPicker(); return true; }
+        if (_isBookMenuVisible) { CloseBookMenu(); return true; }
+        if (_isSelectionMode) { ExitSelectionMode(); return true; }
+        if (_isChaptersVisible) { CloseChapters(); return true; }
+        if (_isFullPlayerVisible) { CloseFullPlayer(); return true; }
+        if (_isEditVisible) { CancelDetailBookEdit(); return true; }
+        if (_isBookDetailsVisible) { CloseBookDetails(); return true; }
+        if (_isInfoVisible) { CloseBookInfo(); return true; }
+        if (!string.IsNullOrWhiteSpace(SearchText)) { SearchText = string.Empty; return true; }
+        if (_selectedTabIndex != 0) { SelectTab(0); return true; }
+        return false;
+    }
+
     public void SelectTab(int index)
     {
         _selectedTabIndex = Math.Clamp(index, 0, 3);
@@ -677,11 +742,41 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
             if (book is null || !book.CanDelete) { ErrorMessage = "Demo entries are protected; only manually added entries can be deleted."; return; }
-            if (_editingBookId == audiobookId) CancelEdit();
+            if (_editingBookId == audiobookId)
+            {
+                _editingBookId = null;
+                ClearEditor();
+                OnPropertyChanged(nameof(IsEditing));
+                OnPropertyChanged(nameof(EditorTitle));
+                OnPropertyChanged(nameof(SaveButtonLabel));
+                OnPropertyChanged(nameof(IsEditVisible));
+            }
             if (SelectedBook?.Id == audiobookId) SelectedBook = null;
+            if (_detailBook?.Id == audiobookId)
+            {
+                _detailBook = null;
+                _isBookDetailsVisible = false;
+                _isEditVisible = false;
+                OnPropertyChanged(nameof(DetailBook));
+                OnPropertyChanged(nameof(IsBookDetailsVisible));
+                OnPropertyChanged(nameof(DetailBookDescription));
+            }
+            if (_menuBook?.Id == audiobookId)
+            {
+                _menuBook = null;
+                _isBookMenuVisible = false;
+                _isInfoVisible = false;
+                OnPropertyChanged(nameof(MenuBook));
+                OnPropertyChanged(nameof(IsBookMenuVisible));
+                OnPropertyChanged(nameof(IsInfoVisible));
+            }
+            _selectedAudiobookIds.Remove(audiobookId);
+            RaiseSelectionState();
+            RaiseNavigationState();
             await _repository.RemoveAsync(audiobookId, cancellationToken);
             _allBooks = await _repository.GetBooksAsync(cancellationToken);
             ApplyFilter(_allBooks);
+            RefreshFilteredLocalAudioBooks();
             ErrorMessage = string.Empty;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
