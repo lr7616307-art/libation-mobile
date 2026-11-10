@@ -68,6 +68,9 @@ public sealed class AudioFileDownloader
                 progress?.Report(new AudioDownloadProgress(received, totalBytes));
             }
 
+            if (received == 0)
+                throw new InvalidDataException("The provider returned an empty audiobook download.");
+
             await output.FlushAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporaryPath, fullPath, overwrite: true);

@@ -29,6 +29,30 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_EmptyResponseFailsAndDoesNotPublishFile()
+    {
+        using var directory = new TemporaryDirectory();
+        var destination = Path.Combine(directory.Path, "empty.m4b");
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-empty");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent([])
+        }));
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book-empty"), destination));
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Failed, item.Status);
+        Assert.Contains("validation", item.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.False(File.Exists(destination));
+        Assert.Empty(Directory.GetFiles(directory.Path, "*.part"));
+    }
+
+    [Fact]
     public async Task RecoverInterruptedDownloadsAsync_RequeuesItemsLeftDownloading()
     {
         using var directory = new TemporaryDirectory();
@@ -75,7 +99,6 @@ public sealed class DownloadQueueWorkerTests
         Assert.False(string.IsNullOrWhiteSpace(item.ErrorMessage));
     }
 
-
     [Fact]
     public async Task ProcessNextAsync_DoesNotPersistSensitiveProviderExceptionText()
     {
@@ -114,7 +137,6 @@ public sealed class DownloadQueueWorkerTests
         Assert.Null(item.ErrorMessage);
     }
 
-
     [Fact]
     public async Task ProcessNextAsync_ConcurrentCallsNeverRunTwoDownloadsAtOnce()
     {
@@ -122,7 +144,10 @@ public sealed class DownloadQueueWorkerTests
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
         await queue.EnqueueAsync("book-1");
         await queue.EnqueueAsync("book-2");
-        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent([7, 8, 9])
+        }));
         var source = new ConcurrencyTrackingSource();
         var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
 
@@ -135,7 +160,6 @@ public sealed class DownloadQueueWorkerTests
         Assert.Equal(1, source.MaximumConcurrentCalls);
         Assert.All(await queue.GetItemsAsync(), item => Assert.Equal(DownloadStatus.Completed, item.Status));
     }
-
 
     private sealed class ConcurrencyTrackingSource : IAuthorizedAudioDownloadSource
     {
