@@ -39,6 +39,13 @@ public sealed record Audiobook(
     /// <summary>Local listening state: Not started, In progress, or Finished.</summary>
     public string ListeningStatus { get; init; } = "Not started";
 
+    /// <summary>Original imported file size in bytes, when available.</summary>
+    public long FileSizeBytes { get; init; }
+
+    /// <summary>Transient bulk-selection state; never persisted in the catalogue backup.</summary>
+    [JsonIgnore]
+    public bool IsSelectedForBulkAction { get; init; }
+
     /// <summary>Provider catalogue entries currently have no verified full-audiobook download source.</summary>
     [JsonIgnore]
     public bool IsProviderCatalogueEntry => Id.StartsWith("provider:", StringComparison.Ordinal);
