@@ -18,18 +18,14 @@ public class MainActivity : AvaloniaMainActivity
     {
         StartupDiagnostics.Install(this);
 
-        // If the previous process died during startup, show the captured error
-        // before trying to initialize Avalonia again.
+        // Preserve a previous process failure, but let AppCompat initialize before
+        // replacing its content with the native diagnostic screen.
         var previousFailure = StartupDiagnostics.Read(this);
-        if (!string.IsNullOrWhiteSpace(previousFailure))
-        {
-            StartupDiagnostics.Show(this, previousFailure);
-            return;
-        }
-
         try
         {
             base.OnCreate(savedInstanceState);
+            if (!string.IsNullOrWhiteSpace(previousFailure))
+                StartupDiagnostics.Show(this, previousFailure);
         }
         catch (Exception exception)
         {
