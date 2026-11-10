@@ -87,7 +87,18 @@ public partial class MainView : UserControl
     {
         // The view may be unloaded and loaded again while the Android playback
         // service keeps running. Recreate its lightweight adapter on each load.
-        _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
+        // Playback recovery is optional: corrupt or stale recovery preferences
+        // must never prevent the library screen from opening.
+        try
+        {
+            _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
+        }
+        catch (Exception)
+        {
+            _localAudioPlayer = null;
+            _viewModel.ReportAudioStatus("Playback recovery is unavailable. Your library is still available.");
+        }
+
         await _viewModel.InitializeAsync();
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
