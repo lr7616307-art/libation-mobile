@@ -79,6 +79,7 @@ public partial class MainView : UserControl
         _playingAudiobookId = currentBook.Id;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
+        if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "Ⅱ" : "▶";
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
         if (_localAudioPlayer.IsPlaying)
             _playbackProgressTimer.Start();
