@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+using AudibleApi;\nusing System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -11,7 +11,7 @@ namespace Libation.Mobile.Audible;
 /// </summary>
 public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 {
-    private const string AndroidDeviceType = "A10KISP2GWF0E4";
+    
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
@@ -40,7 +40,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         if (!amazonDomain.StartsWith("amazon.", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The OAuth callback is not an Amazon marketplace.");
 
-        var serialAndType = $"{challenge.DeviceSerial}#{AndroidDeviceType}";
+        var serialAndType = $"{challenge.DeviceSerial}#{AudibleOAuthFlow.AndroidDeviceType}";
         var clientIdHex = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
         var request = new RegistrationRequest
         {
@@ -51,7 +51,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 Domain = "Device",
                 AppVersion = profile.AppVersion,
                 DeviceSerial = challenge.DeviceSerial,
-                DeviceType = AndroidDeviceType,
+                DeviceType = AudibleOAuthFlow.AndroidDeviceType,
                 DeviceName = profile.DeviceName,
                 OsVersion = profile.OsVersion,
                 SoftwareVersion = profile.SoftwareVersion,
@@ -110,7 +110,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
             Provider = AudibleIdentitySnapshot.ProviderName,
             AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
-            LocaleName = challenge.Marketplace,
+            LocaleName = Localization.Get(challenge.Marketplace).Name,
             AccessToken = bearer.AccessToken ?? string.Empty,
             AccessTokenExpiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(expiresIn),
             RefreshToken = bearer.RefreshToken ?? string.Empty,
@@ -122,7 +122,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 Value = c.Value ?? string.Empty
             }).ToArray(),
             DeviceSerialNumber = device.DeviceSerialNumber ?? challenge.DeviceSerial,
-            DeviceType = device.DeviceType ?? AndroidDeviceType,
+            DeviceType = device.DeviceType ?? AudibleOAuthFlow.AndroidDeviceType,
             AmazonAccountId = customer.UserId,
             DeviceName = device.DeviceName ?? profile.DeviceName,
             StoreAuthenticationCookie = tokens.StoreAuthenticationCookie?.Cookie ?? string.Empty
