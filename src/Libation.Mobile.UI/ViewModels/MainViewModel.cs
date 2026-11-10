@@ -50,7 +50,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private Audiobook? _menuBook;
     private Audiobook? _detailBook;
     private bool _isBookDetailsVisible;
-    private string _listeningStatusFilter = "Not started";
+    private string _listeningStatusFilter = "All";
     private bool _isBookMenuVisible;
     private bool _isInfoVisible;
     private bool _isSelectionMode;
@@ -148,23 +148,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string DetailChapterLabel => $"{_detailBook?.Chapters.Count ?? 0} chapters";
     public bool HasDetailBookChapters => (_detailBook?.Chapters.Count ?? 0) > 0;
     public bool HasNoDetailBookChapters => !HasDetailBookChapters;
+    public int AllCount => LocalAudioBooks.Count;
     public int NotStartedCount => LocalAudioBooks.Count(book => book.ListeningStatus == "Not started");
     public int InProgressCount => LocalAudioBooks.Count(book => book.ListeningStatus == "In progress");
     public int FinishedCount => LocalAudioBooks.Count(book => book.ListeningStatus == "Finished");
+    public string AllTabLabel => $"All ({AllCount})";
     public string NotStartedTabLabel => $"Not started ({NotStartedCount})";
     public string InProgressTabLabel => $"In progress ({InProgressCount})";
     public string FinishedTabLabel => $"Finished ({FinishedCount})";
+    public bool IsAllFilter => _listeningStatusFilter == "All";
     public bool IsNotStartedFilter => _listeningStatusFilter == "Not started";
     public bool IsInProgressFilter => _listeningStatusFilter == "In progress";
     public bool IsFinishedFilter => _listeningStatusFilter == "Finished";
     public string ListeningStatusFilter => _listeningStatusFilter;
     public void SetListeningStatusFilter(string status)
     {
-        if (status is not ("Not started" or "In progress" or "Finished")) return;
+        if (status is not ("All" or "Not started" or "In progress" or "Finished")) return;
         if (_listeningStatusFilter == status) return;
         _listeningStatusFilter = status;
         RefreshFilteredLocalAudioBooks();
         OnPropertyChanged(nameof(ListeningStatusFilter));
+        OnPropertyChanged(nameof(IsAllFilter));
         OnPropertyChanged(nameof(IsNotStartedFilter));
         OnPropertyChanged(nameof(IsInProgressFilter));
         OnPropertyChanged(nameof(IsFinishedFilter));
@@ -912,6 +916,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         foreach (var book in localBooks)
             LocalAudioBooks.Add(book with { IsSelectedForBulkAction = _selectedAudiobookIds.Contains(book.Id) });
         RefreshFilteredLocalAudioBooks();
+        OnPropertyChanged(nameof(AllCount));
+        OnPropertyChanged(nameof(AllTabLabel));
         OnPropertyChanged(nameof(NotStartedCount));
         OnPropertyChanged(nameof(InProgressCount));
         OnPropertyChanged(nameof(FinishedCount));
@@ -927,7 +933,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void RefreshFilteredLocalAudioBooks()
     {
         FilteredLocalAudioBooks.Clear();
-        foreach (var book in LocalAudioBooks.Where(book => book.ListeningStatus == _listeningStatusFilter))
+        foreach (var book in LocalAudioBooks.Where(book =>
+            _listeningStatusFilter == "All" || book.ListeningStatus == _listeningStatusFilter))
             FilteredLocalAudioBooks.Add(book);
     }
 
