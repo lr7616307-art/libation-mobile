@@ -19,6 +19,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionForward = "org.libationmobile.app.action.FORWARD";
     public const string ActionPreviousChapter = "org.libationmobile.app.action.PREVIOUS_CHAPTER";
     public const string ActionNextChapter = "org.libationmobile.app.action.NEXT_CHAPTER";
+    public const string ActionSetChapterPositions = "org.libationmobile.app.action.SET_CHAPTER_POSITIONS";
     public const string ActionSetSpeed = "org.libationmobile.app.action.SET_SPEED";
     public const string ActionRestore = "org.libationmobile.app.action.RESTORE";
     public const string ActionSetSleepTimer = "org.libationmobile.app.action.SET_SLEEP_TIMER";
@@ -27,6 +28,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ExtraFilePath = "file_path";
     public const string ExtraTitle = "title";
     public const string ExtraArtworkPath = "artwork_path";
+    public const string ExtraChapterPositions = "chapter_positions";
     public const string ExtraPosition = "position_ms";
     public const string ExtraSpeed = "playback_speed";
     public const string ExtraAutoPlay = "auto_play";
@@ -128,6 +130,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                 case ActionSetArtwork:
                     SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
                     SavePlaybackSnapshot();
+                    UpdateNotification();
+                    break;
+                case ActionSetChapterPositions:
+                    SetChapterPositions(intent.GetLongArrayExtra(ExtraChapterPositions));
                     UpdateNotification();
                     break;
             }
