@@ -6,9 +6,9 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Audible;
 
 /// <summary>
-/// Implements Audible's external-browser OAuth/device-registration flow.
-/// The user returns the final HTTPS URL from the address bar; passwords and
-/// browser cookies are never handled by this adapter.
+/// Implements Audible's marketplace OAuth/device-registration flow.
+/// The in-app sign-in page returns the Audible marketplace callback; passwords
+/// and browser cookies are never handled by this adapter.
 /// </summary>
 public sealed class AudibleAccountAuthenticator(
     AudibleIdentitySnapshotStore snapshotStore,
@@ -38,7 +38,7 @@ public sealed class AudibleAccountAuthenticator(
         lock (gate)
         {
             pending.Clear();
-            pending.Add(id, new PendingLogin(login, expires, locale.LoginUri().Host));
+            pending.Add(id, new PendingLogin(login, expires, locale.AudibleLoginUri().Host));
         }
         return Task.FromResult(new ExternalSignInChallenge(id, authorizationUri, expires));
     }
