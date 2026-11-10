@@ -37,7 +37,6 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private const string ChannelId = "libation_audiobook_playback";
     private const int NotificationId = 4102;
-    private const string NotificationIconResourceName = "vorath_notification";
     private IExoPlayer? _player;
     private string _title = "Audiobook";
     private string? _currentFilePath;
