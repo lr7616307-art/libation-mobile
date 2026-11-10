@@ -37,10 +37,22 @@ public sealed class AudibleAccountAuthenticatorTests
         Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
     }
 
+    [Fact]
+    public async Task BeginSignIn_UsesAudibleMarketplaceAsTheCallbackDomain()
+    {
+        var authenticator = CreateAuthenticator(new InMemorySecretStore());
+
+        var challenge = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "in"));
+        var returnTo = System.Web.HttpUtility.ParseQueryString(challenge.AuthorizationUri.Query)["openid.return_to"];
+
+        Assert.Equal("https://www.audible.in/ap/maplanding", returnTo);
+    }
+
     [Theory]
     [InlineData("https://evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("https://www.amazon.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.amazon.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
     public async Task CompleteSignIn_RejectsResponseOutsideSelectedMarketplaceHost(string responseUrl)
     {
         var secrets = new InMemorySecretStore();
