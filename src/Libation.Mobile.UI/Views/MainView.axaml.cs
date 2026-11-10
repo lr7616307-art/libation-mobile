@@ -20,6 +20,7 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private long _lastSeekRequestTicks;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
     private static readonly FilePickerFileType CoverImageFileType = new("Audiobook cover image") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"] };
@@ -40,6 +41,7 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
+        PlaybackSeekSlider.PropertyChanged += PlaybackSeekSliderPropertyChanged;
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -172,7 +174,7 @@ public partial class MainView : UserControl
     }
 
     private async void RewindAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => await SeekRelativeAsync(-15_000);
+        => await SeekRelativeAsync(-10_000);
 
     private void SleepTimerClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -343,7 +345,7 @@ public partial class MainView : UserControl
     }
 
     private async void ForwardAudioClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => await SeekRelativeAsync(15_000);
+        => await SeekRelativeAsync(10_000);
 
     private async Task SeekRelativeAsync(long offsetMilliseconds)
     {
@@ -361,8 +363,8 @@ public partial class MainView : UserControl
             _localAudioPlayer.Seek(target);
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
             _viewModel.ReportAudioStatus(offsetMilliseconds < 0
-                ? "Moved back 15 seconds. Playback position saved."
-                : "Moved forward 15 seconds. Playback position saved.");
+                ? "Moved back 10 seconds. Playback position saved."
+                : "Moved forward 10 seconds. Playback position saved.");
         }
         catch (Exception)
         {
@@ -374,6 +376,7 @@ public partial class MainView : UserControl
     {
         _playbackProgressTimer.Stop();
         _sleepTimer.Stop();
+        PlaybackSeekSlider.PropertyChanged -= PlaybackSeekSliderPropertyChanged;
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         if (_localAudioPlayer is null) return;
@@ -461,6 +464,23 @@ public partial class MainView : UserControl
     {
         var time = TimeSpan.FromMilliseconds(Math.Max(0, milliseconds));
         return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
+    }
+
+    private void PlaybackSeekSliderPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property != RangeBase.ValueProperty || _isUpdatingPlaybackSlider
+            || _localAudioPlayer is null || _playingAudiobookId is null)
+            return;
+
+        var now = Environment.TickCount64;
+        // Coalesce high-frequency thumb movement to about 8 seeks per second.
+        if (now - _lastSeekRequestTicks < 120) return;
+        _lastSeekRequestTicks = now;
+        var target = Math.Max(0, (long)PlaybackSeekSlider.Value);
+        _localAudioPlayer.Seek(target);
+        UpdateCurrentChapterUi(target, _localAudioPlayer.DurationMilliseconds);
+        if (PlaybackPositionLabel is not null)
+            PlaybackPositionLabel.Text = FormatPlaybackTime(target);
     }
 
     private async void SeekToSelectedPositionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
