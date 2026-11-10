@@ -56,7 +56,6 @@ public partial class MainView : UserControl
         var audioImport = new LocalAudioImportService(audioDirectory);
         _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
             syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory));
-        _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
         PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
