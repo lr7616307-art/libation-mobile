@@ -167,6 +167,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     public void ExitSelectionMode() { _isSelectionMode = false; _isStatusPickerVisible = false; _selectedAudiobookIds.Clear(); RaiseSelectionState(); OnPropertyChanged(nameof(IsStatusPickerVisible)); }
     public void OpenStatusPicker() { if (!_selectedAudiobookIds.Any()) return; _isStatusPickerVisible = true; OnPropertyChanged(nameof(IsStatusPickerVisible)); }
+    public void CloseStatusPicker() { _isStatusPickerVisible = false; OnPropertyChanged(nameof(IsStatusPickerVisible)); }
     public async Task ApplyListeningStatusAsync(string status, CancellationToken cancellationToken = default)
     {
         if (status is not ("Finished" or "In progress" or "Not started")) return;
