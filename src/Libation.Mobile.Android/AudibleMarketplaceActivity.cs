@@ -64,7 +64,7 @@ public sealed class AudibleMarketplaceActivity : Activity
         var button = new Button(this)
         {
             Text = code == _defaultMarketplace ? label + "  ✓" : label,
-            MinHeight = 56
+            MinimumHeight = 56
         };
         button.Click += (_, _) => FinishSelection(code);
         root.AddView(button, MatchWidthWrapHeight());
