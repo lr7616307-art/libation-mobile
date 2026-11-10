@@ -56,6 +56,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _isSelectionMode;
     private bool _isStatusPickerVisible;
     private readonly HashSet<string> _selectedAudiobookIds = new(StringComparer.Ordinal);
+    private readonly Stack<NavigationSnapshot> _navigationHistory = new();
+    private bool _isNavigationTransition;
 
     private static readonly Audiobook[] InitialSamples = [];
 
@@ -173,6 +175,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         _detailBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId && !book.Id.StartsWith("provider:", StringComparison.Ordinal));
         if (_detailBook is null) return;
+        PushNavigationSnapshot();
         _isBookDetailsVisible = true;
         _isBookMenuVisible = false;
         _isInfoVisible = false;
@@ -197,6 +200,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void BeginDetailBookEdit()
     {
         if (_detailBook is null) return;
+        PushNavigationSnapshot();
         BeginEdit(_detailBook.Id);
         if (IsEditing) { _isBookDetailsVisible = false; _isEditVisible = true; RaiseNavigationState(); OnPropertyChanged(nameof(IsEditVisible)); }
     }
@@ -246,6 +250,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void OpenBookMenu(string audiobookId)
     {
         _menuBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId && !book.Id.StartsWith("provider:", StringComparison.Ordinal));
+        if (_menuBook is not null) PushNavigationSnapshot();
         _isBookMenuVisible = _menuBook is not null;
         OnPropertyChanged(nameof(MenuBook));
         OnPropertyChanged(nameof(IsBookMenuVisible));
@@ -258,7 +263,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void OpenBookInfo()
     {
         if (_menuBook is null) return;
-        OpenBookDetails(_menuBook.Id);
+        var bookId = _menuBook.Id;
+        _isInfoVisible = false;
+        OnPropertyChanged(nameof(IsInfoVisible));
+        OpenBookDetails(bookId);
     }
     public void CloseBookInfo() { _isInfoVisible = false; OnPropertyChanged(nameof(IsInfoVisible)); }
     public void BeginSelectionMode()
@@ -336,36 +344,147 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasNowPlayingBook => NowPlayingBook is not null;
     public void SelectTab(int index)
     {
+        _navigationHistory.Clear();
         _selectedTabIndex = Math.Clamp(index, 0, 3);
         _isFullPlayerVisible = false;
         _isChaptersVisible = false;
+        _isBookDetailsVisible = false;
+        _isEditVisible = false;
+        _isBookMenuVisible = false;
+        _isInfoVisible = false;
         RaiseNavigationState();
+        OnPropertyChanged(nameof(IsBookMenuVisible));
+        OnPropertyChanged(nameof(IsInfoVisible));
     }
+
     public void OpenFullPlayer()
     {
-        if (NowPlayingBook is null) return;
+        if (NowPlayingBook is null || _isFullPlayerVisible) return;
+        PushNavigationSnapshot();
         _isChaptersVisible = false;
         _isFullPlayerVisible = true;
         RaiseNavigationState();
     }
+
     public void OpenChapters()
     {
-        if (NowPlayingBook is null) return;
+        if (NowPlayingBook is null || _isChaptersVisible) return;
+        PushNavigationSnapshot();
         _isFullPlayerVisible = false;
         _isChaptersVisible = true;
         RaiseNavigationState();
     }
-    public void CloseFullPlayer()
+
+    public void CloseFullPlayer() => NavigateBack();
+    public void CloseChapters() => NavigateBack();
+
+    public bool NavigateBack()
     {
-        _isFullPlayerVisible = false;
-        RaiseNavigationState();
+        if (_isStatusPickerVisible)
+        {
+            CloseStatusPicker();
+            return true;
+        }
+        if (_isSelectionMode)
+        {
+            ExitSelectionMode();
+            return true;
+        }
+        if (_isBookMenuVisible)
+        {
+            CloseBookMenu();
+            return true;
+        }
+        if (_isInfoVisible)
+        {
+            CloseBookInfo();
+            return true;
+        }
+        if (_navigationHistory.Count == 0)
+        {
+            if (_isFullPlayerVisible || _isChaptersVisible || _isBookDetailsVisible || _isEditVisible)
+            {
+                _isFullPlayerVisible = false;
+                _isChaptersVisible = false;
+                _isBookDetailsVisible = false;
+                _isEditVisible = false;
+                RaiseNavigationState();
+                return true;
+            }
+            return false;
+        }
+
+        RestoreNavigationSnapshot(_navigationHistory.Pop());
+        return true;
     }
-    public void CloseChapters()
+
+    private void PushNavigationSnapshot()
     {
-        _isChaptersVisible = false;
-        _isFullPlayerVisible = true;
-        RaiseNavigationState();
+        if (_isNavigationTransition) return;
+        _navigationHistory.Push(new NavigationSnapshot(
+            _selectedTabIndex,
+            _isFullPlayerVisible,
+            _isChaptersVisible,
+            _isBookDetailsVisible,
+            _isEditVisible,
+            _isBookMenuVisible,
+            _isInfoVisible,
+            _detailBook?.Id,
+            _menuBook?.Id));
     }
+
+    private void RestoreNavigationSnapshot(NavigationSnapshot snapshot)
+    {
+        _isNavigationTransition = true;
+        try
+        {
+            if (_isEditVisible && !snapshot.IsEditVisible)
+                CancelEdit();
+
+            _selectedTabIndex = snapshot.SelectedTabIndex;
+            _isFullPlayerVisible = snapshot.IsFullPlayerVisible;
+            _isChaptersVisible = snapshot.IsChaptersVisible;
+            _isBookDetailsVisible = snapshot.IsBookDetailsVisible;
+            _isEditVisible = snapshot.IsEditVisible;
+            _isBookMenuVisible = snapshot.IsBookMenuVisible;
+            _isInfoVisible = snapshot.IsInfoVisible;
+            _detailBook = snapshot.DetailBookId is null
+                ? null
+                : _allBooks.FirstOrDefault(book => book.Id == snapshot.DetailBookId);
+            _menuBook = snapshot.MenuBookId is null
+                ? null
+                : _allBooks.FirstOrDefault(book => book.Id == snapshot.MenuBookId);
+
+            if (_isEditVisible && _detailBook is not null && !IsEditing)
+                BeginEdit(_detailBook.Id);
+        }
+        finally
+        {
+            _isNavigationTransition = false;
+        }
+
+        RaiseNavigationState();
+        OnPropertyChanged(nameof(IsBookMenuVisible));
+        OnPropertyChanged(nameof(IsInfoVisible));
+        OnPropertyChanged(nameof(DetailBook));
+        OnPropertyChanged(nameof(MenuBook));
+        OnPropertyChanged(nameof(DetailBookDescription));
+        OnPropertyChanged(nameof(DetailDurationLabel));
+        OnPropertyChanged(nameof(DetailChapterLabel));
+        OnPropertyChanged(nameof(MenuBookDescription));
+        OnPropertyChanged(nameof(MenuBookMetadataLabel));
+    }
+
+    private sealed record NavigationSnapshot(
+        int SelectedTabIndex,
+        bool IsFullPlayerVisible,
+        bool IsChaptersVisible,
+        bool IsBookDetailsVisible,
+        bool IsEditVisible,
+        bool IsBookMenuVisible,
+        bool IsInfoVisible,
+        string? DetailBookId,
+        string? MenuBookId);
     private void RaiseNavigationState()
     {
         OnPropertyChanged(nameof(IsHomeTab));
