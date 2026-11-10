@@ -130,7 +130,17 @@ public sealed class AudibleLoginActivity : Activity
 
         var path = uri.AbsolutePath.TrimEnd('/');
         var isMarketplaceLanding = string.Equals(path, "/ap/maplanding", StringComparison.OrdinalIgnoreCase);
-        var hasAuthorizationCode = uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal);
+        var hasAuthorizationCode = uri.Query
+            .TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .Any(pair =>
+                pair.Length == 2
+                && string.Equals(
+                    Uri.UnescapeDataString(pair[0].Replace("+", " ", StringComparison.Ordinal)),
+                    "openid.oa2.authorization_code",
+                    StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(Uri.UnescapeDataString(pair[1].Replace("+", " ", StringComparison.Ordinal))));
         return isMarketplaceLanding && hasAuthorizationCode;
     }
 
@@ -184,8 +194,7 @@ public sealed class AudibleLoginActivity : Activity
                         .Replace("\\\\/", "/", StringComparison.Ordinal)
                         .Replace("\\u0026", "&", StringComparison.Ordinal)
                         .Replace("\\/", "/", StringComparison.Ordinal);
-                    if (TryComplete(decoded))
-                        completed(decoded);
+                    TryComplete(decoded);
                 }));
         }
 
