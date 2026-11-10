@@ -171,3 +171,36 @@ The earlier statement in this document that the pinned integration exposes no co
 
 - [Pinned AudibleApi project file](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/AudibleApi.csproj) — declares version 14.1.2.0.
 - [Download and DRM license API implementation](https://github.com/rmcrackan/AudibleApi/blob/master/AudibleApi/Api.Download.cs) — public GetDownloadLicenseAsync and WidevineDrmLicense methods.
+
+
+## DTO-level follow-up: what the 14.1.2 content-license result actually exposes
+
+Source was checked against upstream commit `95e1989e7d64264ccc9a5f7eca8b3b4a27c7616e`; its `AudibleApi.csproj` declares `14.1.2.0`, matching this app's package reference.
+
+The generated DTO defines these relevant fields:
+
+- `ContentLicense.StatusCode`, `DrmType`, `Asin`, `AccessExpiryDate`, `RefreshDate`, `RemovalDate`, `LicenseId`, `LicenseResponse`, `Voucher`, and `PdfUrl`.
+- `ContentLicense.ContentMetadata.ContentUrl.OfflineUrl` is the content URL field.
+- The metadata DTO separately defines `ContentReference` with `Asin`, `Acr`, `Codec`, `ContentFormat`, `ContentSizeInBytes`, `FileVersion`, `Marketplace`, `Sku`, `Tempo`, and `Version`.
+- The API method accepts a granted result only after checking `StatusCode` for `Granted`; a denial raises `ContentLicenseDeniedException`.
+
+Important behavior in the same pinned `Api.Download.cs` implementation:
+
+1. A requested `DrmType.Widevine` is silently changed to `Adrm` when the identity maintainer's device type does not equal AudibleApi's Android `Resources.DeviceType`.
+2. An `ApiErrorException` from the content-license request triggers the legacy `DownloadAaxWorkaroundAsync` path. That path resolves a redirect through a separate AAX workflow and returns a synthetic `ContentLicense` whose `DrmType` is `Adrm`.
+3. `WidevineDrmLicense(asin, licenseChallenge)` is a separate authenticated request; it does not itself establish that `OfflineUrl` is a playable or persistently licensed media object.
+4. The source shows the DTO fields and the API's local status checks, but does not establish a stable public contract for URL lifetime, redirect policy, required download headers, cancellation of in-flight requests, or compatibility of the returned Widevine license with Android offline `MediaDrm`.
+
+### Integration decision
+
+Do not call `GetDownloadLicenseAsync` from the generic queue yet. Its automatic DRM downgrade and AAX fallback mean a mobile caller cannot safely assume that requesting Widevine resulted in Widevine. A future adapter would need a pinned-version-safe way to disable or detect those fallbacks, validate the returned ASIN and DRM type, and prove the URL/MediaDrm behavior with synthetic contract tests and authorized device testing.
+
+Until those conditions are met, retain the explicit unsupported/official Audible handoff already enforced in `MainViewModel.EnqueueAsync`. Do not log or persist `OfflineUrl`, `LicenseResponse`, voucher material, or raw provider response bodies. Keep local DRM-free imports and generic provider-authorized downloads separate.
+
+### Exact upstream files inspected
+
+- [AudibleApi.csproj at the inspected 14.1.2.0 source commit](https://github.com/rmcrackan/AudibleApi/blob/95e1989e7d64264ccc9a5f7eca8b3b4a27c7616e/AudibleApi/AudibleApi.csproj)
+- [Api.Download.cs](https://github.com/rmcrackan/AudibleApi/blob/95e1989e7d64264ccc9a5f7eca8b3b4a27c7616e/AudibleApi/Api.Download.cs)
+- [ContentLicenseDtoV10.generated.cs](https://github.com/rmcrackan/AudibleApi/blob/95e1989e7d64264ccc9a5f7eca8b3b4a27c7616e/AudibleApi.Common/ContentLicenseDtoV10.generated.cs)
+- [ContentLicenseDtoV10.cs](https://github.com/rmcrackan/AudibleApi/blob/95e1989e7d64264ccc9a5f7eca8b3b4a27c7616e/AudibleApi.Common/ContentLicenseDtoV10.cs)
+- [MetadataDtoV10.generated.cs](https://github.com/rmcrackan/AudibleApi/blob/95e1989e7d64264ccc9a5f7eca8b3b4a27c7616e/AudibleApi.Common/MetadataDtoV10.generated.cs)
