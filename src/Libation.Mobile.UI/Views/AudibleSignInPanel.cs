@@ -6,43 +6,14 @@ using Libation.Mobile.UI.ViewModels;
 
 namespace Libation.Mobile.UI.Views;
 
-/// <summary>
-/// Small code-built panel so the shared UI project can host the Android
-/// sign-in flow without taking a dependency on Android platform assemblies.
-/// </summary>
+/// <summary>Compact account controls; the provider login itself opens in its own in-app page.</summary>
 internal static class AudibleSignInPanel
 {
     public static Control Create(AudibleSignInViewModel viewModel)
     {
-        var marketplace = new TextBox
-        {
-            PlaceholderText = "Audible marketplace country code, e.g. in, us, uk",
-            Text = viewModel.Marketplace
-        };
-        marketplace.Bind(TextBox.TextProperty,
-            new Binding(nameof(viewModel.Marketplace)) { Mode = BindingMode.TwoWay });
-
-        var responseUrl = new TextBox
-        {
-            PlaceholderText = "Paste the final HTTPS address-bar URL here",
-            AcceptsReturn = false,
-            TextWrapping = TextWrapping.Wrap,
-            MinHeight = 44
-        };
-        responseUrl.Bind(TextBox.TextProperty,
-            new Binding(nameof(viewModel.ResponseUrl)) { Mode = BindingMode.TwoWay });
-
         var begin = new Button { Content = "Sign in with Audible" };
         begin.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanBegin)));
         begin.Click += async (_, _) => await viewModel.BeginSignInAsync();
-
-        var cancel = new Button { Content = "Cancel sign-in" };
-        cancel.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanCancel)));
-        cancel.Click += async (_, _) => await viewModel.CancelSignInAsync();
-
-        var complete = new Button { Content = "Complete sign-in" };
-        complete.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanComplete)));
-        complete.Click += async (_, _) => await viewModel.CompleteSignInAsync();
 
         var disconnect = new Button { Content = "Disconnect Audible account" };
         disconnect.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanBegin)));
@@ -53,22 +24,18 @@ internal static class AudibleSignInPanel
 
         var content = new StackPanel
         {
-            Spacing = 8,
+            Spacing = 10,
             Children =
             {
                 new TextBlock { Text = "Audible account", FontSize = 18, FontWeight = FontWeight.SemiBold },
                 new TextBlock
                 {
-                    Text = "Sign-in happens in your external browser. This app never asks for your Amazon password. The final browser URL contains temporary sign-in data: paste it only into this app and never send it to anyone.",
+                    Text = "Sign in to Amazon India in the in-app Audible page. Your password and OTP stay on Amazon's page; VØRATH only receives the final sign-in response.",
                     TextWrapping = TextWrapping.Wrap,
                     FontSize = 12,
                     Opacity = 0.8
                 },
-                marketplace,
                 begin,
-                responseUrl,
-                complete,
-                cancel,
                 disconnect,
                 status
             }
