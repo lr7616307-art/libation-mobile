@@ -33,8 +33,9 @@ This is a user-assisted flow matching the desktop CLI, not an OAuth redirect/dee
 - Never log it, show it in status/error text, put it in analytics, backups, Android intents, or a persisted draft.
 - A user explicitly pasting from the browser may involve the Android clipboard. Explain that the pasted URL is sensitive and should not be shared. Clear the input immediately after successful submission or cancellation; do not automatically read clipboard contents.
 - Require an active, unexpired, one-time challenge and bind the response to the exact in-memory `ExternalLogin` instance created for that challenge.
-- Require an absolute HTTPS URL as a minimum syntactic check, then let the pinned upstream `ExternalLogin.Login` / `OAuth2.Parse` perform the provider-specific authorization-code parsing. Note that upstream `OAuth2.Parse` extracts `openid.oa2.authorization_code` from the query string and does not validate the host; mobile must not claim that URL host validation is provided by the upstream parser.
-- Reject empty, malformed, expired, replayed, and mismatched challenge submissions. Do not attempt registration when parsing fails.
+- Before invoking the upstream parser, require an absolute HTTPS URL with a non-empty host, no embedded user information, and the default HTTPS port. Bind the pending challenge to the exact login host generated for the selected Audible marketplace and require a case-insensitive exact host match. Reject suffix lookalikes (for example, `www.amazon.com.evil.example`), unrelated hosts, non-default ports, and credential-bearing URL user-info.
+- Only after the mobile host check succeeds, pass the unchanged response string to `ExternalLogin.Login` / `OAuth2.Parse` for provider-specific authorization-code parsing. The pinned upstream `OAuth2.Parse` extracts `openid.oa2.authorization_code` from the query string but does not validate the host; the marketplace binding is enforced by the mobile authenticator, not by the upstream parser.
+- Reject empty, malformed, expired, replayed, mismatched-challenge, wrong-marketplace-host, and otherwise unsafe URL submissions. Do not attempt registration when validation or parsing fails.
 
 ## Registration and identity persistence
 

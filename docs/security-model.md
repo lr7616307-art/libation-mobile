@@ -1,65 +1,47 @@
 # Mobile credential security model
 
-## Current implementation
+## Encrypted secret storage
 
-The Android host provides `AndroidSecretStore`, implementing the shared `ISecretStore`
-contract. It uses an AES/GCM/NoPadding key generated inside Android Keystore and stores
-only authenticated ciphertext in app-private SharedPreferences. The key is non-exportable
-through the app API. Each write uses a fresh 96-bit IV. The version-2 envelope authenticates the logical preference key as AES-GCM additional authenticated data (AAD), so ciphertext copied to another secret key fails authentication.
+The Android host provides `AndroidSecretStore`, implementing `ISecretStore`. It uses an AES-256-GCM key generated inside Android Keystore and stores only authenticated ciphertext in app-private SharedPreferences. The key is non-exportable through the app API.
 
-The store reads the earlier unversioned envelope for compatibility. After a successful legacy decrypt, it rewrites the value in version 2 before returning it. Existing ciphertext is never decrypted by generating a replacement Keystore key; missing keys fail closed and preserve stored ciphertext.
+New writes use a version-2 envelope with a fresh 96-bit IV. The logical preference key is authenticated as AES-GCM additional authenticated data (AAD), so copying ciphertext to another secret key fails authentication. The store can read the previous unversioned envelope and lazily migrates it after successful decryption. A migration write failure is surfaced; it is not reported as a successful migration.
 
-The shared `AccountSessionStore` persists account ID, access token, refresh token and
-expiry through that secure-store interface. It deliberately does not implement sign-in,
-token refresh, or network calls.
+Reading existing ciphertext never creates a replacement Keystore key. Missing or invalidated keys, malformed envelopes, unsupported versions, and authentication failures fail closed. The encrypted data is preserved for explicit recovery rather than silently overwritten. The versioned envelope and AAD framing are covered by deterministic core tests.
 
-## Rules for future account integration
+## Audible identity and account lifecycle
 
-- Store refresh tokens, access tokens, device keys and other account secrets only through
-  `ISecretStore`; never in ordinary preferences, databases, files, UI state or source code.
-- Never log credentials, authorization headers, cookies, activation bytes, or raw account
-  responses that may contain them.
-- Keep secrets out of crash reports and diagnostic exports.
-- Request only the minimum account data needed, and provide a clear disconnect action that
-  removes stored secrets.
-- Treat local audiobook metadata separately from credentials.
-- Do not implement authentication bypass, DRM circumvention, or unauthorized redistribution.
+The Android host wires the pinned AudibleApi 14.1.2 integration through `AudibleAccountAuthenticator`, `AccountConnectionService`, an Android external-browser launcher, and an `AudibleIdentitySnapshotStore`. The complete Audible identity is stored as one validated, versioned encrypted snapshot through Android Keystore-backed secret storage. The authenticated API is restored through the app-owned identity maintainer; the file-oriented convenience persister is not used.
 
-## Limitations and next validation
+The sign-in flow is user-assisted and browser-based:
+- The app opens the generated Audible marketplace login URL in the user's external browser.
+- The user completes Amazon/Audible sign-in and pastes the final address-bar URL into the app.
+- The app does not collect the Amazon password in an embedded form.
+- The response URL is treated as a short-lived credential-bearing value and is not logged, persisted, exported, or placed in Android intents.
+- The pending challenge is one-time and expires. Cancellation and failed registration/persistence do not commit a new identity or report the new sign-in as successful; an already saved identity is not silently replaced.
 
-This is a storage primitive and session persistence layer, not an authentication implementation.
-It has not yet been device-tested on Android 10. Keystore key invalidation (for example after
-certain device security changes) must be handled by the account layer by requesting sign-in
-again; do not silently replace a key and lose the ability to decrypt old values. A future
-migration should also version the stored payload format.
+Before the pinned upstream OAuth parser is called, the mobile authenticator validates that the response is an absolute HTTPS URL with no embedded user information, uses the default port, and has the exact host associated with the selected marketplace login attempt. This rejects unrelated and deceptive suffix hosts. The upstream parser extracts the authorization-code query parameter but does not itself validate the host; marketplace host binding is enforced by the mobile layer.
 
-## Account lifecycle foundation
+The Audible identity lifecycle coordinator serializes identity creation/replacement, token refresh commits, and clearing. New sign-in or disconnect operations invalidate stale in-flight work before it can commit. Token refresh is persisted as a complete encrypted identity snapshot before the refreshed credential is returned. Disconnect clears the snapshot and makes that maintainer instance reject later credential requests.
 
-The shared core now defines a provider-neutral `IAccountAuthenticator` boundary and an
-`AccountConnectionService` that coordinates sign-in results, encrypted session persistence,
-status reporting, refresh delegation and disconnect. UI-facing `AccountConnectionState`
-contains only status, account ID and expiry; it never contains access or refresh tokens.
+The generic `AccountSessionStore` and provider-neutral `AccountConnectionService` remain separate abstractions; a generic account-session pair is not a substitute for the full Audible identity.
 
-This is intentionally an interface and lifecycle coordinator only. There is no Audible
-authentication adapter, no login screen, no network call, and no claim that account sign-in
-works. A provider adapter must be based on the upstream-supported authentication flow and
-reviewed for current provider terms before it is implemented. Network failures must not
-silently erase a still-stored session; explicit disconnect clears it.
-## External-browser sign-in boundary
+## Security rules
 
-The account contract now models a browser handoff: the user supplies a login identifier and
-marketplace, the provider adapter returns a short-lived HTTPS authorization challenge, and
-the app passes the final response URL back to the adapter. The app does not collect or store
-the account password. The adapter must redact the response URL because it may carry
-authentication material. This follows the upstream-documented external login pattern, where
-the user completes sign-in in the browser and returns the resulting URL to Libation.
+- Store access tokens, refresh tokens, device keys, cookies, and other account secrets only through the encrypted secret/identity stores. Never put them in ordinary preferences, databases, files, UI state, backups, logs, analytics, or diagnostic exports.
+- Never log raw sign-in response URLs, authorization headers, cookies, activation bytes, private keys, or provider response bodies that may contain credentials.
+- Keep response URLs in memory only for the active sign-in operation. Do not automatically read the clipboard.
+- Do not silently replace a missing Keystore key or discard ciphertext to recover a session.
+- Treat audiobook catalogue metadata separately from credentials.
+- Do not implement authentication bypass, DRM circumvention, fabricated licenses, or unauthorized redistribution. A catalogue entry or ASIN is not proof of download entitlement or a media URL.
 
-The current code is still provider-neutral scaffolding. No Audible URL generation, callback
-parsing, account registration, CAPTCHA handling, or token exchange has been implemented.
+## Limitations and required validation
 
-- Authorization challenges must be short-lived HTTPS URLs. Reject non-HTTPS, malformed,
-  empty-ID, and expired challenges before opening them.
-- Launch sign-in in the external browser; never embed a password form or log the challenge
-  URL, response URL, cookies, query values, or authorization headers.
-- The Android browser adapter delegates to Android's activity resolver and does not inspect
-  or persist the browser URL itself.
+Automated tests and successful ARMv7/ARM64 CI builds do not prove real-account operation on a physical handset. Physical Android 10 / ARMv7 validation remains outstanding for:
+- external browser switching and return to the app;
+- copy/paste of the final response URL;
+- MFA/CAPTCHA completion and app resume;
+- encrypted identity persistence and restoration after process restart;
+- successful authenticated Audible library synchronization;
+- Keystore persistence across force-stop/relaunch and explicit failure behavior after key invalidation.
+
+Do not claim the sign-in or library-sync feature is fully validated until these device/account-owner checks succeed. Keystore invalidation checks should use a dedicated test device and non-production test secrets, never a real Audible credential.
