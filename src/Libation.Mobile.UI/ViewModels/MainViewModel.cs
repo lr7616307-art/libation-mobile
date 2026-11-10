@@ -48,6 +48,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _isFullPlayerVisible;
     private bool _isChaptersVisible;
     private Audiobook? _menuBook;
+    private Audiobook? _detailBook;
+    private bool _isBookDetailsVisible;
+    private string _listeningStatusFilter = "Not started";
     private bool _isBookMenuVisible;
     private bool _isInfoVisible;
     private bool _isSelectionMode;
@@ -59,6 +62,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     public ObservableCollection<Audiobook> Books { get; } = [];
     public ObservableCollection<Audiobook> LocalAudioBooks { get; } = [];
+    public ObservableCollection<Audiobook> FilteredLocalAudioBooks { get; } = [];
     public ObservableCollection<Audiobook> AudibleBooks { get; } = [];
     public ObservableCollection<Audiobook> RecentlyPlayedBooks { get; } = [];
     public bool HasAudibleBooks => AudibleBooks.Count > 0;
@@ -119,12 +123,97 @@ public sealed class MainViewModel : INotifyPropertyChanged
             RefreshAudibleBooks(_allBooks);
         }
     }
-    public bool IsHomeTab => _selectedTabIndex == 0 && !IsFullPlayerVisible && !IsChaptersVisible;
+    public bool IsHomeTab => _selectedTabIndex == 0 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible;
     public bool IsAudibleLibraryTab => _selectedTabIndex == 1 && !IsFullPlayerVisible && !IsChaptersVisible;
     public bool IsAudibleAccountTab => _selectedTabIndex == 2 && !IsFullPlayerVisible && !IsChaptersVisible;
     public bool IsSettingsTab => _selectedTabIndex == 3 && !IsFullPlayerVisible && !IsChaptersVisible;
     public bool IsFullPlayerVisible => _isFullPlayerVisible;
     public bool IsChaptersVisible => _isChaptersVisible;
+    public bool IsBookDetailsVisible => _isBookDetailsVisible;
+    public Audiobook? DetailBook => _detailBook;
+    public string DetailBookDescription => string.IsNullOrWhiteSpace(_detailBook?.Description)
+        ? "No summary was embedded in this audiobook file."
+        : System.Net.WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Replace(_detailBook.Description, "<[^>]+>", " ").Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase)).Trim();
+    public string DetailFileSizeLabel => _detailBook?.FileSizeBytes > 0 ? $"{_detailBook.FileSizeBytes / 1048576d:0.0} MB" : "File size unavailable";
+    public string DetailDurationLabel => string.IsNullOrWhiteSpace(_detailBook?.Length) ? "Duration unavailable" : _detailBook.Length;
+    public string DetailChapterLabel => $"{_detailBook?.Chapters.Count ?? 0} chapters";
+    public int NotStartedCount => LocalAudioBooks.Count(book => book.ListeningStatus == "Not started");
+    public int InProgressCount => LocalAudioBooks.Count(book => book.ListeningStatus == "In progress");
+    public int FinishedCount => LocalAudioBooks.Count(book => book.ListeningStatus == "Finished");
+    public string NotStartedTabLabel => $"Not started ({NotStartedCount})";
+    public string InProgressTabLabel => $"In progress ({InProgressCount})";
+    public string FinishedTabLabel => $"Finished ({FinishedCount})";
+    public bool IsNotStartedFilter => _listeningStatusFilter == "Not started";
+    public bool IsInProgressFilter => _listeningStatusFilter == "In progress";
+    public bool IsFinishedFilter => _listeningStatusFilter == "Finished";
+    public string ListeningStatusFilter => _listeningStatusFilter;
+    public void SetListeningStatusFilter(string status)
+    {
+        if (status is not ("Not started" or "In progress" or "Finished")) return;
+        if (_listeningStatusFilter == status) return;
+        _listeningStatusFilter = status;
+        RefreshFilteredLocalAudioBooks();
+        OnPropertyChanged(nameof(ListeningStatusFilter));
+        OnPropertyChanged(nameof(IsNotStartedFilter));
+        OnPropertyChanged(nameof(IsInProgressFilter));
+        OnPropertyChanged(nameof(IsFinishedFilter));
+    }
+    public void OpenBookDetails(string audiobookId)
+    {
+        _detailBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId && !book.Id.StartsWith("provider:", StringComparison.Ordinal));
+        if (_detailBook is null) return;
+        _isBookDetailsVisible = true;
+        _isBookMenuVisible = false;
+        _isInfoVisible = false;
+        RaiseNavigationState();
+        OnPropertyChanged(nameof(DetailBook));
+        OnPropertyChanged(nameof(IsBookDetailsVisible));
+        OnPropertyChanged(nameof(DetailBookDescription));
+        OnPropertyChanged(nameof(DetailFileSizeLabel));
+        OnPropertyChanged(nameof(DetailDurationLabel));
+        OnPropertyChanged(nameof(DetailChapterLabel));
+    }
+    public void CloseBookDetails()
+    {
+        _isBookDetailsVisible = false;
+        RaiseNavigationState();
+        OnPropertyChanged(nameof(IsBookDetailsVisible));
+    }
+    public void BeginDetailBookEdit()
+    {
+        if (_detailBook is null) return;
+        BeginEdit(_detailBook.Id);
+        if (IsEditing) { _isBookDetailsVisible = false; _isEditVisible = true; RaiseNavigationState(); OnPropertyChanged(nameof(IsEditVisible)); }
+    }
+    private bool _isEditVisible;
+    public bool IsEditVisible => _isEditVisible;
+    public void CancelDetailBookEdit()
+    {
+        CancelEdit();
+        _isEditVisible = false;
+        _isBookDetailsVisible = _detailBook is not null;
+        RaiseNavigationState();
+        OnPropertyChanged(nameof(IsEditVisible));
+        OnPropertyChanged(nameof(IsBookDetailsVisible));
+    }
+    public async Task SaveDetailBookEditAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsEditing) return;
+        await AddBookAsync(cancellationToken);
+        if (!HasError)
+        {
+            _detailBook = _allBooks.FirstOrDefault(book => book.Id == _detailBook?.Id);
+            _isEditVisible = false;
+            _isBookDetailsVisible = _detailBook is not null;
+            RaiseNavigationState();
+            OnPropertyChanged(nameof(IsEditVisible));
+            OnPropertyChanged(nameof(IsBookDetailsVisible));
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailBookDescription));
+            OnPropertyChanged(nameof(DetailDurationLabel));
+            OnPropertyChanged(nameof(DetailChapterLabel));
+        }
+    }
     public Audiobook? MenuBook => _menuBook;
     public bool IsBookMenuVisible => _isBookMenuVisible;
     public bool IsInfoVisible => _isInfoVisible;
@@ -151,9 +240,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(MenuBookStatusColor));
     }
     public void CloseBookMenu() { _isBookMenuVisible = false; OnPropertyChanged(nameof(IsBookMenuVisible)); }
-    public void OpenBookInfo() { if (_menuBook is null) return; _isBookMenuVisible = false; _isInfoVisible = true; OnPropertyChanged(nameof(IsBookMenuVisible)); OnPropertyChanged(nameof(IsInfoVisible)); }
+    public void OpenBookInfo()
+    {
+        if (_menuBook is null) return;
+        OpenBookDetails(_menuBook.Id);
+    }
     public void CloseBookInfo() { _isInfoVisible = false; OnPropertyChanged(nameof(IsInfoVisible)); }
-    public void BeginSelectionMode() { _isBookMenuVisible = false; _isSelectionMode = true; _selectedAudiobookIds.Clear(); RaiseSelectionState(); OnPropertyChanged(nameof(IsBookMenuVisible)); }
+    public void BeginSelectionMode()
+    {
+        _isBookMenuVisible = false;
+        _isSelectionMode = true;
+        _selectedAudiobookIds.Clear();
+        if (_menuBook is not null) _selectedAudiobookIds.Add(_menuBook.Id);
+        RaiseSelectionState();
+        RefreshLocalAudioBooks(_allBooks);
+        OnPropertyChanged(nameof(IsBookMenuVisible));
+    }
     public void ToggleAudiobookSelection(string audiobookId)
     {
         if (!_isSelectionMode) return;
@@ -247,6 +349,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsSettingsTab));
         OnPropertyChanged(nameof(IsFullPlayerVisible));
         OnPropertyChanged(nameof(IsChaptersVisible));
+        OnPropertyChanged(nameof(IsBookDetailsVisible));
+        OnPropertyChanged(nameof(IsEditVisible));
     }
 
     public bool HasSelectedBook => SelectedBook is not null;
@@ -627,6 +731,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 AudioFilePath = imported.AudioFilePath,
                 CoverImagePath = imported.CoverImagePath,
+                Description = imported.Description,
+                FileSizeBytes = imported.FileSizeBytes,
                 Chapters = imported.Chapters
             };
             await _repository.UpsertAsync(book, cancellationToken);
@@ -778,11 +884,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
             .OrderBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         LocalAudioBooks.Clear();
-        foreach (var book in localBooks) LocalAudioBooks.Add(book);
+        foreach (var book in localBooks)
+            LocalAudioBooks.Add(book with { IsSelectedForBulkAction = _selectedAudiobookIds.Contains(book.Id) });
+        RefreshFilteredLocalAudioBooks();
+        OnPropertyChanged(nameof(NotStartedCount));
+        OnPropertyChanged(nameof(InProgressCount));
+        OnPropertyChanged(nameof(FinishedCount));
+        OnPropertyChanged(nameof(NotStartedTabLabel));
+        OnPropertyChanged(nameof(InProgressTabLabel));
+        OnPropertyChanged(nameof(FinishedTabLabel));
         RefreshRecentlyPlayedBooks();
         OnPropertyChanged(nameof(HasLocalAudioBooks));
         OnPropertyChanged(nameof(HasNoLocalAudioBooks));
         OnPropertyChanged(nameof(LocalAudioEmptyMessage));
+    }
+
+    private void RefreshFilteredLocalAudioBooks()
+    {
+        FilteredLocalAudioBooks.Clear();
+        foreach (var book in LocalAudioBooks.Where(book => book.ListeningStatus == _listeningStatusFilter))
+            FilteredLocalAudioBooks.Add(book);
     }
 
     private void ApplyFilter(IReadOnlyList<Audiobook> source)
