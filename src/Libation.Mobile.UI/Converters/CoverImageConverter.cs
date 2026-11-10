@@ -1,14 +1,19 @@
 using Avalonia.Data.Converters;
 using Avalonia.Media.Imaging;
-using System.Collections.Concurrent;
 using System.Globalization;
 
 namespace Libation.Mobile.UI.Converters;
 
-/// <summary>Loads app-managed local cover art for Avalonia image bindings.</summary>
+/// <summary>
+/// Loads app-managed local cover art as bounded-size bitmaps. Weak references avoid
+/// keeping every cover in memory after its image controls are no longer using it.
+/// </summary>
 public sealed class CoverImageConverter : IValueConverter
 {
-    private static readonly ConcurrentDictionary<string, Bitmap> Cache = new(StringComparer.Ordinal);
+    private const int MaximumCoverWidthPixels = 512;
+    private const int MaximumCacheEntries = 48;
+    private static readonly object CacheLock = new();
+    private static readonly Dictionary<string, WeakReference<Bitmap>> Cache = new(StringComparer.Ordinal);
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
@@ -18,7 +23,36 @@ public sealed class CoverImageConverter : IValueConverter
         try
         {
             var fullPath = Path.GetFullPath(path);
-            return Cache.GetOrAdd(fullPath, static key => new Bitmap(key));
+            var file = new FileInfo(fullPath);
+            if (!file.Exists) return null;
+
+            // Include file metadata so replacing a cover at the same path does not
+            // leave a stale bitmap in the cache.
+            var cacheKey = $"{fullPath}|{file.Length}|{file.LastWriteTimeUtc.Ticks}";
+            lock (CacheLock)
+            {
+                if (Cache.TryGetValue(cacheKey, out var weakReference)
+                    && weakReference.TryGetTarget(out var cachedBitmap))
+                    return cachedBitmap;
+
+                using var stream = new FileStream(
+                    fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                var bitmap = Bitmap.DecodeToWidth(stream, MaximumCoverWidthPixels);
+                Cache[cacheKey] = new WeakReference<Bitmap>(bitmap);
+
+                // Prune dead entries first, then cap path metadata. Never dispose an
+                // evicted bitmap here: a visible Image control may still reference it.
+                foreach (var staleKey in Cache
+                    .Where(entry => !entry.Value.TryGetTarget(out _))
+                    .Select(entry => entry.Key)
+                    .ToArray())
+                    Cache.Remove(staleKey);
+
+                while (Cache.Count > MaximumCacheEntries)
+                    Cache.Remove(Cache.Keys.First());
+
+                return bitmap;
+            }
         }
         catch (Exception)
         {
