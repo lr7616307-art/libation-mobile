@@ -73,7 +73,15 @@ public sealed class AudiobookFileImportService(LocalAudioImportService audioImpo
     private AudiobookImportResult ReadMetadata(string id, string audioPath, string fallbackTitle)
     {
         var track = new Track(audioPath);
-        var title = FirstNonEmpty(track.Title, fallbackTitle);
+        var taggedTitle = FirstNonEmpty(track.Title);
+        // ATL can synthesize Track.Title from the internal copied filename when
+        // there is no embedded title tag. Prefer the original picked filename in
+        // that case; an actual metadata title remains authoritative.
+        var storedFileName = Path.GetFileNameWithoutExtension(audioPath);
+        var title = string.IsNullOrWhiteSpace(taggedTitle)
+            || string.Equals(taggedTitle, storedFileName, StringComparison.OrdinalIgnoreCase)
+            ? FirstNonEmpty(fallbackTitle, taggedTitle)
+            : taggedTitle;
         var album = FirstNonEmpty(track.Album);
         var author = FirstNonEmpty(track.Artist, track.AlbumArtist, track.Composer);
         var narrator = track.AdditionalFields
