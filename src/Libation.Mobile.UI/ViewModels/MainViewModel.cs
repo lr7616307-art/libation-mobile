@@ -76,6 +76,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _nowPlayingBook = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(NowPlayingChapterCountLabel));
+            OnPropertyChanged(nameof(HasNowPlayingChapters));
+            OnPropertyChanged(nameof(HasNoNowPlayingChapters));
         }
     }
     public bool HasNowPlayingChapters => NowPlayingBook?.Chapters.Count > 0;
