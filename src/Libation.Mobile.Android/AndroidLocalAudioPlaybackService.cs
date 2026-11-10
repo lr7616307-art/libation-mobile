@@ -74,9 +74,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         {
             UpdateNotification();
             if (_notificationRunnable is not null)
-                _checkpointHandler?.PostDelayed(_notificationRunnable, 1_000);
+                _checkpointHandler?.PostDelayed(_notificationRunnable, 500);
         });
-        _checkpointHandler.PostDelayed(_notificationRunnable, 1_000);
+        _checkpointHandler.PostDelayed(_notificationRunnable, 500);
         RestoreSleepTimer();
         _sleepTimerRunnable = new Java.Lang.Runnable(CheckSleepTimer);
         _checkpointHandler.PostDelayed(_sleepTimerRunnable, 1_000);
@@ -203,7 +203,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         if (playbackState == 4) // Player.STATE_ENDED
         {
-            StopPlayback();
+            // Preserve the terminal position and duration for the UI so it can
+            // atomically mark the catalogue item Finished after the service exits.
+            SavePlaybackSnapshot();
+            StopPlayback(clearRecovery: false);
             StopSelf();
             return;
         }
