@@ -16,3 +16,12 @@ public interface ILocalAudioPlayer : IDisposable
     /// <summary>Optional artwork path for the platform media notification.</summary>
     void SetArtwork(string? coverImagePath) { }
 }
+
+/// <summary>
+/// Optional platform hook for restoring a persisted audio session after the
+/// shared UI has initialized its library and first screen.
+/// </summary>
+public interface IDeferredAudioSessionRecovery
+{
+    void RestorePendingSession();
+}
