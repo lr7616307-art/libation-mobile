@@ -6,7 +6,7 @@
   <Grid RowDefinitions="*,Auto,Auto" Background="#0B0911">
     <Grid Grid.Row="0">
       <ScrollViewer>
-        <StackPanel Margin="20,16,20,20" Spacing="16">
+        <StackPanel Margin="12,10,12,12" Spacing="12">
           <Grid ColumnDefinitions="*,Auto">
             <StackPanel Grid.Column="0" Spacing="0">
               <TextBlock Text="VØRATH" FontSize="13" FontWeight="Bold" LetterSpacing="3" Foreground="#B9A5E8"/>
@@ -104,9 +104,9 @@
               <TextBlock Text="AUDIOBOOK DETAILS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8" VerticalAlignment="Center"/>
               <Button Grid.Column="1" Content="‹  Back" Click="CloseBookDetailsClicked"/>
             </Grid>
-            <Border CornerRadius="22" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+            <Border CornerRadius="18" Padding="12" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="13">
-                <Image Width="260" Height="260" HorizontalAlignment="Center" Source="{Binding DetailBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                <Image MaxWidth="220" MaxHeight="220" HorizontalAlignment="Center" Source="{Binding DetailBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
                 <TextBlock Text="{Binding DetailBook.Title}" FontSize="25" FontWeight="Bold" TextWrapping="Wrap" TextAlignment="Center"/>
                 <TextBlock Text="{Binding DetailBook.Author}" FontSize="17" TextAlignment="Center" Foreground="#C4B5FD"/>
                 <TextBlock Text="{Binding DetailBook.Narrator}" FontSize="14" TextAlignment="Center" Opacity="0.75"/>
@@ -265,9 +265,9 @@
               <Button Grid.Column="0" Content="‹  Back" HorizontalAlignment="Left" Click="CloseFullPlayerClicked"/>
               <Button Grid.Column="1" Content="☷  Chapters" Click="OpenChaptersClicked"/>
             </Grid>
-            <Border CornerRadius="24" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+            <Border CornerRadius="18" Padding="12" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="14">
-                <Image Width="280" Height="280" HorizontalAlignment="Center" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                <Image MaxWidth="260" MaxHeight="260" HorizontalAlignment="Center" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
                 <TextBlock Text="{Binding NowPlayingBook.Title}" FontSize="24" FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="16" TextAlignment="Center" Opacity="0.7"/>
                 <TextBlock x:Name="CurrentChapterTitleLabel" Text="Ready when you are" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
@@ -337,15 +337,16 @@
       </Grid>
     </Border>
 
-          <Border Grid.Row="0" Background="#0B0911" IsVisible="{Binding IsBookMenuVisible}" ZIndex="20">
-            <Border Background="#211A2D" CornerRadius="22" Padding="20" VerticalAlignment="Bottom" Margin="8" BorderBrush="#69568D" BorderThickness="1">
-              <StackPanel Spacing="10">
-                <TextBlock Text="{Binding MenuBook.Title}" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
-                <Button Content="▶  Play" HorizontalContentAlignment="Left" Click="PlayMenuBookClicked"/>
-                <Button Content="Edit" HorizontalContentAlignment="Left" Click="EditImportedBookClicked"/>
-                <Button Content="Info" HorizontalContentAlignment="Left" Click="BookInfoClicked"/>
-                <Button Content="Remove" Foreground="#FF7B83" HorizontalContentAlignment="Left" Click="RemoveImportedBookClicked"/>
-                <Button Content="Select multiple audiobooks" HorizontalContentAlignment="Left" Click="BeginSelectionClicked"/>
+          <Border Grid.Row="0" Background="#990B0911" IsVisible="{Binding IsBookMenuVisible}" ZIndex="20">
+            <Border Background="#211A2D" CornerRadius="22" Padding="16" VerticalAlignment="Bottom" Margin="8" BorderBrush="#69568D" BorderThickness="1">
+              <StackPanel Spacing="7">
+                <TextBlock Text="{Binding MenuBook.Title}" FontSize="16" FontWeight="Bold" TextWrapping="Wrap" MaxLines="2"/>
+                <Button Content="▶   Play" HorizontalContentAlignment="Left" Padding="14,9" Click="PlayMenuBookClicked"/>
+                <Button Content="✎   Edit" HorizontalContentAlignment="Left" Padding="14,9" Click="EditImportedBookClicked"/>
+                <Button Content="ⓘ   Info" HorizontalContentAlignment="Left" Padding="14,9" Click="BookInfoClicked"/>
+                <Button Content="▧   Add / change cover" HorizontalContentAlignment="Left" Padding="14,9" Click="ChooseCoverFromMenuClicked"/>
+                <Button Content="☷   Select multiple audiobooks" HorizontalContentAlignment="Left" Padding="14,9" Click="BeginSelectionClicked"/>
+                <Button Content="▤   Remove" Foreground="#FF7B83" HorizontalContentAlignment="Left" Padding="14,9" Click="RemoveImportedBookClicked"/>
                 <Button Content="Close" Click="CloseBookMenuClicked"/>
               </StackPanel>
             </Border>
