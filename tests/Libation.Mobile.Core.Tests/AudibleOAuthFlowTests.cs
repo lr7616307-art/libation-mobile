@@ -18,7 +18,8 @@ public sealed class AudibleOAuthFlowTests
         Assert.Equal("code", query["openid.oa2.response_type"]);
         Assert.Equal("S256", query["openid.oa2.code_challenge_method"]);
         Assert.Equal(flow.CodeChallenge, query["openid.oa2.code_challenge"]);
-        Assert.Equal("amzn_audible_android_in", query["openid.assoc_handle"]);
+        Assert.Equal("amzn_audible_ios_in", query["openid.assoc_handle"]);
+        Assert.Equal("amzn_audible_ios", query["pageId"]);
         Assert.Equal("AJO3FBRUE6J4S", query["marketPlaceId"]);
         Assert.Equal("true", query["forceMobileLayout"]);
         Assert.StartsWith("device:", query["openid.oa2.client_id"]);
