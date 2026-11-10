@@ -38,7 +38,7 @@ public sealed class AudibleAccountAuthenticatorTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => authenticator.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
 
-        Assert.Contains("selected marketplace", error.Message);
+        Assert.Contains("sign-in response", error.Message);
         Assert.Equal(0, secrets.SetCalls);
         Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
     }
