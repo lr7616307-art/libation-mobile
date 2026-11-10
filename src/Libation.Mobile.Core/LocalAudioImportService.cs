@@ -10,7 +10,8 @@ public sealed class LocalAudioImportService
     private const int BufferSize = 64 * 1024;
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".mp3", ".m4a", ".m4b", ".aac", ".flac", ".ogg", ".opus", ".wav"
+        ".mp3", ".m4a", ".m4b", ".aac", ".flac", ".ogg", ".opus", ".wav",
+        ".wma", ".aiff", ".aif", ".alac", ".ape", ".wv", ".mka", ".mp4", ".3gp", ".amr"
     };
 
     private readonly string _storageDirectory;
