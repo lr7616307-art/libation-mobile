@@ -11,6 +11,8 @@ public sealed record AudiobookImportResult(
     string Author,
     string Narrator,
     string Length,
+    string Description,
+    long FileSizeBytes,
     string? CoverImagePath,
     IReadOnlyList<AudiobookChapter> Chapters);
 
@@ -69,6 +71,15 @@ public sealed class AudiobookFileImportService(LocalAudioImportService audioImpo
             ? (long)Math.Round(track.DurationMs) : 0;
         var length = durationMs > 0 ? FormatDuration(durationMs) : string.Empty;
 
+        var description = track.AdditionalFields
+            .Where(pair =>
+                pair.Key.Contains("description", StringComparison.OrdinalIgnoreCase) ||
+                pair.Key.Contains("synopsis", StringComparison.OrdinalIgnoreCase) ||
+                pair.Key.Contains("comment", StringComparison.OrdinalIgnoreCase))
+            .Select(pair => pair.Value)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+        var fileSizeBytes = new FileInfo(audioPath).Length;
+
         var chapters = track.Chapters
             .Where(chapter => !string.IsNullOrWhiteSpace(chapter.Title) && chapter.StartTime >= 0)
             .OrderBy(chapter => chapter.StartTime)
@@ -76,7 +87,7 @@ public sealed class AudiobookFileImportService(LocalAudioImportService audioImpo
             .ToArray();
 
         var coverPath = SaveEmbeddedCover(id, track.EmbeddedPictures.FirstOrDefault()?.PictureData);
-        return new AudiobookImportResult(audioPath, title, author, narrator, length, coverPath, chapters);
+        return new AudiobookImportResult(audioPath, title, author, narrator, length, description, fileSizeBytes, coverPath, chapters);
     }
 
     private string? SaveEmbeddedCover(string id, byte[]? bytes)
