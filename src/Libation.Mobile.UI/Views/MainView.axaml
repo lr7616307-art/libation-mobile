@@ -247,7 +247,7 @@
                 <TextBlock Text="ACCOUNT &amp; SESSIONS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
                 <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="12" Opacity="0.65"/>
-                <TextBlock Text="Sign in using your Amazon India account. Your session is stored securely on this device." FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
+                <TextBlock Text="Choose your Audible marketplace, then sign in inside VØRATH. Your account identity is stored securely on this device." FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
                 <Button Content="Sign in with Audible" Click="AudibleSignInClicked"/>
                 <Button Content="Disconnect this session" Click="AudibleDisconnectClicked"/>
                 <Button Content="Sync Audible library" Click="SyncLibraryClicked" IsEnabled="{Binding CanSync}"/>
