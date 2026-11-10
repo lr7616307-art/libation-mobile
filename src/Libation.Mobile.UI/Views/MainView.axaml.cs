@@ -3,6 +3,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Libation.Mobile.Core;
+using Libation.Mobile.Android;
 using Libation.Mobile.UI.ViewModels;
 
 namespace Libation.Mobile.UI.Views;
@@ -100,6 +101,18 @@ public partial class MainView : UserControl
         }
 
         await _viewModel.InitializeAsync();
+        if (_localAudioPlayer is AndroidLocalAudioPlayer androidPlayer)
+        {
+            try
+            {
+                androidPlayer.RestorePendingSession();
+            }
+            catch (Exception)
+            {
+                _viewModel.ReportAudioStatus("The previous playback session could not be restored. Your library is available.");
+                return;
+            }
+        }
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
 
