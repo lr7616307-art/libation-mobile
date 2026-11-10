@@ -62,13 +62,76 @@ jobs:
           from collections import defaultdict
           from pathlib import Path
           publish_dir = Path(sys.argv[1])
-          apk_files = sorted(p for p in publish_dir.glob('*.apk') if not p.name.startswith('VORATH-'))
-          signed = [p for p in apk_files if re.search(r'[-_]signed[.]apk$', p.name, re.IGNORECASE)]
+          build_dir = publish_dir.parent
+          apk_files = sorted(p for p in build_dir.rglob('*.apk') if not p.name.startswith('VORATH-'))
+          signed = [p for p in apk_files if re.search(r'[-_]signed[.]apk
+          for apk_path in candidates:
+              with zipfile.ZipFile(apk_path) as apk:
+                  entries = [entry for entry in apk.infolist() if not entry.is_dir()]
+                  abis = {parts[1] for entry in entries if (parts := entry.filename.split('/'))[:1] == ['lib'] and len(parts) >= 3}
+                  if len(abis) != 1:
+                      raise SystemExit(f'{apk_path.name} is not a single-ABI APK; found native ABIs: {sorted(abis)}')
+                  abi = next(iter(abis))
+                  if abi not in expected:
+                      raise SystemExit(f'Unexpected ABI in {apk_path.name}: {abi}')
+                  if abi in found:
+                      raise SystemExit(f'Duplicate APK for ABI {abi}')
+                  found.add(abi)
+                  name = expected[abi]
+                  output_apk = publish_dir / f'VORATH-{name}.apk'
+                  shutil.copy2(apk_path, output_apk)
+                  size = output_apk.stat().st_size
+                  digest = hashlib.sha256(output_apk.read_bytes()).hexdigest()
+                  report_path = publish_dir / f'APK-SIZE-{name}.txt'
+                  with report_path.open('w', encoding='utf-8') as report:
+                      report.write(f'Variant: ${{ matrix.variant }}\nABI: {abi}\nAPK: {output_apk.name}\nSize: {size} bytes ({size / 1048576:.2f} MiB)\nSHA-256: {digest}\n')
+                  by_extension = defaultdict(lambda: [0, 0, 0])
+                  for entry in entries:
+                      extension = Path(entry.filename).suffix.lower() or '[no extension]'
+                      by_extension[extension][0] += entry.file_size
+                      by_extension[extension][1] += entry.compress_size
+                      by_extension[extension][2] += 1
+                  contents_path = publish_dir / f'APK-CONTENTS-{name}.txt'
+                  with contents_path.open('w', encoding='utf-8') as report:
+                      report.write(f'APK: {output_apk.name}\nEntries: {len(entries)}\nUncompressed total: {sum(e.file_size for e in entries)} bytes\nCompressed entry total: {sum(e.compress_size for e in entries)} bytes\n')
+                      report.write('Native ABIs: ' + ', '.join(sorted(abis)) + '\n\nLargest compressed entries (bytes):\n')
+                      for entry in sorted(entries, key=lambda item: item.compress_size, reverse=True)[:30]:
+                          report.write(f'{entry.compress_size:>12} compressed | {entry.file_size:>12} uncompressed | {entry.filename}\n')
+                      report.write('\nTotals by file extension (compressed bytes | uncompressed bytes | count):\n')
+                      for extension, totals in sorted(by_extension.items(), key=lambda item: item[1][1], reverse=True):
+                          report.write(f'{extension:>18} | {totals[1]:>12} | {totals[0]:>12} | {totals[2]}\n')
+                  print(report_path.read_text(encoding='utf-8'))
+                  print(contents_path.read_text(encoding='utf-8'))
+          if found != set(expected):
+              raise SystemExit(f'Missing ABI APKs. Found {sorted(found)}, expected {sorted(expected)}')
+          PY
+      - name: Upload ARMv7 and ARM64 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: vorath-${{ matrix.variant }}-split-apks
+          path: |
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/publish/VORATH-ARMv7.apk
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/publish/VORATH-ARM64.apk
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/publish/APK-SIZE-*.txt
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/publish/APK-CONTENTS-*.txt
+          if-no-files-found: error
+, p.name, re.IGNORECASE)]
           candidates = signed or [p for p in apk_files if 'unsigned' not in p.name.lower()]
           expected = {'armeabi-v7a': 'ARMv7', 'arm64-v8a': 'ARM64'}
           found = set()
+          print('APK files found under build output:')
+          for candidate in candidates:
+              print(f' - {candidate}')
           if len(candidates) != 2:
-              raise SystemExit(f'Expected exactly two signed ABI APKs, found {len(candidates)}: {[p.name for p in candidates]}')
+              abi_details = []
+              for candidate in candidates:
+                  try:
+                      with zipfile.ZipFile(candidate) as package:
+                          native_abis = sorted({parts[1] for entry in package.infolist() if (parts := entry.filename.split('/'))[:1] == ['lib'] and len(parts) >= 3})
+                      abi_details.append(f'{candidate}: {native_abis}')
+                  except Exception as error:
+                      abi_details.append(f'{candidate}: unable to inspect ({error})')
+              raise SystemExit(f'Expected exactly two signed ABI APKs, found {len(candidates)}. ABI details: {abi_details}')
           for apk_path in candidates:
               with zipfile.ZipFile(apk_path) as apk:
                   entries = [entry for entry in apk.infolist() if not entry.is_dir()]
