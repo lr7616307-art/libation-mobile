@@ -15,6 +15,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     private string _marketplace = "in";
     private string _status = "Checking Audible connection…";
     private bool _isBusy;
+    private AccountConnectionState? _lastState;
 
     public AudibleSignInViewModel(AccountConnectionService connection, IExternalBrowserLauncher browser)
     {
@@ -45,12 +46,26 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         }
     }
     public bool CanBegin => !IsBusy;
+    public string ConnectionStatusLabel => _lastState?.Status switch
+    {
+        AccountConnectionStatus.Connected => $"Connected · {_lastState.AccountId}",
+        AccountConnectionStatus.Expired => "Session expired",
+        AccountConnectionStatus.ReauthenticationRequired => "Sign-in required",
+        _ => "Not connected"
+    };
+    public async Task<string> GetDisplayStateAsync()
+    {
+        await LoadStatusAsync();
+        return Status;
+    }
 
     public async Task LoadStatusAsync(CancellationToken cancellationToken = default)
     {
         try
         {
             var state = await _connection.GetStateAsync(cancellationToken);
+            _lastState = state;
+            OnPropertyChanged(nameof(ConnectionStatusLabel));
             Status = state.Status switch
             {
                 AccountConnectionStatus.Connected => "Audible account connected.",
@@ -90,6 +105,8 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
 
             Status = "Completing secure Audible sign-in…";
             var state = await _connection.CompleteSignInAsync(challenge.ChallengeId, responseUrl, cancellationToken);
+            _lastState = state;
+            OnPropertyChanged(nameof(ConnectionStatusLabel));
             challengeId = null;
             Status = state.Status == AccountConnectionStatus.Connected
                 ? "Audible account connected. Your encrypted account identity is saved."
@@ -119,6 +136,8 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         {
             IsBusy = true;
             await _connection.DisconnectAsync(cancellationToken);
+            _lastState = await _connection.GetStateAsync(cancellationToken);
+            OnPropertyChanged(nameof(ConnectionStatusLabel));
             Status = "Audible account disconnected. Saved credentials were removed from encrypted storage.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
