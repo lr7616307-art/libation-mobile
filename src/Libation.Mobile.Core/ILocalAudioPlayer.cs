@@ -13,4 +13,6 @@ public interface ILocalAudioPlayer : IDisposable
     void Resume();
     void Seek(long positionMilliseconds);
     void SetPlaybackSpeed(float speed);
+    /// <summary>Optional artwork path for the platform media notification.</summary>
+    void SetArtwork(string? coverImagePath) { }
 }
