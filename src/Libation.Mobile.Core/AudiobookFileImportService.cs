@@ -14,7 +14,8 @@ public sealed record AudiobookImportResult(
     string Description,
     long FileSizeBytes,
     string? CoverImagePath,
-    IReadOnlyList<AudiobookChapter> Chapters);
+    IReadOnlyList<AudiobookChapter> Chapters,
+    string Album = "");
 
 /// <summary>
 /// Imports a selected audiobook as one item and reads only metadata actually
@@ -44,10 +45,22 @@ public sealed class AudiobookFileImportService(LocalAudioImportService audioImpo
             TryDeleteImportedFile(audioPath);
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            TryDeleteImportedFile(audioPath);
-            throw new InvalidDataException("The selected file could not be read as a supported audiobook.", ex);
+            // Metadata is optional. Keep the copied audio and fall back to its filename;
+            // many ordinary recordings have no audiobook-specific tags or chapter data.
+            var fileInfo = new FileInfo(audioPath);
+            return new AudiobookImportResult(
+                audioPath,
+                fallbackTitle,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                fileInfo.Exists ? fileInfo.Length : 0,
+                null,
+                Array.Empty<AudiobookChapter>(),
+                string.Empty);
         }
     }
 
@@ -60,7 +73,8 @@ public sealed class AudiobookFileImportService(LocalAudioImportService audioImpo
     private AudiobookImportResult ReadMetadata(string id, string audioPath, string fallbackTitle)
     {
         var track = new Track(audioPath);
-        var title = FirstNonEmpty(track.Title, track.Album, fallbackTitle);
+        var title = FirstNonEmpty(track.Title, fallbackTitle);
+        var album = FirstNonEmpty(track.Album);
         var author = FirstNonEmpty(track.Artist, track.AlbumArtist, track.Composer);
         var narrator = track.AdditionalFields
             .Where(pair => pair.Key.Contains("narrator", StringComparison.OrdinalIgnoreCase))
@@ -87,7 +101,7 @@ public sealed class AudiobookFileImportService(LocalAudioImportService audioImpo
             .ToArray();
 
         var coverPath = SaveEmbeddedCover(id, track.EmbeddedPictures.FirstOrDefault()?.PictureData);
-        return new AudiobookImportResult(audioPath, title, author, narrator, length, description, fileSizeBytes, coverPath, chapters);
+        return new AudiobookImportResult(audioPath, title, author, narrator, length, description, fileSizeBytes, coverPath, chapters, album);
     }
 
     private string? SaveEmbeddedCover(string id, byte[]? bytes)
