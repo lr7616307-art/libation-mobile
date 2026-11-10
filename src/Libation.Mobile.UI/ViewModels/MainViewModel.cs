@@ -96,6 +96,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (_nowPlayingBook == value) return;
             _nowPlayingBook = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(HasNowPlayingBook));
             OnPropertyChanged(nameof(NowPlayingChapterCountLabel));
             OnPropertyChanged(nameof(HasNowPlayingChapters));
             OnPropertyChanged(nameof(HasNoNowPlayingChapters));
@@ -123,7 +124,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             RefreshAudibleBooks(_allBooks);
         }
     }
-    public bool IsHomeTab => _selectedTabIndex == 0 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible;
+    public bool IsHomeTab => _selectedTabIndex == 0 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsAudibleLibraryTab => _selectedTabIndex == 1 && !IsFullPlayerVisible && !IsChaptersVisible;
     public bool IsAudibleAccountTab => _selectedTabIndex == 2 && !IsFullPlayerVisible && !IsChaptersVisible;
     public bool IsSettingsTab => _selectedTabIndex == 3 && !IsFullPlayerVisible && !IsChaptersVisible;
@@ -166,6 +167,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _isBookMenuVisible = false;
         _isInfoVisible = false;
         RaiseNavigationState();
+        OnPropertyChanged(nameof(IsBookMenuVisible));
+        OnPropertyChanged(nameof(IsInfoVisible));
         OnPropertyChanged(nameof(DetailBook));
         OnPropertyChanged(nameof(IsBookDetailsVisible));
         OnPropertyChanged(nameof(DetailBookDescription));
