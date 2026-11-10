@@ -44,7 +44,7 @@
                 </Grid>
               </Button>
             </Grid>
-            <Button Content="＋  Import Audiobook" FontSize="17" MinHeight="54" Click="ImportAudiobookClicked" />
+
             <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" FontSize="12" />
                         <Border CornerRadius="12" Padding="10" Background="#211A2D" IsVisible="{Binding IsSelectionMode}">
               <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
@@ -336,6 +336,18 @@
           </StackPanel>
         </StackPanel>
       </ScrollViewer>
+      <Button IsVisible="{Binding IsHomeTab}"
+              Width="56" Height="56" MinWidth="56" MinHeight="56"
+              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+              Margin="0,0,18,12" Padding="0"
+              Background="#8B5CF6" BorderThickness="0" CornerRadius="28"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              ZIndex="10" ToolTip.Tip="Import audiobook"
+              Click="ImportAudiobookClicked">
+        <TextBlock Text="＋" FontSize="30" FontWeight="Light"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   TextAlignment="Center"/>
+      </Button>
     </Grid>
 
     <Border Grid.Row="1" Background="#181421" BorderBrush="#51416F" BorderThickness="1,1,1,0"
