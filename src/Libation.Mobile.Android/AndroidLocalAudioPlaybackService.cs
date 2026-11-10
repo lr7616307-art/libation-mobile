@@ -453,12 +453,38 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         return builder.Build();
     }
 
+    private const int MaximumNotificationArtworkDimension = 512;
+
     private void SetArtwork(string? path)
     {
         _coverImagePath = !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? path : null;
         _coverBitmap?.Recycle();
         _coverBitmap?.Dispose();
-        _coverBitmap = _coverImagePath is null ? null : BitmapFactory.DecodeFile(_coverImagePath);
+        _coverBitmap = null;
+
+        if (_coverImagePath is null) return;
+
+        try
+        {
+            // Read dimensions without allocating the full image. Notification
+            // artwork is displayed small, so decoding a 4K cover wastes RAM.
+            using var bounds = new BitmapFactory.Options { InJustDecodeBounds = true };
+            BitmapFactory.DecodeFile(_coverImagePath, bounds);
+            if (bounds.OutWidth <= 0 || bounds.OutHeight <= 0) return;
+
+            var sampleSize = 1;
+            while (bounds.OutWidth / sampleSize > MaximumNotificationArtworkDimension
+                || bounds.OutHeight / sampleSize > MaximumNotificationArtworkDimension)
+                sampleSize = checked(sampleSize * 2);
+
+            using var options = new BitmapFactory.Options { InSampleSize = sampleSize };
+            _coverBitmap = BitmapFactory.DecodeFile(_coverImagePath, options);
+        }
+        catch (Exception)
+        {
+            // Artwork is optional; an invalid or oversized image must not stop audio.
+            _coverBitmap = null;
+        }
     }
 
     private static string FormatTime(long milliseconds)

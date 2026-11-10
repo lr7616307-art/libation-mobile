@@ -11,7 +11,7 @@ namespace Libation.Mobile.Android;
 public sealed class AndroidWidevineCapabilityProbe
 {
     private static readonly UUID WidevineUuid =
-        UUID.FromString("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed");
+        UUID.FromString("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed")!;
 
     /// <summary>
     /// Checks the platform's Widevine support and, when available, reads the
