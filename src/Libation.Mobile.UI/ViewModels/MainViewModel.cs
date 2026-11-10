@@ -79,6 +79,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
     public bool HasNowPlayingChapters => NowPlayingBook?.Chapters.Count > 0;
+    public bool HasNoNowPlayingChapters => !HasNowPlayingChapters;
     public string NowPlayingChapterCountLabel => NowPlayingBook is null
         ? "Import an audiobook to begin listening"
         : $"{NowPlayingBook.Chapters.Count} chapters";
