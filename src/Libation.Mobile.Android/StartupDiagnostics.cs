@@ -103,9 +103,9 @@ internal static class StartupDiagnostics
         var details = new TextView(activity)
         {
             Text = report,
-            TextSize = 12,
-            TextIsSelectable = true
+            TextSize = 12
         };
+        details.SetTextIsSelectable(true);
         var scroll = new ScrollView(activity);
         scroll.AddView(details);
         root.AddView(scroll, new LinearLayout.LayoutParams(
