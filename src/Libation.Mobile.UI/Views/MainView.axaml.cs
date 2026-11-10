@@ -566,19 +566,28 @@ public partial class MainView : UserControl
         return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
     }
 
-    private void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    private async void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
         if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
             return;
 
-        var duration = _localAudioPlayer.DurationMilliseconds;
-        var chapterRange = GetCurrentChapterRange(_localAudioPlayer.PositionMilliseconds, duration);
-        var target = Math.Max(0, chapterRange.Start + (long)PlaybackSeekSlider.Value);
-        if (duration > 0) target = Math.Min(target, duration);
-        _localAudioPlayer.Seek(target);
-        UpdateCurrentChapterUi(target, duration);
-        UpdatePlaybackProgressUi();
-        _ = _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+        var audiobookId = _playingAudiobookId;
+        try
+        {
+            var duration = _localAudioPlayer.DurationMilliseconds;
+            var chapterRange = GetCurrentChapterRange(_localAudioPlayer.PositionMilliseconds, duration);
+            var target = Math.Max(0, chapterRange.Start + (long)PlaybackSeekSlider.Value);
+            if (duration > 0) target = Math.Min(target, duration);
+
+            _localAudioPlayer.Seek(target);
+            UpdateCurrentChapterUi(target, duration);
+            UpdatePlaybackProgressUi();
+            await _viewModel.SavePlaybackPositionAsync(audiobookId, target);
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Playback moved, but its resume position could not be saved.");
+        }
     }
 
     private async void SeekToSelectedPositionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
