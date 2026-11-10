@@ -5,6 +5,9 @@ using System.Text.Json.Serialization;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Globalization;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Globalization;
 
 namespace Libation.Mobile.Audible;
 
@@ -127,9 +130,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         var customer = extensions.CustomerInfo
             ?? throw new InvalidDataException("Audible registration response did not contain customer information.");
 
-        if (!long.TryParse(bearer.ExpiresIn, System.Globalization.NumberStyles.Integer,
-                System.Globalization.CultureInfo.InvariantCulture, out var expiresIn)
-            || expiresIn <= 0)
+        if (!TryReadExpiresIn(bearer.ExpiresIn, out var expiresIn))
             throw new InvalidDataException("Audible returned an invalid access-token lifetime.");
 
         var cookies = tokens.WebsiteCookies ?? [];
@@ -235,7 +236,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
     {
         [JsonPropertyName("access_token")] public string? AccessToken { get; init; }
         [JsonPropertyName("refresh_token")] public string? RefreshToken { get; init; }
-        [JsonPropertyName("expires_in")] public string? ExpiresIn { get; init; }
+        [JsonPropertyName("expires_in")] public JsonElement ExpiresIn { get; init; }
     }
     private sealed class MacDmsTokens
     {
@@ -247,6 +248,84 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         [JsonPropertyName("Name")] public string? Name { get; init; }
         [JsonPropertyName("Value")] public string? Value { get; init; }
     }
+    private static bool TryReadExpiresIn(JsonElement value, out long seconds)
+    {
+        if (value.ValueKind == JsonValueKind.Number)
+            return value.TryGetInt64(out seconds) && seconds > 0;
+        if (value.ValueKind == JsonValueKind.String)
+            return long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds)
+                && seconds > 0;
+        seconds = 0;
+        return false;
+    }
+
+    private static string GetAndroidMajorVersion(string version)
+    {
+        var first = version.Split('.', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        return int.TryParse(first, NumberStyles.Integer, CultureInfo.InvariantCulture, out var major)
+            ? major.ToString(CultureInfo.InvariantCulture) : version;
+    }
+
+    private static string CreateAndroidFrc(string serial, AudibleAndroidDeviceProfile profile)
+    {
+        var offset = TimeZoneInfo.Local.GetUtcOffset(DateTimeOffset.Now);
+        var sign = offset < TimeSpan.Zero ? "-" : "+";
+        offset = offset.Duration();
+        var context = new Dictionary<string, string>
+        {
+            ["ApplicationName"] = "com.audible.application",
+            ["ApplicationVersion"] = profile.AppVersion,
+            ["DeviceOSVersion"] = profile.OsVersion,
+            ["DeviceName"] = "ranchu/Android/" + profile.Model,
+            ["ScreenWidthPixels"] = "1080",
+            ["ScreenHeightPixels"] = "2400",
+            ["ThirdPartyDeviceId"] = serial,
+            ["FirstPartyDeviceId"] = serial,
+            ["DeviceLanguage"] = CultureInfo.CurrentUICulture.Name.Replace('-', '_'),
+            ["TimeZone"] = $"{sign}{(int)offset.TotalHours:00}:{offset.Minutes:00}",
+            ["Carrier"] = "unknown"
+        };
+
+        using var compressed = new MemoryStream();
+        using (var gzip = new GZipStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            var json = JsonSerializer.SerializeToUtf8Bytes(context);
+            gzip.Write(json);
+        }
+
+        var plaintext = compressed.ToArray();
+        var password = Encoding.UTF8.GetBytes(serial);
+        var key = Rfc2898DeriveBytes.Pbkdf2(password, Encoding.UTF8.GetBytes("AES/CBC/PKCS7Padding"),
+            1000, HashAlgorithmName.SHA1, 16);
+        var macKey = Rfc2898DeriveBytes.Pbkdf2(password, Encoding.UTF8.GetBytes("HmacSHA256"),
+            1000, HashAlgorithmName.SHA1, 16);
+        var iv = RandomNumberGenerator.GetBytes(16);
+        byte[] ciphertext;
+        using (var aes = Aes.Create())
+        {
+            aes.Key = key;
+            aes.IV = iv;
+            aes.Mode = CipherMode.CBC;
+            aes.Padding = PaddingMode.PKCS7;
+            using var encryptor = aes.CreateEncryptor();
+            ciphertext = encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
+        }
+
+        using var hmac = new HMACSHA256(macKey);
+        var signed = new byte[iv.Length + ciphertext.Length];
+        Buffer.BlockCopy(iv, 0, signed, 0, iv.Length);
+        Buffer.BlockCopy(ciphertext, 0, signed, iv.Length, ciphertext.Length);
+        var digest = hmac.ComputeHash(signed);
+        var result = new byte[9 + signed.Length];
+        result[0] = 0;
+        Buffer.BlockCopy(digest, 0, result, 1, 8);
+        Buffer.BlockCopy(signed, 0, result, 9, signed.Length);
+        CryptographicOperations.ZeroMemory(key);
+        CryptographicOperations.ZeroMemory(macKey);
+        CryptographicOperations.ZeroMemory(password);
+        return Convert.ToBase64String(result);
+    }
+
     private sealed class StoreCookie
     {
         [JsonPropertyName("cookie")] public string? Cookie { get; init; }
