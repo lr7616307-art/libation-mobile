@@ -75,7 +75,7 @@ public sealed class AudibleLoginActivity : Activity
         CookieManager.Instance.SetAcceptThirdPartyCookies(_webView, true);
         _webView.SetWebViewClient(new AudibleLoginWebViewClient(
             _expectedHost,
-            url => _callbackUrl = url));
+            url => FinishLogin(url)));
         root.AddView(_webView, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent, 0, 1));
 
