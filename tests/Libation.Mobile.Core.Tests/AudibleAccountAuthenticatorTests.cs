@@ -38,7 +38,7 @@ public sealed class AudibleAccountAuthenticatorTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => authenticator.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
 
-        Assert.Contains("absolute HTTPS", error.Message);
+        Assert.Contains("callback", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, secrets.SetCalls);
         Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
     }
@@ -84,7 +84,13 @@ public sealed class AudibleAccountAuthenticatorTests
     private static AudibleAccountAuthenticator CreateAuthenticator(InMemorySecretStore secrets)
     {
         var clock = new FixedClock(new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc));
-        return new AudibleAccountAuthenticator(new AudibleIdentitySnapshotStore(secrets), clock);
+        var profile = new AudibleAndroidDeviceProfile(
+            "Test Android Device", "10", "1.0.0", "1.0.0", "Test Android Device");
+        return new AudibleAccountAuthenticator(
+            new AudibleIdentitySnapshotStore(secrets),
+            new AudiblePkceRegistrationClient(new HttpClient()),
+            profile,
+            clock);
     }
 
     private sealed class FixedClock(DateTime utcNow) : ISystemDateTime
