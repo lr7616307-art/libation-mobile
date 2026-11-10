@@ -171,7 +171,14 @@ public partial class MainView : UserControl
         }
         try
         {
-            _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
+            var currentPosition = _localAudioPlayer.PositionMilliseconds;
+            var currentDuration = _localAudioPlayer.DurationMilliseconds;
+            var shouldRestart = book.ListeningStatus == "Finished"
+                || (currentDuration > 0 && currentPosition >= currentDuration);
+            var startPosition = shouldRestart ? 0 : _viewModel.GetResumePositionMilliseconds(book.Id);
+            _localAudioPlayer.Play(book.AudioFilePath, startPosition, book.Title);
+            if (shouldRestart)
+                await _viewModel.SavePlaybackPositionAsync(book.Id, 0);
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
             SetPlayerChapterPositions(book);
             _playingAudiobookId = book.Id;
@@ -884,14 +891,33 @@ public partial class MainView : UserControl
         }
     }
 
-    private void TogglePlaybackClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void TogglePlaybackClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_localAudioPlayer?.IsPlaying == true)
+        {
             PauseAudioClicked(sender, e);
-        else if (_playingAudiobookId is not null)
+            return;
+        }
+
+        if (_playingAudiobookId is not null && _localAudioPlayer is not null)
+        {
+            var duration = _localAudioPlayer.DurationMilliseconds;
+            var position = _localAudioPlayer.PositionMilliseconds;
+            if (duration > 0 && position >= duration)
+            {
+                var completedBook = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
+                if (completedBook is not null)
+                {
+                    await PlayAudiobookAsync(completedBook);
+                    return;
+                }
+            }
+
             ResumeAudioClicked(sender, e);
-        else
-            _viewModel.ReportAudioStatus("Choose an audiobook in Library and tap Play first.");
+            return;
+        }
+
+        _viewModel.ReportAudioStatus("Choose an audiobook in Library and tap Play first.");
     }
 
     private async void ImportAudiobookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
