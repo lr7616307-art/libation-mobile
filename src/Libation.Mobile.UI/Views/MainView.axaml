@@ -82,7 +82,8 @@
                         <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" Spacing="6">
                           <Button Content="⋮" FontSize="22" Padding="8,4" Background="Transparent" BorderThickness="0" Click="BookOverflowClicked"/>
                           <Button Content="▶" FontSize="20" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}"/>
-                          <CheckBox Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Click="ToggleSelectionClicked"/>
+                          <Button Content="⋮" FontSize="22" Padding="8,4" Background="Transparent" BorderThickness="0" Click="BookOverflowClicked"/>
+                          <Button Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Tag="{Binding Id}" Click="ToggleSelectionClicked"/>
                         </StackPanel>
                       </Grid>
                     </Border>
