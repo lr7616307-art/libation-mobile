@@ -20,6 +20,7 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private DateTimeOffset _lastPlaybackCheckpointAt = DateTimeOffset.MinValue;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
     private static readonly FilePickerFileType CoverImageFileType = new("Audiobook cover image") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"] };
@@ -179,6 +180,7 @@ public partial class MainView : UserControl
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
             _playingAudiobookId = book.Id;
+            _lastPlaybackCheckpointAt = DateTimeOffset.UtcNow;
             _viewModel.SetNowPlayingBook(book.Id);
             if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
             if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
@@ -217,6 +219,7 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Resume();
+            _lastPlaybackCheckpointAt = DateTimeOffset.UtcNow;
             if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
             if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "Ⅱ";
             _playbackProgressTimer.Start();
@@ -634,16 +637,27 @@ public partial class MainView : UserControl
 
     private async void PlaybackProgressTimerTick(object? sender, EventArgs e)
     {
-        if (_isSavingPlaybackPosition || _localAudioPlayer is null || _playingAudiobookId is null) return;
+        if (_localAudioPlayer is null || _playingAudiobookId is null)
+            return;
+
+        // Keep the visible clock, seek bar, chapter and mini-player responsive.
+        // Persist the resume point less frequently to avoid a JSON write every second.
+        UpdatePlaybackProgressUi();
+        var now = DateTimeOffset.UtcNow;
+        if (_isSavingPlaybackPosition
+            || now - _lastPlaybackCheckpointAt < TimeSpan.FromSeconds(15))
+            return;
+
         _isSavingPlaybackPosition = true;
         try
         {
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
-            UpdatePlaybackProgressUi();
+            _lastPlaybackCheckpointAt = DateTimeOffset.UtcNow;
         }
         catch (Exception)
         {
             // Progress checkpoints are best-effort; playback continues uninterrupted.
+            _lastPlaybackCheckpointAt = DateTimeOffset.UtcNow;
         }
         finally
         {
