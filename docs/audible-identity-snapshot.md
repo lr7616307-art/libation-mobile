@@ -65,7 +65,7 @@ The envelope is intentionally app-owned rather than serializing the upstream Ide
 7. Never use async-void persistence from a synchronous identity event. Own an explicit awaited update/persist boundary.
 8. On restore, invalid encrypted data or unsupported schema requires re-authentication. Never log exception payloads, tokens, cookies, keys, or serialized envelopes.
 9. Exclude the identity record from Android backup and user-visible library backup/export operations; verify this on a physical device.
-10. Keep browser callback URLs and transient authorization data in process memory only. The 16 KiB snapshot limit must be validated against real-world complete snapshots before live account testing.
+10. Keep browser callback URLs and transient authorization data in process memory only. The serializer and Android secret store share a bounded 128 KiB plaintext limit. This removes the earlier 16 KiB ceiling while still rejecting unbounded payloads; a physical-device test must verify actual account snapshots remain within this bound.
 
 ## Implementation sequence
 
