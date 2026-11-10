@@ -14,15 +14,21 @@ namespace Libation.Mobile.Android;
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 public class MainActivity : AvaloniaMainActivity
 {
-    internal static Libation.Mobile.UI.Views.MainView? ActiveMainView { get; set; }
+    private Libation.Mobile.UI.Views.MainView? _mainView;
 
     public bool HandleAppBack()
-        => ActiveMainView?.HandleAndroidBack() ?? false;
+        => _mainView?.HandleAndroidBack() ?? false;
 
     public override void OnBackPressed()
     {
         if (HandleAppBack()) return;
         base.OnBackPressed();
+    }
+
+    protected override void OnDestroy()
+    {
+        _mainView = null;
+        base.OnDestroy();
     }
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -40,8 +46,8 @@ public class MainActivity : AvaloniaMainActivity
                 var originalFactory = lifetime.MainViewFactory;
                 lifetime.MainViewFactory = () =>
                 {
-                    var view = originalFactory?.Invoke() as Libation.Mobile.UI.Views.MainView;
-                    ActiveMainView = view;
+                    var view = originalFactory?.Invoke();
+                    _mainView = view as Libation.Mobile.UI.Views.MainView;
                     return view;
                 };
             }
