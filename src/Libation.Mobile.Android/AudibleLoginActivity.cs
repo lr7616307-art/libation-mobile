@@ -51,7 +51,7 @@ public sealed class AudibleLoginActivity : Activity
 
         var title = new TextView(this)
         {
-            Text = "🇮🇳  India",
+            Text = FormatMarketplaceHeader(_expectedHost),
             TextSize = 18,
             Gravity = GravityFlags.Center
         };
@@ -117,12 +117,35 @@ public sealed class AudibleLoginActivity : Activity
     private bool TryValidateCallback(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            || !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(uri.Host, _expectedHost, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase)
-            || !uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal))
+            || !uri.IsDefaultPort
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
             return false;
-        return true;
+
+        var parameters = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        return !string.IsNullOrWhiteSpace(parameters["openid.oa2.authorization_code"]);
+    }
+
+    private static string FormatMarketplaceHeader(string callbackHost)
+    {
+        var region = callbackHost.ToLowerInvariant() switch
+        {
+            "www.audible.com" => "🇺🇸  United States",
+            "www.audible.co.uk" => "🇬🇧  United Kingdom",
+            "www.audible.de" => "🇩🇪  Germany",
+            "www.audible.fr" => "🇫🇷  France",
+            "www.audible.ca" => "🇨🇦  Canada",
+            "www.audible.com.au" => "🇦🇺  Australia",
+            "www.audible.it" => "🇮🇹  Italy",
+            "www.audible.es" => "🇪🇸  Spain",
+            "www.audible.in" => "🇮🇳  India",
+            "www.audible.co.jp" => "🇯🇵  Japan",
+            "www.audible.com.br" => "🇧🇷  Brazil",
+            _ => "Audible"
+        };
+        return region;
     }
 
     protected override void OnDestroy()
@@ -161,8 +184,13 @@ public sealed class AudibleLoginActivity : Activity
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
                 || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(uri.Host, expectedHost, StringComparison.OrdinalIgnoreCase)
-                || !uri.AbsolutePath.Contains("maplanding", StringComparison.OrdinalIgnoreCase)
-                || !uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal))
+                || !uri.IsDefaultPort
+                || !string.IsNullOrEmpty(uri.UserInfo)
+                || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            var parameters = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            if (string.IsNullOrWhiteSpace(parameters["openid.oa2.authorization_code"]))
                 return false;
 
             completed(url);
