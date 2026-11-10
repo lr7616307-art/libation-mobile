@@ -48,7 +48,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     public bool CanBegin => !IsBusy;
     public string ConnectionStatusLabel => _lastState?.Status switch
     {
-        AccountConnectionStatus.Connected => $"Connected · {_lastState.AccountId}",
+        AccountConnectionStatus.Connected => "Connected",
         AccountConnectionStatus.Expired => "Session expired",
         AccountConnectionStatus.ReauthenticationRequired => "Sign-in required",
         _ => "Not connected"
@@ -93,7 +93,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             var challenge = await _connection.BeginSignInAsync(request, cancellationToken);
             challengeId = challenge.ChallengeId;
 
-            Status = "Sign in on the Amazon page. Your password and verification codes are not read by this app.";
+            Status = "Complete sign-in in your browser, then copy its final address-bar URL back into VØRATH. Your password and OTP stay in the browser.";
             var responseUrl = await _browser.OpenAsync(challenge.AuthorizationUri, cancellationToken);
             if (string.IsNullOrWhiteSpace(responseUrl))
             {
