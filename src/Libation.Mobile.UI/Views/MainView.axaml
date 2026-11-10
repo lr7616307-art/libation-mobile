@@ -18,6 +18,11 @@
           <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
             <TextBlock Text="Home" FontSize="30" FontWeight="Bold" />
             <TextBox PlaceholderText="Search your audiobooks" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
+              <Button Grid.Column="0" Content="{Binding NotStartedTabLabel}" Background="#C17A18" Click="ShowNotStartedClicked"/>
+              <Button Grid.Column="1" Content="{Binding InProgressTabLabel}" Background="#C63E46" Click="ShowInProgressClicked"/>
+              <Button Grid.Column="2" Content="{Binding FinishedTabLabel}" Background="#218B52" Click="ShowFinishedClicked"/>
+            </Grid>
             <Button Content="＋  Import Audiobook" FontSize="17" MinHeight="54" Click="ImportAudiobookClicked" />
             <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" FontSize="12" />
                         <Border CornerRadius="12" Padding="10" Background="#211A2D" IsVisible="{Binding IsSelectionMode}">
@@ -45,7 +50,7 @@
                       <Grid ColumnDefinitions="72,*,Auto">
                         <Image Grid.Column="0" Width="64" Height="80" Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
                         <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center" Margin="12,0">
-                          <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
+                          <Button Content="{Binding Title}" FontSize="15" FontWeight="Bold" HorizontalContentAlignment="Left" Padding="0" Background="Transparent" BorderThickness="0" Tag="{Binding Id}" Click="OpenBookDetailsClicked"/>
                           <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.7"/>
                           <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.65"/>
                           <TextBlock Text="Resume from saved position" FontSize="11" Foreground="#C4B5FD"/>
@@ -64,12 +69,14 @@
                 <TextBlock Grid.Column="1" Text="{Binding CatalogueSummaryLabel}" FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
               </Grid>
               <TextBlock Text="{Binding LocalAudioEmptyMessage}" FontSize="13" Opacity="0.65" IsVisible="{Binding HasNoLocalAudioBooks}"/>
-              <ItemsControl ItemsSource="{Binding LocalAudioBooks}">
+              <ItemsControl ItemsSource="{Binding FilteredLocalAudioBooks}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
                     <Border CornerRadius="16" Padding="12" Margin="0,0,0,8" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
                       <Grid ColumnDefinitions="78,*,Auto" RowDefinitions="Auto,Auto">
-                        <Image Grid.RowSpan="2" Grid.Column="0" Width="68" Height="92" Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                        <Button Grid.RowSpan="2" Grid.Column="0" Width="68" Height="92" Padding="0" Background="Transparent" BorderThickness="0" Tag="{Binding Id}" Click="OpenBookDetailsClicked">
+                          <Image Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                        </Button>
                         <StackPanel Grid.Column="1" Spacing="3" Margin="12,0">
                           <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
                           <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.7"/>
@@ -82,7 +89,7 @@
                         <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" Spacing="6">
                           <Button Content="⋮" FontSize="22" Padding="8,4" Background="Transparent" BorderThickness="0" Click="BookOverflowClicked"/>
                           <Button Content="▶" FontSize="20" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}"/>
-                          <Button Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Tag="{Binding Id}" Click="ToggleSelectionClicked"/>
+                          <CheckBox Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" IsChecked="{Binding IsSelectedForBulkAction}" Tag="{Binding Id}" Click="ToggleSelectionClicked"/>
                         </StackPanel>
                       </Grid>
                     </Border>
@@ -90,6 +97,82 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
             </StackPanel>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsBookDetailsVisible}" Spacing="14">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="AUDIOBOOK DETAILS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8" VerticalAlignment="Center"/>
+              <Button Grid.Column="1" Content="‹  Back" Click="CloseBookDetailsClicked"/>
+            </Grid>
+            <Border CornerRadius="22" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="13">
+                <Image Width="260" Height="260" HorizontalAlignment="Center" Source="{Binding DetailBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                <TextBlock Text="{Binding DetailBook.Title}" FontSize="25" FontWeight="Bold" TextWrapping="Wrap" TextAlignment="Center"/>
+                <TextBlock Text="{Binding DetailBook.Author}" FontSize="17" TextAlignment="Center" Foreground="#C4B5FD"/>
+                <TextBlock Text="{Binding DetailBook.Narrator}" FontSize="14" TextAlignment="Center" Opacity="0.75"/>
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="6">
+                  <Border Grid.Column="0" Background="#211A2D" CornerRadius="10" Padding="8">
+                    <StackPanel Spacing="3">
+                      <TextBlock Text="DURATION" FontSize="9" LetterSpacing="1" Opacity="0.6"/>
+                      <TextBlock Text="{Binding DetailDurationLabel}" FontSize="13" FontWeight="Bold"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Background="#211A2D" CornerRadius="10" Padding="8">
+                    <StackPanel Spacing="3">
+                      <TextBlock Text="CHAPTERS" FontSize="9" LetterSpacing="1" Opacity="0.6"/>
+                      <TextBlock Text="{Binding DetailChapterLabel}" FontSize="13" FontWeight="Bold"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="2" Background="#211A2D" CornerRadius="10" Padding="8">
+                    <StackPanel Spacing="3">
+                      <TextBlock Text="FILE SIZE" FontSize="9" LetterSpacing="1" Opacity="0.6"/>
+                      <TextBlock Text="{Binding DetailFileSizeLabel}" FontSize="13" FontWeight="Bold"/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+                <Border CornerRadius="8" Padding="8,5" HorizontalAlignment="Center"
+                        Background="{Binding DetailBook.ListeningStatus, Converter={x:Static local:ListeningStatusBackgroundConverter.Instance}}">
+                  <TextBlock Text="{Binding DetailBook.ListeningStatus}" FontWeight="SemiBold" FontSize="12"/>
+                </Border>
+                <Grid ColumnDefinitions="*,Auto">
+                  <Button Grid.Column="0" Content="▶  Play audiobook" FontSize="16" Click="PlayDetailBookClicked"/>
+                  <Button Grid.Column="1" Content="⋮" FontSize="22" Click="DetailBookMenuClicked"/>
+                </Grid>
+              </StackPanel>
+            </Border>
+            <Border CornerRadius="18" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="8">
+                <TextBlock Text="ABOUT THIS AUDIOBOOK" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
+                <TextBlock Text="{Binding DetailBookDescription}" TextWrapping="Wrap" LineHeight="22"/>
+              </StackPanel>
+            </Border>
+            <Border CornerRadius="18" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="8">
+                <TextBlock Text="REVIEWS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
+                <TextBlock Text="No review or rating information was embedded in this audiobook file." FontSize="13" Opacity="0.7" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+              <Button Grid.Column="0" Content="Edit information" Click="EditDetailBookClicked"/>
+              <Button Grid.Column="1" Content="Change cover" Click="ChooseCoverFromDetailClicked"/>
+            </Grid>
+            <Button Content="View chapters" Click="OpenDetailChaptersClicked" IsEnabled="{Binding DetailBook.Chapters.Count}"/>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsEditVisible}" Spacing="12">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="Edit audiobook" FontSize="26" FontWeight="Bold"/>
+              <Button Grid.Column="1" Content="Cancel" Click="CancelDetailEditClicked"/>
+            </Grid>
+            <TextBox Watermark="Title" Text="{Binding NewTitle}"/>
+            <TextBox Watermark="Author" Text="{Binding NewAuthor}"/>
+            <TextBox Watermark="Narrator" Text="{Binding NewNarrator}"/>
+            <TextBox Watermark="Duration" Text="{Binding NewLength}"/>
+            <TextBox Watermark="Series" Text="{Binding NewSeries}"/>
+            <TextBox Watermark="Genre" Text="{Binding NewGenre}"/>
+            <TextBox Watermark="Description / summary" Text="{Binding NewDescription}" AcceptsReturn="True" MinHeight="150"/>
+            <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" Foreground="Tomato" TextWrapping="Wrap"/>
+            <Button Content="Save changes" Click="SaveDetailEditClicked"/>
           </StackPanel>
 
           <StackPanel IsVisible="{Binding IsAudibleLibraryTab}" Spacing="14">
@@ -241,9 +324,9 @@
             <Border Background="#211A2D" CornerRadius="22" Padding="20" VerticalAlignment="Bottom" Margin="8" BorderBrush="#69568D" BorderThickness="1">
               <StackPanel Spacing="10">
                 <TextBlock Text="{Binding MenuBook.Title}" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
+                <Button Content="▶  Play" HorizontalContentAlignment="Left" Click="PlayMenuBookClicked"/>
                 <Button Content="Edit" HorizontalContentAlignment="Left" Click="EditImportedBookClicked"/>
                 <Button Content="Info" HorizontalContentAlignment="Left" Click="BookInfoClicked"/>
-                <Button Content="Add cover from folder" HorizontalContentAlignment="Left" Click="ChooseCoverFromMenuClicked"/>
                 <Button Content="Remove" Foreground="#FF7B83" HorizontalContentAlignment="Left" Click="RemoveImportedBookClicked"/>
                 <Button Content="Select multiple audiobooks" HorizontalContentAlignment="Left" Click="BeginSelectionClicked"/>
                 <Button Content="Close" Click="CloseBookMenuClicked"/>
