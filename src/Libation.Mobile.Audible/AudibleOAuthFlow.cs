@@ -71,12 +71,12 @@ public static class AudibleOAuthFlow
         var url = new Uri($"https://www.{market.AmazonDomain}/ap/signin?{queryString}");
 
         return new AudibleOAuthChallenge(
-            marketplace: code,
-            authorizationUri: url,
-            callbackUri: new Uri(callback),
-            deviceSerial: serial,
-            codeVerifier: verifier,
-            codeChallenge: challenge);
+            code,
+            url,
+            new Uri(callback),
+            serial,
+            verifier,
+            challenge);
     }
 
     private static string Base64Url(byte[] bytes)
