@@ -221,6 +221,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         await AddBookAsync(cancellationToken);
         if (!HasError)
         {
+            // BeginDetailBookEdit pushed the detail screen; saving is a commit
+            // to that screen, not a new navigation level.
+            if (_navigationHistory.Count > 0)
+                _navigationHistory.Pop();
             _detailBook = _allBooks.FirstOrDefault(book => book.Id == _detailBook?.Id);
             _isEditVisible = false;
             _isBookDetailsVisible = _detailBook is not null;
@@ -269,17 +273,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void OpenBookInfo()
     {
         if (_menuBook is null) return;
-        var bookId = _menuBook.Id;
-        _isInfoVisible = false;
+        _isInfoVisible = true;
         OnPropertyChanged(nameof(IsInfoVisible));
-        OpenBookDetails(bookId);
     }
     public void CloseBookInfo()
     {
         _isInfoVisible = false;
         OnPropertyChanged(nameof(IsInfoVisible));
-        if (_navigationHistory.Count > 0)
-            RestoreNavigationSnapshot(_navigationHistory.Pop());
     }
     public void BeginSelectionMode()
     {
