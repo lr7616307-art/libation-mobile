@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Libation.Mobile.Core;
 using Libation.Mobile.UI.ViewModels;
+using Avalonia;
 
 namespace Libation.Mobile.UI.Views;
 
@@ -20,6 +21,7 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private bool _isSeeking;
     private long _lastSeekRequestTicks;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
@@ -476,13 +478,11 @@ public partial class MainView : UserControl
             || _localAudioPlayer is null || _playingAudiobookId is null)
             return;
 
-        var now = Environment.TickCount64;
-        // Coalesce high-frequency thumb movement to about 8 seeks per second.
-        if (now - _lastSeekRequestTicks < 120) return;
-        _lastSeekRequestTicks = now;
         var target = Math.Max(0, (long)PlaybackSeekSlider.Value);
+        var duration = _localAudioPlayer.DurationMilliseconds;
+        if (duration > 0) target = Math.Min(target, duration);
         _localAudioPlayer.Seek(target);
-        UpdateCurrentChapterUi(target, _localAudioPlayer.DurationMilliseconds);
+        UpdateCurrentChapterUi(target, duration);
         if (PlaybackPositionLabel is not null)
             PlaybackPositionLabel.Text = FormatPlaybackTime(target);
     }
@@ -672,6 +672,43 @@ public partial class MainView : UserControl
     {
         if (sender is Button { DataContext: Audiobook book } && book.CanDelete)
             await _viewModel.RemoveBookAsync(book.Id);
+    }
+
+    private async void AudibleSignInClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            if (PlatformSignInViewModelFactory is null)
+            {
+                _viewModel.ReportAudioStatus("Audible sign-in is unavailable in this build.");
+                return;
+            }
+            var vm = PlatformSignInViewModelFactory();
+            await vm.BeginSignInAsync();
+            await vm.LoadStatusAsync();
+            var status = await vm.GetDisplayStateAsync();
+            _viewModel.ReportAudioStatus(status);
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ReportAudioStatus($"Audible sign-in failed ({ex.GetType().Name}).");
+        }
+    }
+
+    private async void AudibleDisconnectClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            if (PlatformSignInViewModelFactory is null) return;
+            var vm = PlatformSignInViewModelFactory();
+            await vm.DisconnectAsync();
+            await vm.LoadStatusAsync();
+            _viewModel.ReportAudioStatus(vm.Status);
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ReportAudioStatus($"Audible disconnect failed ({ex.GetType().Name}).");
+        }
     }
 
     private void TogglePlaybackClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
