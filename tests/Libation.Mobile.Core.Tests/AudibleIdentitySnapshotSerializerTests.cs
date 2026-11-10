@@ -87,6 +87,21 @@ public sealed class AudibleIdentitySnapshotSerializerTests
     }
 
     [Fact]
+    public void SerializeAndDeserialize_AcceptsIdentityPayloadLargerThanFormerLimit()
+    {
+        var snapshot = CreateSnapshot() with
+        {
+            Cookies = [new AudibleCookieSnapshot { Name = "large", Value = new string('x', 32 * 1024) }]
+        };
+
+        var serialized = AudibleIdentitySnapshotSerializer.Serialize(snapshot);
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(serialized) > 16 * 1024);
+
+        var restored = AudibleIdentitySnapshotSerializer.Deserialize(serialized);
+        Assert.Equal(snapshot.Cookies[0].Value, restored.Cookies[0].Value);
+    }
+
+    [Fact]
     public void Serialize_RejectsPayloadThatExceedsLimitByUtf8Bytes()
     {
         var snapshot = CreateSnapshot() with

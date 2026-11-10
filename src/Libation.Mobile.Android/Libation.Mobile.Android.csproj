@@ -13,6 +13,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- Split native libraries into one directly installable APK per selected ABI. -->
+    <AndroidCreatePackagePerAbi>true</AndroidCreatePackagePerAbi>
+    <!-- Strip native debug symbols from distributable builds; keep separate build diagnostics in CI. -->
+    <AndroidStripNativeLibraries>true</AndroidStripNativeLibraries>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Android" Version="12.1.2" />
     <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="1.11.1" />

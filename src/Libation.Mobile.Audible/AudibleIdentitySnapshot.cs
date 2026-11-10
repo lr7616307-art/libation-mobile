@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Audible;
 
@@ -13,7 +14,7 @@ public sealed record AudibleIdentitySnapshot
     public const int CurrentSchemaVersion = 1;
     public const string ProviderName = "audible";
     public const string SupportedAudibleApiVersion = "14.1.2";
-    public const int MaximumSerializedBytes = 16 * 1024;
+    public const int MaximumSerializedBytes = EncryptedSecretEnvelope.MaximumPlaintextBytes;
 
     public required int SchemaVersion { get; init; }
     public required string Provider { get; init; }

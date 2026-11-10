@@ -73,6 +73,9 @@ public sealed class AndroidSecretStore : ISecretStore
         try
         {
             envelope = EncryptedSecretEnvelope.Decode(payload);
+            if (envelope.CiphertextAndTag.Length - EncryptedSecretEnvelope.GcmTagLength
+                > EncryptedSecretEnvelope.MaximumPlaintextBytes)
+                throw new InvalidDataException("Stored secret payload exceeds the supported size limit.");
         }
         catch (InvalidDataException exception)
         {
@@ -162,7 +165,7 @@ public sealed class AndroidSecretStore : ISecretStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentNullException.ThrowIfNull(value);
-        if (Encoding.UTF8.GetByteCount(value) > 16 * 1024)
-            throw new ArgumentOutOfRangeException(nameof(value), "Secrets must be 16 KiB or smaller.");
+        if (Encoding.UTF8.GetByteCount(value) > EncryptedSecretEnvelope.MaximumPlaintextBytes)
+            throw new ArgumentOutOfRangeException(nameof(value), "Secrets must be 128 KiB or smaller.");
     }
 }

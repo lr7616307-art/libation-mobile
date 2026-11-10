@@ -25,10 +25,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - rid: android-arm
-            name: ARMv7
-          - rid: android-arm64
-            name: ARM64
+          - variant: baseline
+            strip_native_libraries: false
+            runtime_identifier: android-arm
+            expected_abi: armeabi-v7a
+            abi_label: ARMv7
+          - variant: baseline
+            strip_native_libraries: false
+            runtime_identifier: android-arm64
+            expected_abi: arm64-v8a
+            abi_label: ARM64
+          - variant: compact
+            strip_native_libraries: true
+            runtime_identifier: android-arm
+            expected_abi: armeabi-v7a
+            abi_label: ARMv7
+          - variant: compact
+            strip_native_libraries: true
+            runtime_identifier: android-arm64
+            expected_abi: arm64-v8a
+            abi_label: ARM64
     steps:
       - uses: actions/checkout@v4
       - name: Install .NET
@@ -44,11 +60,64 @@ jobs:
         run: dotnet workload install android
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
-      - name: Build APK
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:AndroidPackageFormat=apk
-      - name: Upload APK
+      - name: Publish ${{ matrix.variant }} ${{ matrix.abi_label }} APK
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.runtime_identifier }} -p:AndroidPackageFormat=apk -p:AndroidCreatePackagePerAbi=false -p:AndroidStripNativeLibraries=${{ matrix.strip_native_libraries }} -o artifacts/publish
+      - name: Verify APK ABI and generate report
+        shell: bash
+        env:
+          EXPECTED_ABI: ${{ matrix.expected_abi }}
+          ABI_LABEL: ${{ matrix.abi_label }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import shutil
+          import zipfile
+          import os
+
+          root = Path('artifacts/publish')
+          expected_abi = os.environ['EXPECTED_ABI']
+          label = os.environ['ABI_LABEL']
+          variant = os.environ['VARIANT']
+          candidates = sorted(p for p in root.glob('*-Signed.apk') if p.is_file())
+          if len(candidates) != 1:
+              raise SystemExit(f'Expected exactly one signed APK in {root}; found {[str(p) for p in candidates]}')
+
+          source = candidates[0]
+          with zipfile.ZipFile(source) as archive:
+              entries = [item for item in archive.infolist() if not item.is_dir()]
+              abis = set()
+              for item in entries:
+                  parts = item.filename.split('/')
+                  if len(parts) >= 3 and parts[0] == 'lib':
+                      abis.add(parts[1])
+          print(f'Signed APK: {source}')
+          print(f'Native ABIs: {sorted(abis)}')
+          if abis != {expected_abi}:
+              raise SystemExit(f'Expected only {expected_abi}; APK contains {sorted(abis)}')
+
+          output_dir = Path('artifacts')
+          output_apk = output_dir / f'VORATH-{label}.apk'
+          shutil.copy2(source, output_apk)
+          digest = hashlib.sha256(output_apk.read_bytes()).hexdigest()
+          size = output_apk.stat().st_size
+          with zipfile.ZipFile(output_apk) as archive:
+              entries = [item for item in archive.infolist() if not item.is_dir()]
+          report = output_dir / f'APK-REPORT-{label}.txt'
+          with report.open('w', encoding='utf-8') as stream:
+              stream.write(f'Variant: {variant}\nABI: {expected_abi}\nSource: {source}\nAPK: {output_apk.name}\nSize: {size} bytes ({size / 1048576:.2f} MiB)\nSHA-256: {digest}\n')
+              stream.write('\nLargest compressed entries:\n')
+              for item in sorted(entries, key=lambda entry: entry.compress_size, reverse=True)[:30]:
+                  stream.write(f'{item.compress_size:>12} compressed | {item.file_size:>12} uncompressed | {item.filename}\n')
+          print(report.read_text(encoding='utf-8'))
+          PY
+      - name: Upload installable APK and report
         uses: actions/upload-artifact@v4
         with:
-          name: libation-mobile-${{ matrix.name }}
-          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*.apk
+          name: vorath-${{ matrix.variant }}-${{ matrix.abi_label }}-apk
+          path: |
+            artifacts/VORATH-${{ matrix.abi_label }}.apk
+            artifacts/APK-REPORT-${{ matrix.abi_label }}.txt
           if-no-files-found: error

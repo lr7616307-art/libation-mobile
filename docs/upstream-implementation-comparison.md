@@ -24,7 +24,7 @@ This is a source-level comparison, not a claim of physical-device validation or 
 
 - Current implementation uses Android Keystore AES-256-GCM and stores only ciphertext in app-private SharedPreferences.
 - The Android manifest sets `allowBackup="false"` and `usesCleartextTraffic="false"`, which avoids restoring ciphertext without its non-exportable Keystore key and blocks cleartext app traffic by default.
-- Review finding: `AndroidSecretStore` currently limits each secret to 16 KiB. Audible identity snapshots include tokens, device data and cookies; the code does not yet demonstrate that every valid identity remains below this limit. Add a boundary/large-identity test and either size the limit from observed upstream payloads or use a bounded encrypted-file design.
+- Review update: `AndroidSecretStore` and the Audible snapshot serializer now share a 128 KiB plaintext ceiling. Boundary tests cover the serializer limit and a realistic 32 KiB cookie value proves payloads larger than the former 16 KiB cap can round-trip. A physical-device test must still measure a real account snapshot before claiming all valid identities fit.
 - Review finding: the generic secret store creates a new Keystore key when the alias is missing. Existing ciphertext then cannot be decrypted. This is fail-closed, but callers need a clear re-authentication path and must not silently treat all storage failures as a signed-out account.
 
 ### Audible API and Libation comparison
