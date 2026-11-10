@@ -81,6 +81,8 @@ public partial class MainView : UserControl
         _playingAudiobookId = currentBook.Id;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
+        if (_localAudioPlayer is AndroidLocalAudioPlayer restoredPlayer)
+            restoredPlayer.SetChapterPositions(currentBook.Chapters.Select(chapter => chapter.StartPositionMilliseconds));
         if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "Ⅱ" : "▶";
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
         if (_localAudioPlayer.IsPlaying)
@@ -124,6 +126,8 @@ public partial class MainView : UserControl
         {
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
+            if (_localAudioPlayer is AndroidLocalAudioPlayer androidPlayer)
+                androidPlayer.SetChapterPositions(book.Chapters.Select(chapter => chapter.StartPositionMilliseconds));
             _playingAudiobookId = book.Id;
             _viewModel.SetNowPlayingBook(book.Id);
             if (PlayPauseButton is not null) PlayPauseButton.Content = "Ⅱ";
