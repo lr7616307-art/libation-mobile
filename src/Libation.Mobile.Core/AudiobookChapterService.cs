@@ -47,6 +47,25 @@ public static class AudiobookChapterService
         return (start, Math.Max(start, end));
     }
 
+    /// <summary>Returns the current chapter's start and end positions, bounded by the full audiobook duration.</summary>
+    public static (long Start, long End) GetChapterRange(
+        IReadOnlyList<AudiobookChapter>? chapters,
+        long positionMilliseconds,
+        long durationMilliseconds)
+    {
+        var duration = Math.Max(0, durationMilliseconds);
+        var normalized = Normalize(chapters, duration);
+        var index = FindCurrentChapterIndex(normalized, Math.Max(0, positionMilliseconds));
+        if (normalized.Count == 0 || index < 0)
+            return (0, duration);
+
+        var start = normalized[index].StartPositionMilliseconds;
+        var end = index + 1 < normalized.Count
+            ? normalized[index + 1].StartPositionMilliseconds
+            : duration;
+        return (start, Math.Max(start, end));
+    }
+
     /// <summary>Returns the index of the chapter containing the given position, or -1 before the first chapter.</summary>
     public static int FindCurrentChapterIndex(
         IReadOnlyList<AudiobookChapter>? chapters,
