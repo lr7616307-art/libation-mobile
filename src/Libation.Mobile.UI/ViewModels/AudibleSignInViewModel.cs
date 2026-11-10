@@ -12,7 +12,8 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
 {
     private readonly AccountConnectionService _connection;
     private readonly IExternalBrowserLauncher _browser;
-    private string _marketplace = "www.amazon.in";
+    // AudibleApi.Localization.Get expects a country code, not an Amazon hostname.
+    private string _marketplace = "in";
     private string _responseUrl = string.Empty;
     private string _status = "Checking Audible connection…";
     private string? _challengeId;
@@ -110,7 +111,6 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             }
             catch (Exception ex)
             {
-                // Do not leave a live one-time challenge behind when the browser handoff fails.
                 try { await _connection.CancelSignInAsync(challenge.ChallengeId, CancellationToken.None); }
                 catch (Exception) { /* The local challenge is still discarded below. */ }
 
@@ -133,7 +133,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(HasChallenge));
             OnPropertyChanged(nameof(CanCancel));
             OnPropertyChanged(nameof(CanComplete));
-            Status = $"Audible could not create the sign-in request ({ex.GetType().Name}). Check the marketplace and try again.";
+            Status = $"Audible could not create the sign-in request ({ex.GetType().Name}). Check the marketplace country code (for India, use in) and try again.";
         }
         finally { IsBusy = false; }
     }
