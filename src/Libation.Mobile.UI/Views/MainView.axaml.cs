@@ -12,7 +12,7 @@ public partial class MainView : UserControl
     private readonly MainViewModel _viewModel;
     private ILocalAudioPlayer? _localAudioPlayer;
     private string? _playingAudiobookId;
-    private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromSeconds(15) };
+    private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _sleepTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private DateTimeOffset? _sleepTimerEndsAt;
     private static readonly int[] SleepTimerMinutes = [15, 30, 45, 60];
@@ -476,7 +476,9 @@ public partial class MainView : UserControl
             PlaybackSeekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
             PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
             PlaybackPositionLabel.Text = FormatPlaybackTime(position);
-            PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
+            PlaybackDurationLabel.Text = duration > 0
+                ? "−" + FormatPlaybackTime(Math.Max(0, duration - position))
+                : "--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
     }
@@ -737,8 +739,12 @@ public partial class MainView : UserControl
             var vm = PlatformSignInViewModelFactory();
             await vm.BeginSignInAsync();
             await vm.LoadStatusAsync();
-            await vm.LoadStatusAsync();
             _viewModel.ReportAudioStatus(vm.ConnectionStatusLabel + ". " + vm.Status);
+            if (vm.ConnectionStatusLabel.StartsWith("Connected", StringComparison.Ordinal))
+            {
+                await _viewModel.SyncLibraryAsync();
+                _viewModel.SelectTab(1);
+            }
         }
         catch (Exception ex)
         {
@@ -841,6 +847,12 @@ public partial class MainView : UserControl
     private void AudibleAccountTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectTab(2);
     private void SettingsTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectTab(3);
 
+    private void OpenMiniPlayerSurfaceClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        _viewModel.OpenFullPlayer();
+        UpdatePlaybackProgressUi();
+    }
+
     private void OpenFullPlayerClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         _viewModel.OpenFullPlayer();
@@ -910,6 +922,9 @@ public partial class MainView : UserControl
     private void CloseBookMenuClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.CloseBookMenu();
     private void BookInfoClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.OpenBookInfo();
     private void CloseBookInfoClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.CloseBookInfo();
+
+    /// <summary>Called by the Android host before it delegates Back to the OS.</summary>
+    public bool HandleAndroidBack() => _viewModel.NavigateBack();
     private void BeginSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.BeginSelectionMode();
     private void ToggleSelectionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
