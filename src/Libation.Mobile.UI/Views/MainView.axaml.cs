@@ -686,8 +686,8 @@ public partial class MainView : UserControl
             var vm = PlatformSignInViewModelFactory();
             await vm.BeginSignInAsync();
             await vm.LoadStatusAsync();
-            var status = await vm.GetDisplayStateAsync();
-            _viewModel.ReportAudioStatus(status);
+            await vm.LoadStatusAsync();
+            _viewModel.ReportAudioStatus(vm.ConnectionStatusLabel + ". " + vm.Status);
         }
         catch (Exception ex)
         {
