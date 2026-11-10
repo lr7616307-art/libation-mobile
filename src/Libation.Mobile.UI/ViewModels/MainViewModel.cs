@@ -13,6 +13,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly IDownloadQueue _downloadQueue;
     private readonly LocalAudioImportService? _audioImportService;
     private readonly CoverArtImportService? _coverArtImportService;
+    private readonly AudiobookFileImportService? _audiobookFileImportService;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
@@ -42,19 +43,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private int _catalogueFilterIndex;
     private Audiobook? _selectedBook;
 
-    private static readonly Audiobook[] InitialSamples =
-    [
-        new("demo-001", "The Long Way to a Small, Angry Planet", "Becky Chambers", "Rachel Dulude", "12h 20m", "Demo"),
-        new("demo-002", "Project Hail Mary", "Andy Weir", "Ray Porter", "16h 10m", "Demo"),
-        new("demo-003", "The Three-Body Problem", "Cixin Liu", "Luke Daniels", "13h 40m", "Demo")
-    ];
+    private static readonly Audiobook[] InitialSamples = [];
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public ObservableCollection<Audiobook> Books { get; } = [];
     public ObservableCollection<Audiobook> LocalAudioBooks { get; } = [];
     public bool HasLocalAudioBooks => LocalAudioBooks.Count > 0;
     public bool HasNoLocalAudioBooks => !HasLocalAudioBooks;
-    public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "No locally imported audiobooks yet. Import audio from the Library tab to see it here.";
+    public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "Your library is empty. Import an audiobook file to get started.";
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
     public Audiobook? SelectedBook
     {
@@ -82,13 +78,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SelectedBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
     }
 
-    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, CoverArtImportService? coverArtImportService = null, ISyncStateStore? syncStateStore = null, Func<string>? widevineDiagnosticFactory = null)
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, CoverArtImportService? coverArtImportService = null, ISyncStateStore? syncStateStore = null, Func<string>? widevineDiagnosticFactory = null, AudiobookFileImportService? audiobookFileImportService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
         _syncService = syncService;
         _audioImportService = audioImportService;
         _coverArtImportService = coverArtImportService;
+        _audiobookFileImportService = audiobookFileImportService;
         _syncStateStore = syncStateStore;
         _widevineDiagnosticFactory = widevineDiagnosticFactory;
     }
@@ -230,7 +227,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (_syncStateStore is not null)
                 LastSuccessfulSync = await _syncStateStore.GetLastSuccessfulSyncAsync(cancellationToken);
             var stored = await _repository.GetBooksAsync(cancellationToken);
-            _allBooks = stored;
+            // Remove only the three seeded demo rows from older installations.
+            foreach (var demo in stored.Where(book => book.Status == "Demo" || book.Id.StartsWith("demo-", StringComparison.Ordinal)).ToArray())
+                await _repository.RemoveAsync(demo.Id, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
             ApplyFilter(_allBooks);
             await ReloadQueueAsync(cancellationToken);
         }
@@ -421,6 +421,45 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasPendingImport));
         OnPropertyChanged(nameof(PendingImportLabel));
         BackupMessage = "Backup import cancelled.";
+    }
+
+    public async Task ImportAudiobookAsync(string fileName, Stream source, CancellationToken cancellationToken = default)
+    {
+        if (_audiobookFileImportService is null)
+        {
+            AudioImportStatus = "Audiobook file import is unavailable on this platform.";
+            return;
+        }
+
+        var id = Guid.NewGuid().ToString("N");
+        try
+        {
+            AudioImportStatus = "Importing audiobook and reading its embedded metadata…";
+            var imported = await _audiobookFileImportService.ImportAsync(id, fileName, source, cancellationToken);
+            var title = string.IsNullOrWhiteSpace(imported.Title)
+                ? Path.GetFileNameWithoutExtension(fileName) : imported.Title;
+            var book = new Audiobook(id, title, imported.Author, imported.Narrator, imported.Length, "Imported")
+            {
+                AudioFilePath = imported.AudioFilePath,
+                CoverImagePath = imported.CoverImagePath,
+                Chapters = imported.Chapters
+            };
+            await _repository.UpsertAsync(book, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+            AudioImportStatus = imported.Chapters.Count > 0
+                ? $"Imported {title}. Found {imported.Chapters.Count} chapters and {(imported.CoverImagePath is null ? "no embedded cover" : "embedded cover artwork")}."
+                : $"Imported {title}. {(imported.CoverImagePath is null ? "No embedded cover artwork was found." : "Embedded cover artwork was imported.")} Chapter markers were not present in the file.";
+            ErrorMessage = string.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            AudioImportStatus = "Audiobook import cancelled.";
+        }
+        catch (Exception)
+        {
+            AudioImportStatus = "Could not import this audiobook. Check that the file is a supported audio format and try again.";
+        }
     }
 
     public async Task ImportAudioAsync(string audiobookId, string fileName, Stream source, CancellationToken cancellationToken = default)
