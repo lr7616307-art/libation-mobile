@@ -1,10 +1,11 @@
 namespace Libation.Mobile.Core;
 
 /// <summary>
-/// Opens a provider-generated authorization page in the user's external browser.
-/// Implementations must never log the URI because it may contain short-lived state.
+/// Opens the provider-generated HTTPS authorization page in an in-app browser
+/// and returns the final marketplace callback URL. Implementations must never
+/// inspect, log, or expose credentials entered into the provider page.
 /// </summary>
 public interface IExternalBrowserLauncher
 {
-    void Open(Uri authorizationUri);
+    Task<string?> OpenAsync(Uri authorizationUri, CancellationToken cancellationToken = default);
 }
