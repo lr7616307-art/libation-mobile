@@ -96,6 +96,14 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
         ObjectDisposedException.ThrowIf(_disposed, this);
         AppContext.StartService(CreateIntent(AndroidLocalAudioPlaybackService.ActionCancelSleepTimer));
     }
+    public void SetArtwork(string? coverImagePath)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionSetArtwork);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraArtworkPath, coverImagePath);
+        AppContext.StartService(intent);
+    }
+
     public void SetPlaybackSpeed(float speed)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
