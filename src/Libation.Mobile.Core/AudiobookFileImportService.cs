@@ -51,6 +51,26 @@ public sealed class AudiobookFileImportService(LocalAudioImportService audioImpo
         }
     }
 
+    /// <summary>
+    /// Re-reads embedded metadata from an audio file already stored in the app.
+    /// This supports older library entries imported before chapter extraction was available,
+    /// without copying or re-importing the audio file.
+    /// </summary>
+    public Task<AudiobookImportResult> ReadExistingAsync(
+        string audiobookId,
+        string audioPath,
+        string fallbackTitle,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(audioPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fallbackTitle);
+        if (!File.Exists(audioPath))
+            throw new FileNotFoundException("Imported audiobook audio was not found.", audioPath);
+
+        return Task.Run(() => ReadMetadata(audiobookId, audioPath, fallbackTitle), cancellationToken);
+    }
+
     private static void TryDeleteImportedFile(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
