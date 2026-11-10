@@ -17,6 +17,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionSeek = "org.libationmobile.app.action.SEEK";
     public const string ActionRewind = "org.libationmobile.app.action.REWIND";
     public const string ActionForward = "org.libationmobile.app.action.FORWARD";
+    public const string ActionPreviousChapter = "org.libationmobile.app.action.PREVIOUS_CHAPTER";
+    public const string ActionNextChapter = "org.libationmobile.app.action.NEXT_CHAPTER";
     public const string ActionSetSpeed = "org.libationmobile.app.action.SET_SPEED";
     public const string ActionRestore = "org.libationmobile.app.action.RESTORE";
     public const string ActionSetSleepTimer = "org.libationmobile.app.action.SET_SLEEP_TIMER";
@@ -99,10 +101,16 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     }
                     break;
                 case ActionRewind:
-                    SeekBy(-15_000);
+                    SeekBy(-10_000);
                     break;
                 case ActionForward:
-                    SeekBy(15_000);
+                    SeekBy(10_000);
+                    break;
+                case ActionPreviousChapter:
+                    SeekChapter(forward: false);
+                    break;
+                case ActionNextChapter:
+                    SeekChapter(forward: true);
                     break;
                 case ActionSetSpeed:
                     SetPlaybackSpeed(intent.GetFloatExtra(ExtraSpeed, 1f));
@@ -325,6 +333,29 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _playbackSpeed = speed;
     }
 
+    private void SeekChapter(bool forward)
+    {
+        if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        // Chapter indexes are supplied by the imported catalogue to the
+        // foreground app. Native notification actions cannot query that UI state.
+        // The service instead advances to the previous/next embedded chapter
+        // positions cached in its playback session.
+        var chapters = _chapterPositions;
+        if (chapters.Length == 0) return;
+        var position = ReadPosition();
+        var current = Array.FindLastIndex(chapters, start => start <= position);
+        var targetIndex = forward
+            ? Math.Min(chapters.Length - 1, current + 1)
+            : Math.Max(0, current - (current >= 0 && position - chapters[current] > 5_000 ? 0 : 1));
+        if (targetIndex >= 0) _player.SeekTo(chapters[targetIndex]);
+        SavePlaybackSnapshot();
+        UpdateNotification();
+    }
+
+    private long[] _chapterPositions = [];
+    private void SetChapterPositions(long[]? positions)
+        => _chapterPositions = positions?.Where(x => x >= 0).Distinct().OrderBy(x => x).ToArray() ?? [];
+
     private void SeekBy(long offsetMilliseconds)
     {
         if (_player is null) return;
@@ -355,14 +386,24 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var contentPendingIntent = PendingIntent.GetActivity(
             this, 4102, launchIntent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
-        var action = _player?.IsPlaying == true ? ActionPause : ActionResume;
-        var actionLabel = _player?.IsPlaying == true ? "Pause" : "Resume";
-        var actionIcon = _player?.IsPlaying == true
-            ? global::Android.Resource.Drawable.StatSysHeadset
-            : global::Android.Resource.Drawable.StatSysHeadset;
+        var isPlaying = _player?.IsPlaying == true;
+        var action = isPlaying ? ActionPause : ActionResume;
+        var actionLabel = isPlaying ? "Pause" : "Play";
+        var actionIcon = isPlaying
+            ? global::Android.Resource.Drawable.IcMediaPause
+            : global::Android.Resource.Drawable.IcMediaPlay;
         var controlIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService)).SetAction(action);
         var controlPendingIntent = PendingIntent.GetService(
             this, 4103, controlIntent,
+            PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
+
+        var previousIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService)).SetAction(ActionPreviousChapter);
+        var previousPendingIntent = PendingIntent.GetService(
+            this, 4106, previousIntent,
+            PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
+        var nextIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService)).SetAction(ActionNextChapter);
+        var nextPendingIntent = PendingIntent.GetService(
+            this, 4107, nextIntent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
         var rewindIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService)).SetAction(ActionRewind);
@@ -381,9 +422,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             .SetContentIntent(contentPendingIntent)
             .SetOngoing(_player?.IsPlaying == true)
             .SetOnlyAlertOnce(true)
-            .AddAction(global::Android.Resource.Drawable.IcMediaRew, "−15 sec", rewindPendingIntent)
+            .AddAction(global::Android.Resource.Drawable.IcMediaPrevious, "Previous chapter", previousPendingIntent)
+            .AddAction(global::Android.Resource.Drawable.IcMediaRew, "−10 sec", rewindPendingIntent)
             .AddAction(actionIcon, actionLabel, controlPendingIntent)
-            .AddAction(global::Android.Resource.Drawable.IcMediaFf, "+15 sec", forwardPendingIntent);
+            .AddAction(global::Android.Resource.Drawable.IcMediaFf, "+10 sec", forwardPendingIntent)
+            .AddAction(global::Android.Resource.Drawable.IcMediaNext, "Next chapter", nextPendingIntent);
         if (_coverBitmap is not null) builder.SetLargeIcon(_coverBitmap);
         var duration = ReadDuration();
         if (duration > 0)
