@@ -100,10 +100,10 @@ public sealed class AudibleLoginActivity : Activity
         {
             Hint = "Paste the complete final browser URL here",
             InputType = InputTypes.ClassText | InputTypes.TextFlagMultiLine | InputTypes.TextFlagNoSuggestions,
-            MinLines = 3,
-            MaxLines = 5,
             Gravity = GravityFlags.Top | GravityFlags.Start
         };
+        _responseInput.SetMinLines(3);
+        _responseInput.SetMaxLines(5);
         _responseInput.SetTextColor(Color.White);
         _responseInput.SetHintTextColor(Color.Rgb(145, 138, 160));
         _responseInput.SetPadding(12, 12, 12, 12);
