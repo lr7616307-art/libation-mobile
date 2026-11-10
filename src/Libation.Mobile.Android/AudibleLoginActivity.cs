@@ -36,8 +36,8 @@ public sealed class AudibleLoginActivity : Activity
         var header = new LinearLayout(this)
         {
             Orientation = Orientation.Horizontal,
-            Gravity = GravityFlags.CenterVertical
         };
+        header.SetGravity(GravityFlags.CenterVertical);
         header.SetPadding(18, 12, 18, 12);
         header.SetBackgroundColor(Color.Rgb(43, 49, 63));
 
@@ -66,7 +66,7 @@ public sealed class AudibleLoginActivity : Activity
         _webView.Settings.DomStorageEnabled = true;
         _webView.Settings.AllowFileAccess = false;
         _webView.Settings.AllowContentAccess = false;
-        _webView.Settings.MixedContentMode = MixedContentHandling.Never;
+        _webView.Settings.MixedContentMode = MixedContentHandling.NeverAllow;
         if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
             _webView.Settings.SafeBrowsingEnabled = true;
 
