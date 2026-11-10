@@ -35,21 +35,25 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             || !string.Equals(challenge.CallbackUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The OAuth challenge must use HTTPS.");
 
-        var amazonDomain = challenge.CallbackUri.Host;
+        var amazonDomain = challenge.AuthorizationUri.Host;
         if (amazonDomain.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
             amazonDomain = amazonDomain[4..];
         if (!amazonDomain.StartsWith("amazon.", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("The OAuth callback is not an Amazon marketplace.");
+            throw new InvalidOperationException("The OAuth authorization host is not an Amazon marketplace.");
+        if (!challenge.CallbackUri.Host.StartsWith("www.audible.", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The OAuth callback is not an Audible marketplace.");
+        if (challenge.DeviceSerial.Length != 20 || challenge.DeviceSerial.Any(c => !Uri.IsHexDigit(c)))
+            throw new InvalidOperationException("The Android device serial must be 20 hexadecimal characters.");
 
         var serialAndType = $"{challenge.DeviceSerial}#{AudibleOAuthFlow.AndroidDeviceType}";
         var clientIdHex = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
         var request = new RegistrationRequest
         {
             RequestedTokenType = ["bearer", "mac_dms", "website_cookies", "store_authentication_cookie"],
-            Cookies = new RegistrationCookies { WebsiteCookies = [], Domain = "." + amazonDomain },
+            Cookies = new RegistrationCookies { WebsiteCookies = [], Domain = "www." + amazonDomain },
             RegistrationData = new RegistrationData
             {
-                Domain = "Device",
+                Domain = "DeviceLegacy",
                 AppVersion = profile.AppVersion,
                 DeviceSerial = challenge.DeviceSerial,
                 DeviceType = AudibleOAuthFlow.AndroidDeviceType,
@@ -57,7 +61,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 OsVersion = profile.OsVersion,
                 SoftwareVersion = profile.SoftwareVersion,
                 DeviceModel = profile.Model,
-                AppName = "Audible"
+                AppName = "com.audible.application"
             },
             AuthData = new RegistrationAuthData
             {
