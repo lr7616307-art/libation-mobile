@@ -396,6 +396,21 @@
             </Border>
           </Border>
 
+    <Border Grid.Row="0" Background="#B8000000" IsVisible="{Binding IsRemovalConfirmationVisible}" ZIndex="30">
+      <Border Background="#211A2D" CornerRadius="20" Padding="20" Margin="20"
+              VerticalAlignment="Center" HorizontalAlignment="Stretch"
+              BorderBrush="#69568D" BorderThickness="1">
+        <StackPanel Spacing="16">
+          <TextBlock Text="Confirm removal" FontSize="20" FontWeight="Bold"/>
+          <TextBlock Text="{Binding RemovalConfirmationMessage}" TextWrapping="Wrap"/>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <Button Grid.Column="0" Content="Cancel" Click="CancelRemovalClicked"/>
+            <Button Grid.Column="1" Content="Remove" Foreground="#FF7B83" Click="ConfirmRemovalClicked"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+    </Border>
+
     <Border Grid.Row="2" Background="#100D17" BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="6,5">
       <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="2">
         <Button Grid.Column="0" Classes="bottom-nav" MinWidth="0" Padding="2,7" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Click="HomeTabClicked">
