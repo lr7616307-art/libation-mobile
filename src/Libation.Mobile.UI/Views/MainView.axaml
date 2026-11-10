@@ -50,7 +50,7 @@
             <StackPanel Spacing="10">
               <TextBlock Text="CHAPTERS" FontSize="12" FontWeight="Bold" LetterSpacing="2" Foreground="#B9A5E8" />
               <TextBlock Text="Chapters embedded in the audiobook will appear here." FontSize="13" Opacity="0.7"
-                         IsVisible="{Binding HasNowPlayingChapters, Converter={x:Null}}" />
+                         IsVisible="{Binding HasNowPlayingChapters}" />
               <ItemsControl ItemsSource="{Binding NowPlayingBook.Chapters}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
