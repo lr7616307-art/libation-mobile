@@ -69,7 +69,38 @@ jobs:
             exit 1
           fi
           printf 'APK candidates:\n%s\n' "${all_apks[@]}"
-          mapfile -t signed_apks < <(printf '%s\n' "${all_apks[@]}" | grep -Ei 'signed[.]apk$' || true)
+          mapfile -t signed_apks < <(printf '%s\n' "${all_apks[@]}" | grep -Ei '[-_]signed[.]apk || true)
+          if [ "${#signed_apks[@]}" -eq 1 ]; then
+            apk="${signed_apks[0]}"
+          else
+            mapfile -t installable_apks < <(printf '%s\n' "${all_apks[@]}" | grep -Eiv 'unsigned[.]apk$' || true)
+            if [ "${#installable_apks[@]}" -ne 1 ]; then
+              echo "Could not identify exactly one signed installable APK in $apk_dir." >&2
+              exit 1
+            fi
+            apk="${installable_apks[0]}"
+          fi
+          bytes="$(stat -c '%s' "$apk")"
+          mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n / 1048576 }')"
+          output_apk="$apk_dir/VORATH-${{ matrix.name }}.apk"
+          cp "$apk" "$output_apk"
+          {
+            echo "Variant: ${{ matrix.variant }}"
+            echo "RID: ${{ matrix.rid }}"
+            echo "Source APK: $(basename "$apk")"
+            echo "Installable APK: $(basename "$output_apk")"
+            echo "Size: $bytes bytes ($mib MiB)"
+            sha256sum "$output_apk"
+          } | tee "$apk_dir/APK-SIZE.txt"
+      - name: Upload APK and size report
+        uses: actions/upload-artifact@v4
+        with:
+          name: vorath-${{ matrix.name }}-${{ matrix.variant }}
+          path: |
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/VORATH-${{ matrix.name }}.apk
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/APK-SIZE.txt
+          if-no-files-found: error
+ || true)
           if [ "${#signed_apks[@]}" -eq 1 ]; then
             apk="${signed_apks[0]}"
           else
