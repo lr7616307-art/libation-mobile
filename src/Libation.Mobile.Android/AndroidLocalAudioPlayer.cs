@@ -4,23 +4,32 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Android;
 
 /// <summary>UI adapter for the playback service, including crash-safe session recovery.</summary>
-public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer
+public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer, IDeferredAudioSessionRecovery
 {
     private static Context AppContext => global::Android.App.Application.Context;
+    private bool _hasPendingRecovery;
 
     public AndroidLocalAudioPlayer()
     {
         // Rehydrate the last session when the app is opened after a process death
         // or device restart. The saved play/pause state is respected.
+        // Constructing the UI adapter must not start an Android foreground
+        // service. Recovery is performed only when a persisted session exists
+        // and the app has completed its first screen initialization.
         var snapshot = PlaybackRecoveryStore.Load(AppContext);
         if (snapshot is not null)
-        {
-            var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionRestore);
-            if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
-                AppContext.StartForegroundService(intent);
-            else
-                AppContext.StartService(intent);
-        }
+            _hasPendingRecovery = true;
+    }
+
+    public void RestorePendingSession()
+    {
+        if (!_hasPendingRecovery) return;
+        _hasPendingRecovery = false;
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionRestore);
+        if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
+            AppContext.StartForegroundService(intent);
+        else
+            AppContext.StartService(intent);
     }
 
     private PlaybackRecoverySnapshot? Recovery => PlaybackRecoveryStore.Load(AppContext);

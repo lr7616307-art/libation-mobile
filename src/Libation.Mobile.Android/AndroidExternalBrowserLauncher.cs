@@ -4,8 +4,8 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Android;
 
 /// <summary>
-/// Hosts the Audible authorization page in a dedicated in-app WebView activity.
-/// Only the final Amazon marketplace callback URL is returned to the auth adapter.
+/// Hosts the selected Audible marketplace authorization page in an in-app WebView.
+/// Only the validated Audible marketplace callback URL reaches the auth adapter.
 /// </summary>
 public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalBrowserLauncher
 {
@@ -21,6 +21,15 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
             || string.IsNullOrWhiteSpace(authorizationUri.Host))
             throw new ArgumentException("Only absolute HTTPS authorization URLs may be opened.", nameof(authorizationUri));
 
+        var parameters = System.Web.HttpUtility.ParseQueryString(authorizationUri.Query);
+        var returnTo = parameters["openid.return_to"];
+        if (!Uri.TryCreate(returnTo, UriKind.Absolute, out var callbackUri)
+            || !string.Equals(callbackUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(callbackUri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(callbackUri.Host)
+            || !callbackUri.IsDefaultPort)
+            throw new InvalidOperationException("Audible authorization did not include a valid marketplace callback URL.");
+
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (Gate)
         {
@@ -33,7 +42,7 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
         {
             var intent = new Intent(_context, typeof(AudibleLoginActivity));
             intent.PutExtra(AudibleLoginActivity.AuthorizationUrlExtra, authorizationUri.AbsoluteUri);
-            intent.PutExtra(AudibleLoginActivity.ExpectedHostExtra, authorizationUri.Host);
+            intent.PutExtra(AudibleLoginActivity.ExpectedHostExtra, callbackUri.Host);
             intent.AddFlags(ActivityFlags.NewTask);
             _context.StartActivity(intent);
             using var registration = cancellationToken.Register(() => Complete(null));

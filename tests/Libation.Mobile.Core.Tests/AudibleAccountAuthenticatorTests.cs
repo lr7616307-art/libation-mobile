@@ -16,7 +16,8 @@ public sealed class AudibleAccountAuthenticatorTests
 
         Assert.True(challenge.AuthorizationUri.IsAbsoluteUri);
         Assert.Equal(Uri.UriSchemeHttps, challenge.AuthorizationUri.Scheme);
-        Assert.True(challenge.ExpiresAtUtc > DateTimeOffset.UtcNow);
+        var expectedExpiry = new DateTimeOffset(2026, 11, 10, 12, 0, 0, TimeSpan.Zero).AddMinutes(10);
+        Assert.Equal(expectedExpiry, challenge.ExpiresAtUtc);
     }
 
     [Theory]
@@ -37,10 +38,22 @@ public sealed class AudibleAccountAuthenticatorTests
         Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
     }
 
+    [Fact]
+    public async Task BeginSignIn_UsesAudibleMarketplaceAsTheCallbackDomain()
+    {
+        var authenticator = CreateAuthenticator(new InMemorySecretStore());
+
+        var challenge = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "in"));
+        var returnTo = System.Web.HttpUtility.ParseQueryString(challenge.AuthorizationUri.Query)["openid.return_to"];
+
+        Assert.Equal("https://www.audible.in/ap/maplanding", returnTo);
+    }
+
     [Theory]
     [InlineData("https://evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("https://www.amazon.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.amazon.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
     public async Task CompleteSignIn_RejectsResponseOutsideSelectedMarketplaceHost(string responseUrl)
     {
         var secrets = new InMemorySecretStore();

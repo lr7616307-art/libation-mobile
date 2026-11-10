@@ -1,4 +1,5 @@
 using Android.Runtime;
+using Android.Content;
 using Avalonia;
 using Avalonia.Android;
 using Dinah.Core;
@@ -22,22 +23,31 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
     {
         base.OnCreate();
 
-        // Keep Android-only dependencies in the Android host. Both the complete
-        // Audible identity and the minimum account session use encrypted storage.
-        var secrets = new AndroidSecretStore(this);
-        var snapshots = new AudibleIdentitySnapshotStore(secrets);
-        var authenticator = new AudibleAccountAuthenticator(snapshots, new SystemDateTime());
-        var connection = new AccountConnectionService(authenticator, new AccountSessionStore(secrets));
-        var browser = new AndroidExternalBrowserLauncher(this);
+        // Persist fatal managed startup exceptions so they can be inspected
+        // from the phone later, without requiring a PC or USB debugging.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            WriteStartupDiagnostic(args.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            WriteStartupDiagnostic(args.Exception);
+            args.SetObserved();
+        };
+
+        // Do not initialize Android Keystore, Audible, or Media3 components
+        // during Application.OnCreate. On some Android 10/ARMv7 devices these
+        // optional services can fail before Avalonia has created its first view.
+        // Keep startup minimal and construct each dependency only when requested.
+        var services = new Lazy<PlatformServices>(() => new PlatformServices(this));
 
         MainView.PlatformSignInViewModelFactory =
-            () => new AudibleSignInViewModel(connection, browser);
+            () => services.Value.CreateSignInViewModel();
 
-        // The provider restores only the identity already stored on this device.
-        // If the user has not signed in, sync reports that sign-in is required.
         MainView.PlatformLibraryCatalogProviderFactory =
-            () => new SavedIdentityAudibleCatalogProvider(snapshots);
-        MainView.PlatformLocalAudioPlayerFactory = () => new AndroidLocalAudioPlayer();
+            () => services.Value.CreateCatalogProvider();
+
+        MainView.PlatformLocalAudioPlayerFactory =
+            () => new AndroidLocalAudioPlayer();
+
         MainView.PlatformWidevineDiagnosticFactory = () =>
         {
             var result = new AndroidWidevineCapabilityProbe().Probe();
@@ -45,5 +55,44 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
                 ? $"Widevine supported. Security level: {result.SecurityLevel ?? "not reported"}. {result.Diagnostic}"
                 : $"Widevine not available. {result.Diagnostic}";
         };
+    }
+
+    private void WriteStartupDiagnostic(Exception? exception)
+    {
+        try
+        {
+            var directory = Path.Combine(FilesDir?.AbsolutePath ?? CacheDir?.AbsolutePath ?? "/data/local/tmp", "vorath-diagnostics");
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, "startup-crash.txt");
+            File.AppendAllText(path,
+                $"[{DateTimeOffset.Now:O}] {exception?.GetType().FullName}: {exception}\\n\\n");
+        }
+        catch
+        {
+            // Diagnostics must never cause a second crash.
+        }
+    }
+
+    private sealed class PlatformServices
+    {
+        private readonly AndroidSecretStore _secrets;
+        private readonly AudibleIdentitySnapshotStore _snapshots;
+        private readonly AccountConnectionService _connection;
+        private readonly AndroidExternalBrowserLauncher _browser;
+
+        public PlatformServices(Context context)
+        {
+            _secrets = new AndroidSecretStore(context);
+            _snapshots = new AudibleIdentitySnapshotStore(_secrets);
+            var authenticator = new AudibleAccountAuthenticator(_snapshots, new SystemDateTime());
+            _connection = new AccountConnectionService(authenticator, new AccountSessionStore(_secrets));
+            _browser = new AndroidExternalBrowserLauncher(context);
+        }
+
+        public AudibleSignInViewModel CreateSignInViewModel()
+            => new(_connection, _browser);
+
+        public ILibraryCatalogProvider CreateCatalogProvider()
+            => new SavedIdentityAudibleCatalogProvider(_snapshots);
     }
 }

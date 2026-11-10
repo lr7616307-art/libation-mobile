@@ -10,7 +10,8 @@ public sealed class LocalAudioImportService
     private const int BufferSize = 64 * 1024;
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".mp3", ".m4a", ".m4b", ".aac", ".flac", ".ogg", ".opus", ".wav"
+        ".mp3", ".m4a", ".m4b", ".aac", ".flac", ".ogg", ".opus", ".wav",
+        ".wma", ".aiff", ".aif", ".alac", ".ape", ".wv", ".mka", ".mp4", ".3gp", ".amr"
     };
 
     private readonly string _storageDirectory;
@@ -37,7 +38,7 @@ public sealed class LocalAudioImportService
 
         var extension = Path.GetExtension(sourceFileName);
         if (!SupportedExtensions.Contains(extension))
-            throw new NotSupportedException("Choose an MP3, M4A, M4B, AAC, FLAC, OGG, OPUS or WAV audio file.");
+            throw new NotSupportedException("Choose a supported audio file (MP3, M4A, M4B, AAC, FLAC, OGG, OPUS, WAV, WMA, AIFF, ALAC, APE, WV, MKA, MP4, 3GP or AMR).");
 
         Directory.CreateDirectory(_storageDirectory);
         var idHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(audiobookId))).ToLowerInvariant();

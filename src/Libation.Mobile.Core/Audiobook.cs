@@ -12,6 +12,7 @@ public sealed record Audiobook(
 {
     /// <summary>Optional catalogue metadata; added as init-only fields for backward-compatible local JSON data.</summary>
     public string Series { get; init; } = string.Empty;
+    public string Album { get; init; } = string.Empty;
     public string Genre { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
 

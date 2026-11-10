@@ -16,7 +16,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly AudiobookFileImportService? _audiobookFileImportService;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
-    private readonly LibrarySyncService? _syncService;
+    private LibrarySyncService? _syncService;
     private readonly ISyncStateStore? _syncStateStore;
     private readonly Func<string>? _widevineDiagnosticFactory;
     private string _widevineDiagnostic = "Widevine check is available only in the Android app.";
@@ -24,6 +24,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _syncStatus = "Provider not connected. Audible library sync is not available yet.";
     private DateTimeOffset? _lastSuccessfulSync;
     private string _searchText = string.Empty;
+    private bool _isHomeSearchOpen;
     private string _newTitle = string.Empty;
     private string _newAuthor = string.Empty;
     private string _newNarrator = string.Empty;
@@ -50,7 +51,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private Audiobook? _menuBook;
     private Audiobook? _detailBook;
     private bool _isBookDetailsVisible;
-    private string _listeningStatusFilter = "Not started";
+    private string _listeningStatusFilter = "All";
     private bool _isBookMenuVisible;
     private bool _isInfoVisible;
     private bool _isSelectionMode;
@@ -148,19 +149,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string DetailChapterLabel => $"{_detailBook?.Chapters.Count ?? 0} chapters";
     public bool HasDetailBookChapters => (_detailBook?.Chapters.Count ?? 0) > 0;
     public bool HasNoDetailBookChapters => !HasDetailBookChapters;
+    public int AllCount => LocalAudioBooks.Count;
     public int NotStartedCount => LocalAudioBooks.Count(book => book.ListeningStatus == "Not started");
     public int InProgressCount => LocalAudioBooks.Count(book => book.ListeningStatus == "In progress");
     public int FinishedCount => LocalAudioBooks.Count(book => book.ListeningStatus == "Finished");
-    public string NotStartedTabLabel => $"Not started ({NotStartedCount})";
-    public string InProgressTabLabel => $"In progress ({InProgressCount})";
-    public string FinishedTabLabel => $"Finished ({FinishedCount})";
     public bool IsNotStartedFilter => _listeningStatusFilter == "Not started";
     public bool IsInProgressFilter => _listeningStatusFilter == "In progress";
     public bool IsFinishedFilter => _listeningStatusFilter == "Finished";
     public string ListeningStatusFilter => _listeningStatusFilter;
     public void SetListeningStatusFilter(string status)
     {
-        if (status is not ("Not started" or "In progress" or "Finished")) return;
+        if (status is not ("All" or "Not started" or "In progress" or "Finished")) return;
         if (_listeningStatusFilter == status) return;
         _listeningStatusFilter = status;
         RefreshFilteredLocalAudioBooks();
@@ -429,6 +428,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ? "No successful sync yet."
         : $"Last successful sync: {LastSuccessfulSync.Value.ToLocalTime():g}";
 
+    public void ConfigureSyncService(LibrarySyncService syncService)
+    {
+        _syncService = syncService ?? throw new ArgumentNullException(nameof(syncService));
+        OnPropertyChanged(nameof(CanSync));
+        SyncStatus = "Audible provider ready. Sign in to sync your library.";
+    }
+
     public async Task SyncLibraryAsync(CancellationToken cancellationToken = default)
     {
         if (_syncService is null)
@@ -485,7 +491,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string SearchText
     {
         get => _searchText;
-        set { if (_searchText == value) return; _searchText = value; OnPropertyChanged(); ApplyFilter(_allBooks); }
+        set
+        {
+            if (_searchText == value) return;
+            _searchText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSearchActive));
+            OnPropertyChanged(nameof(IsNotSearchActive));
+            ApplyFilter(_allBooks);
+        }
+    }
+
+    public bool IsHomeSearchOpen => _isHomeSearchOpen;
+    public bool IsSearchActive => !string.IsNullOrWhiteSpace(SearchText);
+    public bool IsNotSearchActive => !IsSearchActive;
+
+    public void ToggleHomeSearch()
+    {
+        _isHomeSearchOpen = !_isHomeSearchOpen;
+        OnPropertyChanged(nameof(IsHomeSearchOpen));
+        if (!_isHomeSearchOpen)
+            SearchText = string.Empty;
     }
 
     public string NewTitle { get => _newTitle; set => SetField(ref _newTitle, value); }
@@ -756,6 +782,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 AudioFilePath = imported.AudioFilePath,
                 CoverImagePath = imported.CoverImagePath,
+                Album = imported.Album,
                 Description = imported.Description,
                 FileSizeBytes = imported.FileSizeBytes,
                 Chapters = imported.Chapters
@@ -835,6 +862,60 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception) { AudioImportStatus = "Could not save playback position."; }
     }
 
+    public async Task MarkPlaybackStartedAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        var book = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+        if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath)
+            || book.ListeningStatus == "In progress")
+            return;
+
+        await UpdatePlaybackListeningStatusAsync(book, "In progress", null, cancellationToken);
+    }
+
+    public async Task MarkPlaybackFinishedAsync(
+        string audiobookId,
+        long completedPositionMilliseconds,
+        CancellationToken cancellationToken = default)
+    {
+        var book = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+        if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath))
+            return;
+
+        await UpdatePlaybackListeningStatusAsync(
+            book,
+            "Finished",
+            Math.Max(book.PlaybackPositionMilliseconds, completedPositionMilliseconds),
+            cancellationToken);
+    }
+
+    private async Task UpdatePlaybackListeningStatusAsync(
+        Audiobook book,
+        string status,
+        long? finalPositionMilliseconds,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = book with
+            {
+                ListeningStatus = status,
+                PlaybackPositionMilliseconds = finalPositionMilliseconds ?? book.PlaybackPositionMilliseconds
+            };
+            if (updated == book) return;
+
+            await _repository.UpsertAsync(updated, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            AudioImportStatus = status == "Finished"
+                ? "Playback finished, but its listening status could not be saved."
+                : "Playback started, but its listening status could not be updated.";
+        }
+    }
+
     public long GetResumePositionMilliseconds(string audiobookId)
         => _allBooks.FirstOrDefault(x => x.Id == audiobookId)?.PlaybackPositionMilliseconds ?? 0;
 
@@ -912,12 +993,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         foreach (var book in localBooks)
             LocalAudioBooks.Add(book with { IsSelectedForBulkAction = _selectedAudiobookIds.Contains(book.Id) });
         RefreshFilteredLocalAudioBooks();
+        OnPropertyChanged(nameof(AllCount));
         OnPropertyChanged(nameof(NotStartedCount));
         OnPropertyChanged(nameof(InProgressCount));
         OnPropertyChanged(nameof(FinishedCount));
-        OnPropertyChanged(nameof(NotStartedTabLabel));
-        OnPropertyChanged(nameof(InProgressTabLabel));
-        OnPropertyChanged(nameof(FinishedTabLabel));
         RefreshRecentlyPlayedBooks();
         OnPropertyChanged(nameof(HasLocalAudioBooks));
         OnPropertyChanged(nameof(HasNoLocalAudioBooks));
@@ -926,8 +1005,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void RefreshFilteredLocalAudioBooks()
     {
+        var query = SearchText.Trim();
+        var matches = LocalAudioBooks.Where(book =>
+                (_listeningStatusFilter == "All" || book.ListeningStatus == _listeningStatusFilter)
+                && (string.IsNullOrWhiteSpace(query)
+                    || book.Title.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(book => book.Title, StringComparer.OrdinalIgnoreCase);
+
         FilteredLocalAudioBooks.Clear();
-        foreach (var book in LocalAudioBooks.Where(book => book.ListeningStatus == _listeningStatusFilter))
+        foreach (var book in matches)
             FilteredLocalAudioBooks.Add(book);
     }
 
