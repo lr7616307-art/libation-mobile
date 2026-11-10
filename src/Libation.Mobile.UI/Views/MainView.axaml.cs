@@ -26,24 +26,46 @@ public partial class MainView : UserControl
 
     public MainView()
     {
-        var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
-        var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
-        var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
-        var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
-        var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
-        var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
-        var coverDirectory = Path.Combine(dataDirectory, "covers");
-        var audioImport = new LocalAudioImportService(audioDirectory);
-        _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
-            syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory));
-        // The Android player can restore a foreground service. Defer creating it
-        // until Loaded so Activity and Avalonia view initialization have completed.
-        InitializeComponent();
-        DataContext = _viewModel;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
-        Loaded += MainViewLoaded;
-        Unloaded += MainViewUnloaded;
+        var startupStage = "resolving the app data directory";
+        try
+        {
+            var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+            startupStage = "creating local library storage";
+            var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
+            var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
+            var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
+
+            startupStage = "resolving the Audible catalog provider";
+            var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
+            var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
+
+            startupStage = "creating audiobook import services";
+            var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
+            var coverDirectory = Path.Combine(dataDirectory, "covers");
+            var audioImport = new LocalAudioImportService(audioDirectory);
+            _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
+                syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory));
+
+            // The Android player can restore a foreground service. Defer creating it
+            // until Loaded so Activity and Avalonia view initialization have completed.
+            startupStage = "loading the main screen XAML";
+            InitializeComponent();
+
+            startupStage = "binding the main screen";
+            DataContext = _viewModel;
+
+            // A named control can be absent if a platform-specific XAML variant omits
+            // the full player. Its absence must not prevent the library screen opening.
+            startupStage = "attaching playback controls";
+            PlaybackSeekSlider?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+            Loaded += MainViewLoaded;
+            Unloaded += MainViewUnloaded;
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException($"MainView initialization failed while {startupStage}.", exception);
+        }
     }
 
     public MainView(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
@@ -411,7 +433,7 @@ public partial class MainView : UserControl
     {
         _playbackProgressTimer.Stop();
         _sleepTimer.Stop();
-        PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        PlaybackSeekSlider?.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         if (_localAudioPlayer is null) return;
