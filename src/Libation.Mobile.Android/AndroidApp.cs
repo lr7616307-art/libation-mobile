@@ -22,6 +22,16 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
     {
         base.OnCreate();
 
+        // Persist fatal managed startup exceptions so they can be inspected
+        // from the phone later, without requiring a PC or USB debugging.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            WriteStartupDiagnostic(args.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            WriteStartupDiagnostic(args.Exception);
+            args.SetObserved();
+        };
+
         // Do not initialize Android Keystore, Audible, or Media3 components
         // during Application.OnCreate. On some Android 10/ARMv7 devices these
         // optional services can fail before Avalonia has created its first view.
@@ -44,6 +54,22 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
                 ? $"Widevine supported. Security level: {result.SecurityLevel ?? "not reported"}. {result.Diagnostic}"
                 : $"Widevine not available. {result.Diagnostic}";
         };
+    }
+
+    private void WriteStartupDiagnostic(Exception? exception)
+    {
+        try
+        {
+            var directory = Path.Combine(FilesDir?.AbsolutePath ?? CacheDir?.AbsolutePath ?? "/data/local/tmp", "vorath-diagnostics");
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, "startup-crash.txt");
+            File.AppendAllText(path,
+                $"[{DateTimeOffset.Now:O}] {exception?.GetType().FullName}: {exception}\\n\\n");
+        }
+        catch
+        {
+            // Diagnostics must never cause a second crash.
+        }
     }
 
     private sealed class PlatformServices
