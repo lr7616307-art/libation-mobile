@@ -20,6 +20,16 @@
             <TextBox PlaceholderText="Search your audiobooks" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
             <Button Content="＋  Import Audiobook" FontSize="17" MinHeight="54" Click="ImportAudiobookClicked" />
             <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" FontSize="12" />
+                        <Border CornerRadius="12" Padding="10" Background="#211A2D" IsVisible="{Binding IsSelectionMode}">
+              <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                <TextBlock Grid.Column="0" Text="{Binding SelectedAudiobookCountLabel}" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="Mark status" Click="OpenStatusPickerClicked" IsEnabled="{Binding HasSelectedAudiobooks}"/>
+                <Button Grid.Column="2" Content="Delete selected" Click="RemoveSelectedClicked" IsEnabled="{Binding HasSelectedAudiobooks}"/>
+              </Grid>
+            </Border>
+            <Button Content="Select all" HorizontalAlignment="Right" IsVisible="{Binding IsSelectionMode}" Click="SelectAllClicked"/>
+            <Button Content="Cancel selection" HorizontalAlignment="Right" IsVisible="{Binding IsSelectionMode}" Click="ExitSelectionClicked"/>
+
             <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" Foreground="Tomato" TextWrapping="Wrap" />
 
             <StackPanel Spacing="10">
@@ -65,6 +75,9 @@
                           <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.7"/>
                           <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
                           <TextBlock Text="{Binding Chapters.Count, StringFormat='Chapters · {0}'}" FontSize="11" Foreground="#B9A5E8"/>
+                          <Border CornerRadius="8" Padding="6,3" HorizontalAlignment="Left" Background="{Binding ListeningStatus, Converter={x:Static local:ListeningStatusBrushConverter.Instance}}">
+                            <TextBlock Text="{Binding ListeningStatus}" FontSize="10" FontWeight="SemiBold"/>
+                          </Border>
                         </StackPanel>
                         <Button Grid.Column="2" Grid.RowSpan="2" Content="▶" FontSize="20" VerticalAlignment="Center" Click="PlayAudioClicked"/>
                       </Grid>
@@ -219,6 +232,48 @@
         <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="20" Padding="10" Click="TogglePlaybackClicked"/>
       </Grid>
     </Border>
+
+          <Border Grid.Row="0" Background="#0B0911" IsVisible="{Binding IsBookMenuVisible}" ZIndex="20">
+            <Border Background="#211A2D" CornerRadius="22" Padding="20" VerticalAlignment="Bottom" Margin="8" BorderBrush="#69568D" BorderThickness="1">
+              <StackPanel Spacing="10">
+                <TextBlock Text="{Binding MenuBook.Title}" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
+                <Button Content="Edit" HorizontalContentAlignment="Left" Click="EditImportedBookClicked"/>
+                <Button Content="Info" HorizontalContentAlignment="Left" Click="BookInfoClicked"/>
+                <Button Content="Add cover from folder" HorizontalContentAlignment="Left" Click="ChooseCoverFromMenuClicked"/>
+                <Button Content="Remove" Foreground="#FF7B83" HorizontalContentAlignment="Left" Click="RemoveImportedBookClicked"/>
+                <Button Content="Select multiple audiobooks" HorizontalContentAlignment="Left" Click="BeginSelectionClicked"/>
+                <Button Content="Close" Click="CloseBookMenuClicked"/>
+              </StackPanel>
+            </Border>
+          </Border>
+          <Border Grid.Row="0" Background="#0B0911" IsVisible="{Binding IsInfoVisible}" ZIndex="21">
+            <Border Background="#171321" CornerRadius="22" Padding="20" VerticalAlignment="Center" Margin="12" BorderBrush="#69568D" BorderThickness="1">
+              <ScrollViewer>
+                <StackPanel Spacing="12">
+                  <TextBlock Text="Audiobook information" FontSize="22" FontWeight="Bold"/>
+                  <Image Width="180" Height="220" Source="{Binding MenuBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill" HorizontalAlignment="Center"/>
+                  <TextBlock Text="{Binding MenuBook.Title}" FontSize="19" FontWeight="Bold" TextWrapping="Wrap"/>
+                  <TextBlock Text="{Binding MenuBookMetadataLabel}" TextWrapping="Wrap"/>
+                  <TextBlock Text="DESCRIPTION" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
+                  <TextBlock Text="{Binding MenuBookDescription}" TextWrapping="Wrap"/>
+                  <Button Content="Change cover artwork" Click="ChooseCoverFromInfoClicked"/>
+                  <Button Content="Done" Click="CloseBookInfoClicked"/>
+                </StackPanel>
+              </ScrollViewer>
+            </Border>
+          </Border>
+          <Border Grid.Row="0" Background="#0B0911" IsVisible="{Binding IsStatusPickerVisible}" ZIndex="22">
+            <Border Background="#171321" CornerRadius="22" Padding="20" VerticalAlignment="Center" Margin="12" BorderBrush="#69568D" BorderThickness="1">
+              <StackPanel Spacing="12">
+                <TextBlock Text="Listening status" FontSize="22" FontWeight="Bold"/>
+                <TextBlock Text="{Binding SelectedAudiobookCountLabel}" Opacity="0.7"/>
+                <Button Content="Finished" Background="#1E8B50" Click="MarkFinishedClicked"/>
+                <Button Content="In progress" Background="#C63E46" Click="MarkInProgressClicked"/>
+                <Button Content="Not started" Background="#C17A18" Click="MarkNotStartedClicked"/>
+                <Button Content="Cancel" Click="CloseStatusPickerClicked"/>
+              </StackPanel>
+            </Border>
+          </Border>
 
     <Border Grid.Row="2" Background="#100D17" BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="8,6">
       <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
