@@ -133,6 +133,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasSelectedAudiobooks => _selectedAudiobookIds.Count > 0;
     public string SelectedAudiobookCountLabel => $"{_selectedAudiobookIds.Count} selected";
     public bool IsMenuBookSelected => _menuBook is not null && _selectedAudiobookIds.Contains(_menuBook.Id);
+    public bool IsAudiobookSelected(string audiobookId) => _selectedAudiobookIds.Contains(audiobookId);
     public string MenuBookDescription => string.IsNullOrWhiteSpace(_menuBook?.Description) ? "No description was embedded in this audiobook file." : _menuBook.Description;
     public string MenuBookMetadataLabel => _menuBook is null ? string.Empty :
         $"{_menuBook.Author}\n{(string.IsNullOrWhiteSpace(_menuBook.Narrator) ? "Narrator not provided" : _menuBook.Narrator)}\n{(string.IsNullOrWhiteSpace(_menuBook.Length) ? "Duration not provided" : _menuBook.Length)}\n{_menuBook.Chapters.Count} chapters";
