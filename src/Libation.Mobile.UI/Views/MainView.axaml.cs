@@ -3,7 +3,6 @@ using Avalonia.Platform.Storage;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Libation.Mobile.Core;
-using Libation.Mobile.Android;
 using Libation.Mobile.UI.ViewModels;
 
 namespace Libation.Mobile.UI.Views;
@@ -101,11 +100,13 @@ public partial class MainView : UserControl
         }
 
         await _viewModel.InitializeAsync();
-        if (_localAudioPlayer is AndroidLocalAudioPlayer androidPlayer)
+        // The platform adapter defers session recovery to an explicit
+        // interface method so the shared UI assembly remains Android-agnostic.
+        if (_localAudioPlayer is IDeferredAudioSessionRecovery deferredRecovery)
         {
             try
             {
-                androidPlayer.RestorePendingSession();
+                deferredRecovery.RestorePendingSession();
             }
             catch (Exception)
             {
