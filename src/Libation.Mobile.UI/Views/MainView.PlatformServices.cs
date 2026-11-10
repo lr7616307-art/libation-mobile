@@ -84,7 +84,7 @@ public partial class MainView
                     Text = details,
                     IsReadOnly = true,
                     AcceptsReturn = true,
-                    TextWrapping = Avalonia.Controls.TextWrapping.Wrap,
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
                     MinHeight = 260
                 }
             }
