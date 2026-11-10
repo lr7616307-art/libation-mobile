@@ -722,7 +722,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             ErrorMessage = string.Empty;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch (Exception ex)
+        catch (Exception)
         {
             _pendingImport = null;
             OnPropertyChanged(nameof(HasPendingImport));
