@@ -25,21 +25,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - rid: android-arm
-            name: ARMv7
-            variant: baseline
+          - variant: baseline
             strip_native_libraries: false
-          - rid: android-arm
-            name: ARMv7
-            variant: compact
-            strip_native_libraries: true
-          - rid: android-arm64
-            name: ARM64
-            variant: baseline
-            strip_native_libraries: false
-          - rid: android-arm64
-            name: ARM64
-            variant: compact
+          - variant: compact
             strip_native_libraries: true
     steps:
       - uses: actions/checkout@v4
@@ -56,75 +44,78 @@ jobs:
         run: dotnet workload install android
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
-      - name: Build APK (${{ matrix.variant }})
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:AndroidPackageFormat=apk -p:AndroidStripNativeLibraries=${{ matrix.strip_native_libraries }}
-      - name: Measure and profile APK
+      - name: Build split APKs (${{ matrix.variant }})
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -p:AndroidPackageFormat=apk -p:AndroidCreatePackagePerAbi=true -p:AndroidStripNativeLibraries=${{ matrix.strip_native_libraries }}
+      - name: Verify ABI splits and profile APKs
         shell: bash
         run: |
           set -euo pipefail
-          apk_dir="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish"
-          mapfile -t all_apks < <(find "$apk_dir" -maxdepth 1 -type f -name '*.apk' -print | sort)
-          if [ "${#all_apks[@]}" -eq 0 ]; then
-            echo "No APK was produced in $apk_dir." >&2
-            exit 1
-          fi
-          printf 'APK candidates:\n%s\n' "${all_apks[@]}"
-          mapfile -t signed_apks < <(printf '%s\n' "${all_apks[@]}" | grep -Ei '[-_]signed[.]apk$' || true)
-          if [ "${#signed_apks[@]}" -eq 1 ]; then
-            apk="${signed_apks[0]}"
-          else
-            mapfile -t installable_apks < <(printf '%s\n' "${all_apks[@]}" | grep -Eiv 'unsigned[.]apk$' || true)
-            if [ "${#installable_apks[@]}" -ne 1 ]; then
-              echo "Could not identify exactly one signed installable APK in $apk_dir." >&2
-              exit 1
-            fi
-            apk="${installable_apks[0]}"
-          fi
-          bytes="$(stat -c '%s' "$apk")"
-          mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n / 1048576 }')"
-          output_apk="$apk_dir/VORATH-${{ matrix.name }}.apk"
-          cp "$apk" "$output_apk"
-          {
-            echo "Variant: ${{ matrix.variant }}"
-            echo "RID: ${{ matrix.rid }}"
-            echo "Source APK: $(basename "$apk")"
-            echo "Installable APK: $(basename "$output_apk")"
-            echo "Size: $bytes bytes ($mib MiB)"
-            sha256sum "$output_apk"
-          } | tee "$apk_dir/APK-SIZE.txt"
-          python3 - "$output_apk" "$apk_dir/APK-CONTENTS.txt" <<'PY'
-          import collections
+          publish_dir="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/publish"
+          test -d "$publish_dir" || { echo "Publish directory not found: $publish_dir" >&2; find src/Libation.Mobile.Android/bin/Release -type d -name publish -print; exit 1; }
+          python3 - "$publish_dir" <<'PY'
+          import hashlib
           import os
+          import re
+          import shutil
           import sys
           import zipfile
-          apk_path, report_path = sys.argv[1:3]
-          with zipfile.ZipFile(apk_path) as apk:
-              entries = [entry for entry in apk.infolist() if not entry.is_dir()]
-          by_extension = collections.defaultdict(lambda: [0, 0, 0])
-          for entry in entries:
-              extension = os.path.splitext(entry.filename)[1].lower() or '[no extension]'
-              by_extension[extension][0] += entry.file_size
-              by_extension[extension][1] += entry.compress_size
-              by_extension[extension][2] += 1
-          with open(report_path, 'w', encoding='utf-8') as report:
-              report.write(f'APK: {os.path.basename(apk_path)}\n')
-              report.write(f'Entries: {len(entries)}\n')
-              report.write(f'Uncompressed total: {sum(e.file_size for e in entries)} bytes\n')
-              report.write(f'Compressed entry total: {sum(e.compress_size for e in entries)} bytes\n\n')
-              report.write('Largest compressed entries (bytes):\n')
-              for entry in sorted(entries, key=lambda item: item.compress_size, reverse=True)[:30]:
-                  report.write(f'{entry.compress_size:>12} compressed | {entry.file_size:>12} uncompressed | {entry.filename}\n')
-              report.write('\nTotals by file extension (compressed bytes | uncompressed bytes | count):\n')
-              for extension, totals in sorted(by_extension.items(), key=lambda item: item[1][1], reverse=True):
-                  report.write(f'{extension:>18} | {totals[1]:>12} | {totals[0]:>12} | {totals[2]}\n')
-          print(open(report_path, encoding='utf-8').read())
+          from collections import defaultdict
+          from pathlib import Path
+          publish_dir = Path(sys.argv[1])
+          apk_files = sorted(p for p in publish_dir.glob('*.apk') if not p.name.startswith('VORATH-'))
+          signed = [p for p in apk_files if re.search(r'[-_]signed[.]apk$', p.name, re.IGNORECASE)]
+          candidates = signed or [p for p in apk_files if 'unsigned' not in p.name.lower()]
+          expected = {'armeabi-v7a': 'ARMv7', 'arm64-v8a': 'ARM64'}
+          found = set()
+          if len(candidates) != 2:
+              raise SystemExit(f'Expected exactly two signed ABI APKs, found {len(candidates)}: {[p.name for p in candidates]}')
+          for apk_path in candidates:
+              with zipfile.ZipFile(apk_path) as apk:
+                  entries = [entry for entry in apk.infolist() if not entry.is_dir()]
+                  abis = {parts[1] for entry in entries if (parts := entry.filename.split('/'))[:1] == ['lib'] and len(parts) >= 3}
+                  if len(abis) != 1:
+                      raise SystemExit(f'{apk_path.name} is not a single-ABI APK; found native ABIs: {sorted(abis)}')
+                  abi = next(iter(abis))
+                  if abi not in expected:
+                      raise SystemExit(f'Unexpected ABI in {apk_path.name}: {abi}')
+                  if abi in found:
+                      raise SystemExit(f'Duplicate APK for ABI {abi}')
+                  found.add(abi)
+                  name = expected[abi]
+                  output_apk = publish_dir / f'VORATH-{name}.apk'
+                  shutil.copy2(apk_path, output_apk)
+                  size = output_apk.stat().st_size
+                  digest = hashlib.sha256(output_apk.read_bytes()).hexdigest()
+                  report_path = publish_dir / f'APK-SIZE-{name}.txt'
+                  with report_path.open('w', encoding='utf-8') as report:
+                      report.write(f'Variant: ${{ matrix.variant }}\nABI: {abi}\nAPK: {output_apk.name}\nSize: {size} bytes ({size / 1048576:.2f} MiB)\nSHA-256: {digest}\n')
+                  by_extension = defaultdict(lambda: [0, 0, 0])
+                  for entry in entries:
+                      extension = Path(entry.filename).suffix.lower() or '[no extension]'
+                      by_extension[extension][0] += entry.file_size
+                      by_extension[extension][1] += entry.compress_size
+                      by_extension[extension][2] += 1
+                  contents_path = publish_dir / f'APK-CONTENTS-{name}.txt'
+                  with contents_path.open('w', encoding='utf-8') as report:
+                      report.write(f'APK: {output_apk.name}\nEntries: {len(entries)}\nUncompressed total: {sum(e.file_size for e in entries)} bytes\nCompressed entry total: {sum(e.compress_size for e in entries)} bytes\n')
+                      report.write('Native ABIs: ' + ', '.join(sorted(abis)) + '\n\nLargest compressed entries (bytes):\n')
+                      for entry in sorted(entries, key=lambda item: item.compress_size, reverse=True)[:30]:
+                          report.write(f'{entry.compress_size:>12} compressed | {entry.file_size:>12} uncompressed | {entry.filename}\n')
+                      report.write('\nTotals by file extension (compressed bytes | uncompressed bytes | count):\n')
+                      for extension, totals in sorted(by_extension.items(), key=lambda item: item[1][1], reverse=True):
+                          report.write(f'{extension:>18} | {totals[1]:>12} | {totals[0]:>12} | {totals[2]}\n')
+                  print(report_path.read_text(encoding='utf-8'))
+                  print(contents_path.read_text(encoding='utf-8'))
+          if found != set(expected):
+              raise SystemExit(f'Missing ABI APKs. Found {sorted(found)}, expected {sorted(expected)}')
           PY
-      - name: Upload APK and size reports
+      - name: Upload ARMv7 and ARM64 APKs
         uses: actions/upload-artifact@v4
         with:
-          name: vorath-${{ matrix.name }}-${{ matrix.variant }}
+          name: vorath-${{ matrix.variant }}-split-apks
           path: |
-            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/VORATH-${{ matrix.name }}.apk
-            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/APK-SIZE.txt
-            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/APK-CONTENTS.txt
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/publish/VORATH-ARMv7.apk
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/publish/VORATH-ARM64.apk
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/publish/APK-SIZE-*.txt
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/publish/APK-CONTENTS-*.txt
           if-no-files-found: error
