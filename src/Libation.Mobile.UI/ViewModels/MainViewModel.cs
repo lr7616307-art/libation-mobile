@@ -16,7 +16,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly AudiobookFileImportService? _audiobookFileImportService;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
-    private readonly LibrarySyncService? _syncService;
+    private LibrarySyncService? _syncService;
     private readonly ISyncStateStore? _syncStateStore;
     private readonly Func<string>? _widevineDiagnosticFactory;
     private string _widevineDiagnostic = "Widevine check is available only in the Android app.";
@@ -427,6 +427,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string LastSuccessfulSyncLabel => LastSuccessfulSync is null
         ? "No successful sync yet."
         : $"Last successful sync: {LastSuccessfulSync.Value.ToLocalTime():g}";
+
+    public void ConfigureSyncService(LibrarySyncService syncService)
+    {
+        _syncService = syncService ?? throw new ArgumentNullException(nameof(syncService));
+        OnPropertyChanged(nameof(CanSync));
+        SyncStatus = "Audible provider ready. Sign in to sync your library.";
+    }
 
     public async Task SyncLibraryAsync(CancellationToken cancellationToken = default)
     {
