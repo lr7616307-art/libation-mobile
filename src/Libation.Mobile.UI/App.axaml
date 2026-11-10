@@ -28,6 +28,18 @@
       <Setter Property="BorderBrush" Value="{DynamicResource VorathOutline}" />
       <Setter Property="CaretBrush" Value="{DynamicResource VorathViolet}" />
     </Style>
+    <Style Selector="Button.quiet-nav">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource VorathMuted}" />
+      <Setter Property="FontWeight" Value="Normal" />
+    </Style>
+    <Style Selector="Button.quiet-nav:pointerover">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.quiet-nav:pressed">
+      <Setter Property="Background" Value="#211A2D" />
+    </Style>
     <Style Selector="TabItem">
       <Setter Property="Foreground" Value="{DynamicResource VorathMuted}" />
     </Style>

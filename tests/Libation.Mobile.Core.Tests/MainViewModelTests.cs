@@ -311,6 +311,81 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ListeningStatusFilter_DefaultsToAllAndFiltersEachStatus()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("not-started", "Not started book", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "not-started.mp3",
+                ListeningStatus = "Not started"
+            },
+            new Audiobook("in-progress", "In progress book", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "in-progress.mp3",
+                ListeningStatus = "In progress"
+            },
+            new Audiobook("finished", "Finished book", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "finished.mp3",
+                ListeningStatus = "Finished"
+            }
+        ]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+
+        await vm.InitializeAsync();
+
+        Assert.Equal("All", vm.ListeningStatusFilter);
+        Assert.Equal(3, vm.AllCount);
+        Assert.Equal(3, vm.FilteredLocalAudioBooks.Count);
+
+        vm.SetListeningStatusFilter("Not started");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("Not started book", vm.FilteredLocalAudioBooks[0].Title);
+
+        vm.SetListeningStatusFilter("In progress");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("In progress book", vm.FilteredLocalAudioBooks[0].Title);
+
+        vm.SetListeningStatusFilter("Finished");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("Finished book", vm.FilteredLocalAudioBooks[0].Title);
+
+        vm.SetListeningStatusFilter("All");
+        Assert.Equal(3, vm.FilteredLocalAudioBooks.Count);
+    }
+
+    [Fact]
+    public async Task MarkPlaybackStartedAsync_ChangesNotStartedBookToInProgressAndPersistsCounts()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("local-1", "Test audiobook", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "test-audio.mp3",
+                ListeningStatus = "Not started"
+            }
+        ]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+
+        Assert.Equal(1, vm.NotStartedCount);
+        Assert.Equal(0, vm.InProgressCount);
+
+        await vm.MarkPlaybackStartedAsync("local-1");
+
+        Assert.Equal(0, vm.NotStartedCount);
+        Assert.Equal(1, vm.InProgressCount);
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("In progress", Assert.Single(await repository.GetBooksAsync()).ListeningStatus);
+
+        vm.SetListeningStatusFilter("In progress");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+    }
+
+    [Fact]
     public async Task Search_FiltersByTitleAuthorAndNarrator()
     {
         using var directory = new TemporaryDirectory();
@@ -598,6 +673,79 @@ public sealed class MainViewModelTests
         await vm.SavePlaybackPositionAsync(book.Id, 9000);
 
         Assert.Equal(0, vm.GetResumePositionMilliseconds(book.Id));
+    }
+
+    [Fact]
+    public async Task TryNavigateBack_ClearsSearchBeforeLeavingHome()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.NewTitle = "Searchable title";
+        vm.NewAuthor = "Author";
+        await vm.AddBookAsync();
+        vm.SearchText = "Searchable";
+        Assert.Single(vm.Books);
+
+        Assert.True(vm.TryNavigateBack());
+
+        Assert.Equal(string.Empty, vm.SearchText);
+        Assert.Single(vm.Books);
+    }
+
+    [Fact]
+    public async Task TryNavigateBack_ClosesNestedPlayerAndReturnsToHomeWithoutChangingPlaybackBook()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+        vm.NewTitle = "Now playing";
+        vm.NewAuthor = "Author";
+        await vm.AddBookAsync();
+        var book = Assert.Single(vm.Books);
+        vm.SetNowPlayingBook(book.Id);
+        vm.SelectTab(2);
+        vm.OpenFullPlayer();
+        vm.OpenChapters();
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.True(vm.IsFullPlayerVisible);
+        Assert.False(vm.IsChaptersVisible);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsFullPlayerVisible);
+        Assert.Equal(book.Id, vm.NowPlayingBook?.Id);
+    }
+
+    [Fact]
+    public async Task ConfirmPendingRemoval_RemovesBookAndClosesStaleDetailsAndMenu()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+        vm.NewTitle = "Imported title";
+        vm.NewAuthor = "Author";
+        await vm.AddBookAsync();
+        var book = Assert.Single(vm.Books);
+        vm.OpenBookMenu(book.Id);
+        vm.OpenBookDetails(book.Id);
+        vm.RequestRemoveBook(book.Id);
+
+        Assert.True(vm.IsRemovalConfirmationVisible);
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsRemovalConfirmationVisible);
+        Assert.Single(vm.Books);
+
+        vm.RequestRemoveBook(book.Id);
+        await vm.ConfirmPendingRemovalAsync();
+
+        Assert.False(vm.IsRemovalConfirmationVisible);
+        Assert.False(vm.IsBookDetailsVisible);
+        Assert.Null(vm.DetailBook);
+        Assert.Null(vm.MenuBook);
+        Assert.Empty(vm.Books);
+        Assert.Empty(await repository.GetBooksAsync());
     }
 
     private static MainViewModel CreateViewModel(string directory)

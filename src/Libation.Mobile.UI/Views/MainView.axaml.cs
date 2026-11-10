@@ -10,6 +10,14 @@ namespace Libation.Mobile.UI.Views;
 public partial class MainView : UserControl
 {
     private readonly MainViewModel _viewModel;
+    private static WeakReference<MainView>? _activeView;
+    
+    public static bool TryHandleSystemBack()
+    {
+        return _activeView is not null
+            && _activeView.TryGetTarget(out var view)
+            && view._viewModel.TryNavigateBack();
+    }
     private ILocalAudioPlayer? _localAudioPlayer;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -41,7 +49,10 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        // XAML-generated named controls can be null on some Android/Avalonia startup paths.
+        // Never let an optional seek control prevent the entire app from opening.
+        PlaybackSeekSlider?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        _activeView = new WeakReference<MainView>(this);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -51,11 +62,12 @@ public partial class MainView : UserControl
         _viewModel = new MainViewModel(repository, downloadQueue, syncService);
         InitializeComponent();
         DataContext = _viewModel;
+        _activeView = new WeakReference<MainView>(this);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
 
-    private async void MainViewLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void MainViewLoaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         _playbackProgressTimer.Tick += PlaybackProgressTimerTick;
@@ -63,7 +75,25 @@ public partial class MainView : UserControl
         _playbackCheckpointTimer.Tick += PlaybackCheckpointTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _sleepTimer.Tick += SleepTimerTick;
-        await InitializeAndRestorePlaybackAsync();
+
+        // Let Avalonia present the first Home frame before opening the local
+        // catalogue and restoring the playback adapter. This avoids making
+        // disk initialization part of the first visible frame.
+        Dispatcher.UIThread.Post(
+            async () =>
+            {
+                try
+                {
+                    await InitializeAndRestorePlaybackAsync();
+                }
+                catch (Exception ex)
+                {
+                    // A catalogue or playback-restore failure must not crash the UI thread.
+                    System.Diagnostics.Debug.WriteLine($"Audiobook startup initialization failed: {ex}");
+                    _viewModel.ReportAudioStatus("Your library could not be fully loaded. The app is still available; try Reload from Home.");
+                }
+            },
+            DispatcherPriority.Background);
     }
 
     private async Task InitializeAndRestorePlaybackAsync()
@@ -83,15 +113,19 @@ public partial class MainView : UserControl
         _playingAudiobookId = currentBook.Id;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
-        SetPlayerChapterPositions(currentBook);
+        // Older library entries may predate embedded chapter extraction. Read
+        // their local file asynchronously without interrupting restored playback.
+        await _viewModel.LoadChapterMetadataAsync(currentBook.Id);
+        var refreshedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book => book.Id == currentBook.Id) ?? currentBook;
+        SetPlayerChapterPositions(refreshedBook);
         if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
         if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
+        // Keep the lightweight UI poll alive while paused as well, so play/pause
+        // changes made from the Android notification are reflected in the app.
+        _playbackProgressTimer.Start();
         if (_localAudioPlayer.IsPlaying)
-        {
-            _playbackProgressTimer.Start();
             _playbackCheckpointTimer.Start();
-        }
         RestoreSleepTimerUi();
         UpdatePlaybackProgressUi();
     }
@@ -149,9 +183,14 @@ public partial class MainView : UserControl
         {
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
-            SetPlayerChapterPositions(book);
             _playingAudiobookId = book.Id;
+            await _viewModel.MarkPlaybackStartedAsync(book.Id);
             _viewModel.SetNowPlayingBook(book.Id);
+            // Start audio first; metadata parsing runs off the UI thread and
+            // can populate chapter navigation for older imported files.
+            await _viewModel.LoadChapterMetadataAsync(book.Id);
+            var refreshedBook = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == book.Id) ?? book;
+            SetPlayerChapterPositions(refreshedBook);
             if (PlayPauseButton is not null) PlayPauseButton.Content = "⏸";
             if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "⏸";
             _playbackProgressTimer.Start();
@@ -173,7 +212,7 @@ public partial class MainView : UserControl
             _localAudioPlayer.Pause();
             if (PlayPauseButton is not null) PlayPauseButton.Content = "▶";
             if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "▶";
-            _playbackProgressTimer.Stop();
+            // Keep UI polling active while paused so notification controls stay in sync.
             _playbackCheckpointTimer.Stop();
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
             UpdatePlaybackProgressUi();
@@ -342,7 +381,7 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Pause();
-            _playbackProgressTimer.Stop();
+            // Keep UI polling active while paused so notification controls stay in sync.
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
             UpdatePlaybackProgressUi();
             _viewModel.ReportAudioStatus("Sleep timer finished. Playback paused and position saved.");
@@ -367,7 +406,7 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.SetPlaybackSpeed(nextSpeed);
-            PlaybackSpeedButton.Content = $"Speed · {nextSpeed:0.##}×";
+            UpdatePlaybackProgressUi();
             _viewModel.ReportAudioStatus($"Playback speed set to {nextSpeed:0.##}×.");
         }
         catch (Exception)
@@ -409,7 +448,7 @@ public partial class MainView : UserControl
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
-        PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        PlaybackSeekSlider?.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         _playbackCheckpointTimer.Tick -= PlaybackCheckpointTimerTick;
@@ -435,28 +474,45 @@ public partial class MainView : UserControl
 
     private void UpdatePlaybackProgressUi()
     {
+        var player = _localAudioPlayer;
+        var position = Math.Max(0, player?.PositionMilliseconds ?? 0);
+        var duration = Math.Max(0, player?.DurationMilliseconds ?? 0);
+        var isPlaying = player?.IsPlaying == true;
+
+        // These controls are refreshed by the 500 ms UI timer, including while
+        // paused, so Android notification actions cannot leave stale icons.
+        if (PlayPauseButton is not null)
+            PlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+        if (MiniPlayPauseButton is not null)
+            MiniPlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+        if (PlaybackSpeedButton is not null)
+        {
+            var speed = player?.PlaybackSpeed ?? 1f;
+            PlaybackSpeedButton.Content = $"{speed:0.##}×";
+        }
+
         if (PlaybackSeekSlider is null || PlaybackPositionLabel is null || PlaybackDurationLabel is null)
             return;
 
-        var position = Math.Max(0, _localAudioPlayer?.PositionMilliseconds ?? 0);
-        var duration = Math.Max(0, _localAudioPlayer?.DurationMilliseconds ?? 0);
         var chapterRange = GetCurrentChapterRange(position, duration);
         var chapterElapsed = Math.Max(0, position - chapterRange.Start);
         var chapterDuration = Math.Max(0, chapterRange.End - chapterRange.Start);
         UpdateCurrentChapterUi(position, duration);
-        if (PlaybackSpeedButton is not null)
-        {
-            var speed = _localAudioPlayer?.PlaybackSpeed ?? 1f;
-            PlaybackSpeedButton.Content = $"Speed · {speed:0.##}×";
-        }
+
         _isUpdatingPlaybackSlider = true;
         try
         {
             PlaybackSeekSlider.Maximum = Math.Max(1, chapterDuration);
             PlaybackSeekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
             PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
-            PlaybackPositionLabel.Text = FormatPlaybackTime(chapterElapsed);
-            PlaybackDurationLabel.Text = chapterDuration > 0 ? FormatPlaybackTime(chapterDuration) : "--:--";
+
+            // The time row shows whole-book elapsed / total / remaining.
+            PlaybackPositionLabel.Text = FormatPlaybackTime(position);
+            PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
+            if (PlaybackRemainingLabel is not null)
+                PlaybackRemainingLabel.Text = duration > 0
+                    ? "−" + FormatPlaybackTime(Math.Max(0, duration - position))
+                    : "−--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
     }
@@ -464,12 +520,7 @@ public partial class MainView : UserControl
     private (long Start, long End) GetCurrentChapterRange(long positionMilliseconds, long durationMilliseconds)
     {
         var book = _playingAudiobookId is null ? null : _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
-        var chapters = AudiobookChapterService.Normalize(book?.Chapters, durationMilliseconds);
-        var index = AudiobookChapterService.FindCurrentChapterIndex(chapters, positionMilliseconds);
-        if (chapters.Count == 0 || index < 0) return (0, Math.Max(0, durationMilliseconds));
-        var start = chapters[index].StartPositionMilliseconds;
-        var end = index + 1 < chapters.Count ? chapters[index + 1].StartPositionMilliseconds : durationMilliseconds;
-        return (start, Math.Max(start, end));
+        return AudiobookChapterService.GetChapterRange(book?.Chapters, positionMilliseconds, durationMilliseconds);
     }
 
     private void SetPlayerChapterPositions(Audiobook book)
@@ -509,10 +560,11 @@ public partial class MainView : UserControl
             ? chapters[currentIndex + 1].StartPositionMilliseconds
             : durationMilliseconds;
         CurrentChapterTitleLabel.Text = current.Title;
-        var chapterRange = end > current.StartPositionMilliseconds
-            ? $"{FormatPlaybackTime(current.StartPositionMilliseconds)} – {FormatPlaybackTime(end)}"
-            : $"from {FormatPlaybackTime(current.StartPositionMilliseconds)}";
-        ChapterProgressLabel.Text = $"Chapter {currentIndex + 1} of {chapters.Count} · {chapterRange}";
+        var chapterDuration = Math.Max(0, end - current.StartPositionMilliseconds);
+        var chapterElapsed = Math.Clamp(positionMilliseconds - current.StartPositionMilliseconds, 0, chapterDuration);
+        ChapterProgressLabel.Text = chapterDuration > 0
+            ? $"Chapter {currentIndex + 1} of {chapters.Count} · {FormatPlaybackTime(chapterElapsed)} / {FormatPlaybackTime(chapterDuration)}"
+            : $"Chapter {currentIndex + 1} of {chapters.Count}";
     }
 
     private static string FormatPlaybackTime(long milliseconds)
@@ -886,6 +938,9 @@ public partial class MainView : UserControl
         if (_viewModel.DetailBook is not { } book) return;
         await ChooseCoverForBookAsync(book);
     }
+    private void ShowAllClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.SetListeningStatusFilter("All");
+
     private void ShowNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.SetListeningStatusFilter("Not started");
     private void ShowInProgressClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -914,12 +969,11 @@ public partial class MainView : UserControl
     private async void MarkInProgressClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await _viewModel.ApplyListeningStatusAsync("In progress");
     private async void MarkNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await _viewModel.ApplyListeningStatusAsync("Not started");
 
-    private async void RemoveImportedBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void RemoveImportedBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_viewModel.MenuBook is not { } book) return;
         _viewModel.CloseBookMenu();
-        var confirmed = await ShowConfirmDialogAsync($"Remove \"{book.Title}\" from your library?");
-        if (confirmed) await _viewModel.RemoveBookAsync(book.Id);
+        _viewModel.RequestRemoveBook(book.Id);
     }
 
     private void EditImportedBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -960,48 +1014,14 @@ public partial class MainView : UserControl
         _viewModel.OpenBookDetails(book.Id);
     }
 
-    private async Task<bool> ShowConfirmDialogAsync(string message)
-    {
-        var dialog = new Window
-        {
-            Title = "Confirm removal",
-            Width = 340,
-            SizeToContent = SizeToContent.Height,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            CanResize = false
-        };
-        var result = false;
-        var yes = new Button { Content = "Remove", MinWidth = 110 };
-        var no = new Button { Content = "Cancel", MinWidth = 110 };
-        yes.Click += (_, _) => { result = true; dialog.Close(); };
-        no.Click += (_, _) => dialog.Close();
-        dialog.Content = new StackPanel
-        {
-            Margin = new Avalonia.Thickness(20),
-            Spacing = 16,
-            Children =
-            {
-                new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
-                new StackPanel
-                {
-                    Orientation = Avalonia.Layout.Orientation.Horizontal,
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-                    Spacing = 10,
-                    Children = { no, yes }
-                }
-            }
-        };
-        var owner = TopLevel.GetTopLevel(this) as Window;
-        if (owner is null) return false;
-        await dialog.ShowDialog(owner);
-        return result;
-    }
+    private void RemoveSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.RequestRemoveSelectedAudiobooks();
 
-    private async void RemoveSelectedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        var confirmed = await ShowConfirmDialogAsync($"Remove {_viewModel.SelectedAudiobookCountLabel} from your library?");
-        if (confirmed) await _viewModel.RemoveSelectedAudiobooksAsync();
-    }
+    private async void ConfirmRemovalClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await _viewModel.ConfirmPendingRemovalAsync();
+
+    private void CancelRemovalClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CancelPendingRemoval();
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 }

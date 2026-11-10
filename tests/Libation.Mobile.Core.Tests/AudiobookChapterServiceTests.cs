@@ -26,6 +26,22 @@ public sealed class AudiobookChapterServiceTests
     }
 
     [Fact]
+    public void GetChapterRange_ReturnsCurrentChapterBounds()
+    {
+        AudiobookChapter[] chapters =
+        [
+            new("Intro", 0),
+            new("Part One", 30_000),
+            new("Part Two", 90_000)
+        ];
+
+        Assert.Equal((30_000L, 90_000L), AudiobookChapterService.GetChapterRange(chapters, 45_000, 150_000));
+        Assert.Equal((90_000L, 150_000L), AudiobookChapterService.GetChapterRange(chapters, 120_000, 150_000));
+        Assert.Equal((0L, 150_000L), AudiobookChapterService.GetChapterRange([], 45_000, 150_000));
+        Assert.Equal((0L, 0L), AudiobookChapterService.GetChapterRange(null, 0, 0));
+    }
+
+    [Fact]
     public void FindCurrentChapterIndex_ReturnsChapterContainingPosition()
     {
         AudiobookChapter[] chapters =

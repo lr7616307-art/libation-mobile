@@ -16,7 +16,8 @@ public sealed class AudibleAccountAuthenticatorTests
 
         Assert.True(challenge.AuthorizationUri.IsAbsoluteUri);
         Assert.Equal(Uri.UriSchemeHttps, challenge.AuthorizationUri.Scheme);
-        Assert.True(challenge.ExpiresAtUtc > DateTimeOffset.UtcNow);
+        var fixedNow = new DateTimeOffset(2026, 11, 10, 12, 0, 0, TimeSpan.Zero);
+        Assert.Equal(fixedNow.AddMinutes(10), challenge.ExpiresAtUtc);
     }
 
     [Theory]

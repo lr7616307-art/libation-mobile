@@ -18,12 +18,33 @@
           <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
             <TextBlock Text="Home" FontSize="30" FontWeight="Bold" />
             <TextBox PlaceholderText="Search your audiobooks" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
-              <Button Grid.Column="0" Content="{Binding NotStartedTabLabel}" Background="#C17A18" Click="ShowNotStartedClicked"/>
-              <Button Grid.Column="1" Content="{Binding InProgressTabLabel}" Background="#C63E46" Click="ShowInProgressClicked"/>
-              <Button Grid.Column="2" Content="{Binding FinishedTabLabel}" Background="#218B52" Click="ShowFinishedClicked"/>
+            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
+              <Button Grid.Column="0" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowAllClicked">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                  <TextBlock Grid.Column="0" Text="All" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Grid.Column="1" Text="{Binding AllCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </Grid>
+              </Button>
+              <Button Grid.Column="1" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowNotStartedClicked">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                  <TextBlock Grid.Column="0" Text="Not started" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Grid.Column="1" Text="{Binding NotStartedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </Grid>
+              </Button>
+              <Button Grid.Column="2" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowInProgressClicked">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                  <TextBlock Grid.Column="0" Text="In progress" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Grid.Column="1" Text="{Binding InProgressCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </Grid>
+              </Button>
+              <Button Grid.Column="3" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowFinishedClicked">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                  <TextBlock Grid.Column="0" Text="Finished" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Grid.Column="1" Text="{Binding FinishedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </Grid>
+              </Button>
             </Grid>
-            <Button Content="＋  Import Audiobook" FontSize="17" MinHeight="54" Click="ImportAudiobookClicked" />
+
             <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" FontSize="12" />
                         <Border CornerRadius="12" Padding="10" Background="#211A2D" IsVisible="{Binding IsSelectionMode}">
               <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
@@ -273,9 +294,10 @@
                 <TextBlock x:Name="CurrentChapterTitleLabel" Text="Ready when you are" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
                 <TextBlock x:Name="ChapterProgressLabel" Text="{Binding NowPlayingChapterCountLabel}" FontSize="12" TextAlignment="Center" Opacity="0.65"/>
                 <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0" IsEnabled="False"/>
-                <Grid ColumnDefinitions="*,*">
-                  <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="12"/>
-                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="12" HorizontalAlignment="Right"/>
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                  <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="11" HorizontalAlignment="Left"/>
+                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="11" HorizontalAlignment="Center"/>
+                  <TextBlock x:Name="PlaybackRemainingLabel" Grid.Column="2" Text="−--:--" FontSize="11" HorizontalAlignment="Right"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="3">
                   <Button Grid.Column="0" Content="⏮" FontSize="22" Click="PreviousChapterClicked"/>
@@ -314,6 +336,18 @@
           </StackPanel>
         </StackPanel>
       </ScrollViewer>
+      <Button IsVisible="{Binding IsHomeTab}"
+              Width="56" Height="56" MinWidth="56" MinHeight="56"
+              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+              Margin="0,0,18,12" Padding="0"
+              Background="#8B5CF6" BorderThickness="0" CornerRadius="28"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              ZIndex="10" ToolTip.Tip="Import audiobook"
+              Click="ImportAudiobookClicked">
+        <TextBlock Text="＋" FontSize="30" FontWeight="Light"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   TextAlignment="Center"/>
+      </Button>
     </Grid>
 
     <Border Grid.Row="1" Background="#181421" BorderBrush="#51416F" BorderThickness="1,1,1,0"
@@ -375,12 +409,60 @@
             </Border>
           </Border>
 
-    <Border Grid.Row="2" Background="#100D17" BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="8,6">
-      <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
-        <Button Grid.Column="0" Classes="bottom-nav" Content="⌂\nHome" Click="HomeTabClicked"/>
-        <Button Grid.Column="1" Classes="bottom-nav" Content="▤\nAudible Library" Click="AudibleLibraryTabClicked"/>
-        <Button Grid.Column="2" Classes="bottom-nav" Content="◉\nAccount" Click="AudibleAccountTabClicked"/>
-        <Button Grid.Column="3" Classes="bottom-nav" Content="⚙\nSettings" Click="SettingsTabClicked"/>
+    <Border Grid.Row="0" Background="#B8000000" IsVisible="{Binding IsRemovalConfirmationVisible}" ZIndex="30">
+      <Border Background="#211A2D" CornerRadius="20" Padding="20" Margin="20"
+              VerticalAlignment="Center" HorizontalAlignment="Stretch"
+              BorderBrush="#69568D" BorderThickness="1">
+        <StackPanel Spacing="16">
+          <TextBlock Text="Confirm removal" FontSize="20" FontWeight="Bold"/>
+          <TextBlock Text="{Binding RemovalConfirmationMessage}" TextWrapping="Wrap"/>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <Button Grid.Column="0" Content="Cancel" Click="CancelRemovalClicked"/>
+            <Button Grid.Column="1" Content="Remove" Foreground="#FF7B83" Click="ConfirmRemovalClicked"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+    </Border>
+
+    <Border Grid.Row="2" HorizontalAlignment="Stretch" Background="#0B0911"
+            BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="4,2">
+      <Grid HorizontalAlignment="Stretch" ColumnDefinitions="*,*,*,*" ColumnSpacing="0">
+        <Button Grid.Column="0" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,4"
+                Background="Transparent" BorderThickness="0" Click="HomeTabClicked">
+          <StackPanel HorizontalAlignment="Center" Spacing="3">
+            <TextBlock Text="⌂" FontSize="20" HorizontalAlignment="Center"/>
+            <TextBlock Text="Home" FontSize="10" HorizontalAlignment="Center"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsHomeTab}"/>
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="1" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,4"
+                Background="Transparent" BorderThickness="0" Click="AudibleLibraryTabClicked">
+          <StackPanel HorizontalAlignment="Center" Spacing="3">
+            <TextBlock Text="▤" FontSize="20" HorizontalAlignment="Center"/>
+            <TextBlock Text="Library" FontSize="10" HorizontalAlignment="Center"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsAudibleLibraryTab}"/>
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="2" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,4"
+                Background="Transparent" BorderThickness="0" Click="AudibleAccountTabClicked">
+          <StackPanel HorizontalAlignment="Center" Spacing="3">
+            <TextBlock Text="♙" FontSize="20" HorizontalAlignment="Center"/>
+            <TextBlock Text="Account" FontSize="10" HorizontalAlignment="Center"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsAudibleAccountTab}"/>
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="3" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Padding="0,4"
+                Background="Transparent" BorderThickness="0" Click="SettingsTabClicked">
+          <StackPanel HorizontalAlignment="Center" Spacing="3">
+            <TextBlock Text="⚙" FontSize="20" HorizontalAlignment="Center"/>
+            <TextBlock Text="Settings" FontSize="10" HorizontalAlignment="Center"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsSettingsTab}"/>
+          </StackPanel>
+        </Button>
       </Grid>
     </Border>
   </Grid>
