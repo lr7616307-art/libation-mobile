@@ -5,7 +5,7 @@ using Avalonia.Android;
 namespace Libation.Mobile.Android;
 
 [Activity(
-    Label = "Libation Mobile",
+    Label = "VØRATH",
     // AvaloniaMainActivity derives from AppCompatActivity. A platform Material
     // theme does not satisfy AppCompatDelegate and crashes during onCreate.
     Theme = "@style/Theme.AppCompat.Light.NoActionBar",
