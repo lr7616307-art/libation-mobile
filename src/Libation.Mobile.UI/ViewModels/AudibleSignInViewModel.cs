@@ -71,7 +71,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
                 AccountConnectionStatus.Connected => "Audible account connected.",
                 AccountConnectionStatus.Expired => "Your Audible session has expired. Sign in again to restore access.",
                 AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
-                _ => "Sign in to Audible India to access your library."
+                _ => "Sign in to your selected Audible marketplace to access your library."
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -88,7 +88,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         try
         {
             IsBusy = true;
-            Status = "Preparing secure Audible India sign-in…";
+            Status = "Preparing secure Audible sign-in…" ;
             var request = new AccountSignInRequest("audible-mobile", Marketplace.Trim());
             var challenge = await _connection.BeginSignInAsync(request, cancellationToken);
             challengeId = challenge.ChallengeId;
