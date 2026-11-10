@@ -47,7 +47,7 @@ public partial class MainView
             new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json")),
             new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json")));
 
-        var details = $"{startupException.GetType().FullName}\n{startupException.Message}\n\n{startupException.StackTrace}";
+        var details = startupException.ToString();
         Content = new StackPanel
         {
             Spacing = 14,
