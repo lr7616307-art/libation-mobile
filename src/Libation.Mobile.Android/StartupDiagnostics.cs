@@ -22,32 +22,59 @@ internal static class StartupDiagnostics
         lock (Gate)
         {
             if (_installed) return;
+            try
+            {
+                AndroidEnvironment.UnhandledExceptionRaiser += (_, args) =>
+                    Record(context, "Android managed unhandled exception", args.Exception);
+            }
+            catch (Exception exception)
+            {
+                Log.Error("VORATH_STARTUP", $"Could not install Android exception handler: {exception.GetType().Name}");
+            }
+
+            try
+            {
+                AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+                {
+                    if (args.ExceptionObject is Exception unhandledException)
+                        Record(context, "AppDomain unhandled exception", unhandledException);
+                };
+            }
+            catch (Exception exception)
+            {
+                Log.Error("VORATH_STARTUP", $"Could not install AppDomain exception handler: {exception.GetType().Name}");
+            }
+
+            try
+            {
+                TaskScheduler.UnobservedTaskException += (_, args) =>
+                {
+                    Record(context, "Unobserved task exception", args.Exception);
+                    args.SetObserved();
+                };
+            }
+            catch (Exception exception)
+            {
+                Log.Error("VORATH_STARTUP", $"Could not install task exception handler: {exception.GetType().Name}");
+            }
+
             _installed = true;
         }
-
-        AndroidEnvironment.UnhandledExceptionRaiser += (_, args) =>
-            Record(context, "Android managed unhandled exception", args.Exception);
-
-        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-        {
-            if (args.ExceptionObject is Exception exception)
-                Record(context, "AppDomain unhandled exception", exception);
-        };
-
-        TaskScheduler.UnobservedTaskException += (_, args) =>
-        {
-            Record(context, "Unobserved task exception", args.Exception);
-            args.SetObserved();
-        };
     }
 
     public static void Record(Context context, string phase, Exception exception)
     {
         try
         {
-            var report = $"VØRATH STARTUP DIAGNOSTIC\nPhase: {phase}\nTime: {DateTimeOffset.Now:O}\nException: {exception.GetType().FullName}\nMessage: {exception.Message}\n\nStack trace:\n{exception.StackTrace}";
-            var path = Path.Combine(context.FilesDir?.AbsolutePath ?? context.CacheDir!.AbsolutePath, FileName);
-            File.WriteAllText(path, report);
+            var report = $"VØRATH STARTUP DIAGNOSTIC\nPhase: {phase}\nTime: {DateTimeOffset.Now:O}\nException: {exception.GetType().FullName}\nMessage: {exception.Message}\n\nStack trace:\n{exception}";
+            var directory = context.FilesDir?.AbsolutePath ?? context.CacheDir?.AbsolutePath;
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                var path = Path.Combine(directory, FileName);
+                var temporaryPath = path + ".tmp";
+                File.WriteAllText(temporaryPath, report);
+                File.Move(temporaryPath, path, overwrite: true);
+            }
             Log.Error("VORATH_STARTUP", report);
         }
         catch (Exception loggingException)
@@ -60,7 +87,9 @@ internal static class StartupDiagnostics
     {
         try
         {
-            var path = Path.Combine(context.FilesDir?.AbsolutePath ?? context.CacheDir!.AbsolutePath, FileName);
+            var directory = context.FilesDir?.AbsolutePath ?? context.CacheDir?.AbsolutePath;
+            if (string.IsNullOrWhiteSpace(directory)) return null;
+            var path = Path.Combine(directory, FileName);
             return File.Exists(path) ? File.ReadAllText(path) : null;
         }
         catch (Exception exception)
@@ -74,7 +103,9 @@ internal static class StartupDiagnostics
     {
         try
         {
-            var path = Path.Combine(context.FilesDir?.AbsolutePath ?? context.CacheDir!.AbsolutePath, FileName);
+            var directory = context.FilesDir?.AbsolutePath ?? context.CacheDir?.AbsolutePath;
+            if (string.IsNullOrWhiteSpace(directory)) return;
+            var path = Path.Combine(directory, FileName);
             if (File.Exists(path)) File.Delete(path);
         }
         catch (Exception exception)
@@ -84,6 +115,29 @@ internal static class StartupDiagnostics
     }
 
     public static void Show(Activity activity, string report)
+    {
+        try
+        {
+            ShowCore(activity, report);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                new AlertDialog.Builder(activity)
+                    .SetTitle("VØRATH could not start")
+                    .SetMessage($"The diagnostic screen could not be displayed ({exception.GetType().Name}). The failure was recorded in app-private storage when possible.")
+                    .SetPositiveButton("Dismiss", (_, _) => activity.Recreate())
+                    .Show();
+            }
+            catch (Exception fallbackException)
+            {
+                Log.Error("VORATH_STARTUP", $"Could not display startup diagnostic UI: {fallbackException.GetType().Name}");
+            }
+        }
+    }
+
+    private static void ShowCore(Activity activity, string report)
     {
         var root = new LinearLayout(activity) { Orientation = Orientation.Vertical };
         root.SetPadding(24, 24, 24, 24);
