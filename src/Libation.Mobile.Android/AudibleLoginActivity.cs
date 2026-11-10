@@ -118,7 +118,7 @@ public sealed class AudibleLoginActivity : Activity
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
             || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(uri.Host, _expectedHost, StringComparison.OrdinalIgnoreCase)
+            || !HostsMatch(uri.Host, _expectedHost)
             || !uri.IsDefaultPort
             || !string.IsNullOrEmpty(uri.UserInfo)
             || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
@@ -128,21 +128,35 @@ public sealed class AudibleLoginActivity : Activity
         return !string.IsNullOrWhiteSpace(parameters["openid.oa2.authorization_code"]);
     }
 
+    private static bool HostsMatch(string actual, string expected)
+    {
+        static string Normalize(string host)
+        {
+            var normalized = host.Trim().TrimEnd('.');
+            return normalized.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                ? normalized[4..] : normalized;
+        }
+        return string.Equals(Normalize(actual), Normalize(expected), StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string FormatMarketplaceHeader(string callbackHost)
     {
-        var region = callbackHost.ToLowerInvariant() switch
+        var normalizedHost = callbackHost.ToLowerInvariant();
+        if (normalizedHost.StartsWith("www.", StringComparison.Ordinal))
+            normalizedHost = normalizedHost[4..];
+        var region = normalizedHost switch
         {
-            "www.audible.com" => "🇺🇸  United States",
-            "www.audible.co.uk" => "🇬🇧  United Kingdom",
-            "www.audible.de" => "🇩🇪  Germany",
-            "www.audible.fr" => "🇫🇷  France",
-            "www.audible.ca" => "🇨🇦  Canada",
-            "www.audible.com.au" => "🇦🇺  Australia",
-            "www.audible.it" => "🇮🇹  Italy",
-            "www.audible.es" => "🇪🇸  Spain",
-            "www.audible.in" => "🇮🇳  India",
-            "www.audible.co.jp" => "🇯🇵  Japan",
-            "www.audible.com.br" => "🇧🇷  Brazil",
+            "audible.com" => "🇺🇸  United States",
+            "audible.co.uk" => "🇬🇧  United Kingdom",
+            "audible.de" => "🇩🇪  Germany",
+            "audible.fr" => "🇫🇷  France",
+            "audible.ca" => "🇨🇦  Canada",
+            "audible.com.au" => "🇦🇺  Australia",
+            "audible.it" => "🇮🇹  Italy",
+            "audible.es" => "🇪🇸  Spain",
+            "audible.in" => "🇮🇳  India",
+            "audible.co.jp" => "🇯🇵  Japan",
+            "audible.com.br" => "🇧🇷  Brazil",
             _ => "Audible"
         };
         return region;
@@ -183,7 +197,7 @@ public sealed class AudibleLoginActivity : Activity
         {
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
                 || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(uri.Host, expectedHost, StringComparison.OrdinalIgnoreCase)
+                || !HostsMatch(uri.Host, expectedHost)
                 || !uri.IsDefaultPort
                 || !string.IsNullOrEmpty(uri.UserInfo)
                 || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
