@@ -58,7 +58,7 @@ jobs:
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
       - name: Build APK (${{ matrix.variant }})
         run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:AndroidPackageFormat=apk -p:AndroidStripNativeLibraries=${{ matrix.strip_native_libraries }}
-      - name: Measure APK
+      - name: Measure and profile APK
         shell: bash
         run: |
           set -euo pipefail
@@ -69,7 +69,7 @@ jobs:
             exit 1
           fi
           printf 'APK candidates:\n%s\n' "${all_apks[@]}"
-          mapfile -t signed_apks < <(printf '%s\n' "${all_apks[@]}" | grep -Ei '[-_]signed[.]apk || true)
+          mapfile -t signed_apks < <(printf '%s\n' "${all_apks[@]}" | grep -Ei '[-_]signed[.]apk$' || true)
           if [ "${#signed_apks[@]}" -eq 1 ]; then
             apk="${signed_apks[0]}"
           else
@@ -92,42 +92,39 @@ jobs:
             echo "Size: $bytes bytes ($mib MiB)"
             sha256sum "$output_apk"
           } | tee "$apk_dir/APK-SIZE.txt"
-      - name: Upload APK and size report
+          python3 - "$output_apk" "$apk_dir/APK-CONTENTS.txt" <<'PY'
+          import collections
+          import os
+          import sys
+          import zipfile
+          apk_path, report_path = sys.argv[1:3]
+          with zipfile.ZipFile(apk_path) as apk:
+              entries = [entry for entry in apk.infolist() if not entry.is_dir()]
+          by_extension = collections.defaultdict(lambda: [0, 0, 0])
+          for entry in entries:
+              extension = os.path.splitext(entry.filename)[1].lower() or '[no extension]'
+              by_extension[extension][0] += entry.file_size
+              by_extension[extension][1] += entry.compress_size
+              by_extension[extension][2] += 1
+          with open(report_path, 'w', encoding='utf-8') as report:
+              report.write(f'APK: {os.path.basename(apk_path)}\n')
+              report.write(f'Entries: {len(entries)}\n')
+              report.write(f'Uncompressed total: {sum(e.file_size for e in entries)} bytes\n')
+              report.write(f'Compressed entry total: {sum(e.compress_size for e in entries)} bytes\n\n')
+              report.write('Largest compressed entries (bytes):\n')
+              for entry in sorted(entries, key=lambda item: item.compress_size, reverse=True)[:30]:
+                  report.write(f'{entry.compress_size:>12} compressed | {entry.file_size:>12} uncompressed | {entry.filename}\n')
+              report.write('\nTotals by file extension (compressed bytes | uncompressed bytes | count):\n')
+              for extension, totals in sorted(by_extension.items(), key=lambda item: item[1][1], reverse=True):
+                  report.write(f'{extension:>18} | {totals[1]:>12} | {totals[0]:>12} | {totals[2]}\n')
+          print(open(report_path, encoding='utf-8').read())
+          PY
+      - name: Upload APK and size reports
         uses: actions/upload-artifact@v4
         with:
           name: vorath-${{ matrix.name }}-${{ matrix.variant }}
           path: |
             src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/VORATH-${{ matrix.name }}.apk
             src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/APK-SIZE.txt
-          if-no-files-found: error
- || true)
-          if [ "${#signed_apks[@]}" -eq 1 ]; then
-            apk="${signed_apks[0]}"
-          else
-            mapfile -t installable_apks < <(printf '%s\n' "${all_apks[@]}" | grep -Eiv 'unsigned[.]apk$' || true)
-            if [ "${#installable_apks[@]}" -ne 1 ]; then
-              echo "Could not identify exactly one signed installable APK in $apk_dir." >&2
-              exit 1
-            fi
-            apk="${installable_apks[0]}"
-          fi
-          bytes="$(stat -c '%s' "$apk")"
-          mib="$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n / 1048576 }')"
-          output_apk="$apk_dir/VORATH-${{ matrix.name }}.apk"
-          cp "$apk" "$output_apk"
-          {
-            echo "Variant: ${{ matrix.variant }}"
-            echo "RID: ${{ matrix.rid }}"
-            echo "Source APK: $(basename "$apk")"
-            echo "Installable APK: $(basename "$output_apk")"
-            echo "Size: $bytes bytes ($mib MiB)"
-            sha256sum "$output_apk"
-          } | tee "$apk_dir/APK-SIZE.txt"
-      - name: Upload APK and size report
-        uses: actions/upload-artifact@v4
-        with:
-          name: vorath-${{ matrix.name }}-${{ matrix.variant }}
-          path: |
-            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/VORATH-${{ matrix.name }}.apk
-            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/APK-SIZE.txt
+            src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/APK-CONTENTS.txt
           if-no-files-found: error
