@@ -283,7 +283,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     public void BeginSelectionMode()
     {
+        // Selection mode replaces the menu; discard the menu's Back entry so
+        // leaving selection returns to the page underneath instead of reopening it.
+        if (_isBookMenuVisible && _navigationHistory.Count > 0)
+            _navigationHistory.Pop();
         _isBookMenuVisible = false;
+        _isInfoVisible = false;
         _isSelectionMode = true;
         _selectedAudiobookIds.Clear();
         if (_menuBook is not null) _selectedAudiobookIds.Add(_menuBook.Id);
@@ -416,20 +421,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
             ExitSelectionMode();
             return true;
         }
-        if (_isBookMenuVisible)
-        {
-            _isBookMenuVisible = false;
-            OnPropertyChanged(nameof(IsBookMenuVisible));
-            if (_navigationHistory.Count > 0)
-                RestoreNavigationSnapshot(_navigationHistory.Pop());
-            return true;
-        }
+        // The info sheet is layered above the book menu; dismiss it first.
         if (_isInfoVisible)
         {
-            _isInfoVisible = false;
-            OnPropertyChanged(nameof(IsInfoVisible));
-            if (_navigationHistory.Count > 0)
-                RestoreNavigationSnapshot(_navigationHistory.Pop());
+            CloseBookInfo();
+            return true;
+        }
+        if (_isBookMenuVisible)
+        {
+            CloseBookMenu();
             return true;
         }
         if (_navigationHistory.Count == 0)
