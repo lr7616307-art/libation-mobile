@@ -196,8 +196,7 @@ public sealed class MainViewModelTests
 
         await vm.AddBookAsync();
 
-        var added = Assert.Single((await new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")).GetBooksAsync())
-            .Where(x => x.Title == "New audiobook"));
+        var added = Assert.Single(await new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")).GetBooksAsync(), x => x.Title == "New audiobook");
         Assert.Equal("New author", added.Author);
         Assert.Equal("New narrator", added.Narrator);
         Assert.Equal("6h", added.Length);
@@ -229,7 +228,7 @@ public sealed class MainViewModelTests
         vm.NewTitle = "Original";
         vm.NewAuthor = "Author";
         await vm.AddBookAsync();
-        var original = Assert.Single(vm.Books.Where(x => x.Title == "Original"));
+        var original = Assert.Single(vm.Books, x => x.Title == "Original");
 
         vm.BeginEdit(original.Id);
         Assert.True(vm.IsEditing);
@@ -237,8 +236,7 @@ public sealed class MainViewModelTests
         vm.NewAuthor = "Revised author";
         await vm.AddBookAsync();
 
-        var saved = Assert.Single((await new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")).GetBooksAsync())
-            .Where(x => x.Title == "Revised"));
+        var saved = Assert.Single(await new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")).GetBooksAsync(), x => x.Title == "Revised");
         Assert.Equal(original.Id, saved.Id);
         Assert.Equal("Revised author", saved.Author);
         Assert.False(vm.IsEditing);
@@ -253,7 +251,7 @@ public sealed class MainViewModelTests
         vm.NewTitle = "To delete";
         vm.NewAuthor = "Author";
         await vm.AddBookAsync();
-        var manual = Assert.Single(vm.Books.Where(x => x.Title == "To delete"));
+        var manual = Assert.Single(vm.Books, x => x.Title == "To delete");
         await vm.RemoveBookAsync(manual.Id);
 
         Assert.DoesNotContain(vm.Books, x => x.Id == manual.Id);
@@ -273,8 +271,7 @@ public sealed class MainViewModelTests
 
         await vm.AddBookAsync();
 
-        var saved = Assert.Single((await new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")).GetBooksAsync())
-            .Where(book => book.Title == "The Archive"));
+        var saved = Assert.Single(await new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")).GetBooksAsync(), book => book.Title == "The Archive");
         Assert.Equal("Forgotten Worlds", saved.Series);
         Assert.Equal("Science Fiction", saved.Genre);
         Assert.Equal("A journey through distant galaxies.", saved.Description);
@@ -304,7 +301,7 @@ public sealed class MainViewModelTests
         await vm.InitializeAsync();
         await vm.SyncLibraryAsync();
 
-        var saved = Assert.Single((await repository.GetBooksAsync()).Where(book => book.Id == "provider:remote-rich"));
+        var saved = Assert.Single(await repository.GetBooksAsync(), book => book.Id == "provider:remote-rich");
         Assert.Equal("Forgotten Worlds", saved.Series);
         Assert.Equal("Science Fiction", saved.Genre);
         Assert.Equal("A journey through distant galaxies.", saved.Description);
@@ -383,7 +380,7 @@ public sealed class MainViewModelTests
         await vm.InitializeAsync();
         await vm.SyncLibraryAsync();
 
-        var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
+        var book = Assert.Single(vm.Books, item => item.Id == "provider:audible-asin");
         Assert.False(book.CanQueueDownload);
         Assert.Equal("Audible download unavailable", book.DownloadActionLabel);
 
@@ -526,12 +523,12 @@ public sealed class MainViewModelTests
         vm.NewTitle = "Project Hail Mary";
         vm.NewAuthor = "Andy Weir";
         await vm.AddBookAsync();
-        var book = Assert.Single(vm.Books.Where(x => x.Title == "Project Hail Mary"));
+        var book = Assert.Single(vm.Books, x => x.Title == "Project Hail Mary");
         await using var audio = new MemoryStream([1, 2, 3, 4, 5]);
 
         await vm.ImportAudioAsync(book.Id, "sample.m4b", audio);
 
-        var saved = Assert.Single((await repository.GetBooksAsync()).Where(x => x.Id == book.Id));
+        var saved = Assert.Single(await repository.GetBooksAsync(), x => x.Id == book.Id);
         Assert.NotNull(saved.AudioFilePath);
         Assert.True(File.Exists(saved.AudioFilePath));
         Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, await File.ReadAllBytesAsync(saved.AudioFilePath));
@@ -554,7 +551,7 @@ public sealed class MainViewModelTests
 
         await vm.ImportAudioAsync(book.Id, "protected.aax", audio);
 
-        var saved = Assert.Single((await repository.GetBooksAsync()).Where(x => x.Id == book.Id));
+        var saved = Assert.Single(await repository.GetBooksAsync(), x => x.Id == book.Id);
         Assert.Null(saved.AudioFilePath);
         Assert.Contains("Could not import", vm.AudioImportStatus);
     }
@@ -579,7 +576,7 @@ public sealed class MainViewModelTests
         await vm.SavePlaybackPositionAsync(book.Id, -50);
         Assert.Equal(0, vm.GetResumePositionMilliseconds(book.Id));
 
-        var saved = Assert.Single((await repository.GetBooksAsync()).Where(x => x.Id == book.Id));
+        var saved = Assert.Single(await repository.GetBooksAsync(), x => x.Id == book.Id);
         Assert.Equal(0, saved.PlaybackPositionMilliseconds);
     }
 
