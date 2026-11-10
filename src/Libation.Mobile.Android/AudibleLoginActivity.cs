@@ -123,18 +123,18 @@ public sealed class AudibleLoginActivity : Activity
 
         private bool TryComplete(string url)
         {
-            if (!global::Android.Net.Uri.TryParse(url, out var uri)
-                || !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase)
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                || !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(uri.Host, expectedHost, StringComparison.OrdinalIgnoreCase)
                 || !uri.AbsolutePath.Contains("maplanding", StringComparison.OrdinalIgnoreCase)
-                || string.IsNullOrWhiteSpace(uri.GetQueryParameter("openid.oa2.authorization_code")))
+                || !uri.Query.Contains("openid.oa2.authorization_code=", StringComparison.Ordinal))
                 return false;
 
             completed(url);
             return true;
         }
 
-        public override void OnReceivedSslError(WebView? view, SslErrorHandler? handler, global::Android.Webkit.SslError? error)
+        public override void OnReceivedSslError(WebView? view, SslErrorHandler? handler, global::Android.Net.Http.SslError? error)
         {
             // Never bypass certificate errors on a page that handles account sign-in.
             handler?.Cancel();
