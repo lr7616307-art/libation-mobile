@@ -23,26 +23,71 @@ public partial class MainView
 
     public static MainView CreatePlatformView()
     {
-        var view = new MainView();
-        var signInViewModel = PlatformSignInViewModelFactory?.Invoke();
-        if (signInViewModel is not null
-            && view.Content is TabControl tabs)
+        try
         {
-            var accountTab = tabs.Items
-                .OfType<TabItem>()
-                .FirstOrDefault(tab => string.Equals(
-                    tab.Header?.ToString(), "Account", StringComparison.Ordinal));
-
-            if (accountTab?.Content is ScrollViewer { Content: StackPanel accountStack })
+            var view = new MainView();
+            var signInViewModel = PlatformSignInViewModelFactory?.Invoke();
+            if (signInViewModel is not null && view.Content is TabControl tabs)
             {
-                // Keep the native sign-in panel inside the visible Account tab,
-                // rather than trying to insert it into the TabControl's root.
-                accountStack.Children.Insert(
-                    Math.Min(2, accountStack.Children.Count),
-                    AudibleSignInPanel.Create(signInViewModel));
-            }
-        }
+                var accountTab = tabs.Items
+                    .OfType<TabItem>()
+                    .FirstOrDefault(tab => string.Equals(
+                        tab.Header?.ToString(), "Account", StringComparison.Ordinal));
 
-        return view;
+                if (accountTab?.Content is ScrollViewer { Content: StackPanel accountStack })
+                {
+                    // Keep the native sign-in panel inside the visible Account tab,
+                    // rather than trying to insert it into the TabControl's root.
+                    accountStack.Children.Insert(
+                        Math.Min(2, accountStack.Children.Count),
+                        AudibleSignInPanel.Create(signInViewModel));
+                }
+            }
+
+            return view;
+        }
+        catch (Exception exception)
+        {
+            // Keep the process alive and show the actual view-construction failure.
+            // This is especially useful on devices where ADB/Logcat is unavailable.
+            return new MainView(exception);
+        }
+    }
+
+    private MainView(Exception startupException)
+    {
+        var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        _viewModel = new MainViewModel(
+            new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json")),
+            new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json")));
+
+        var details = $"{startupException.GetType().FullName}\n{startupException.Message}\n\n{startupException.StackTrace}";
+        Content = new StackPanel
+        {
+            Spacing = 14,
+            Margin = new Avalonia.Thickness(20),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "VØRATH startup error",
+                    FontSize = 22,
+                    FontWeight = Avalonia.Media.FontWeight.Bold
+                },
+                new TextBlock
+                {
+                    Text = "The app caught an exception while constructing its main screen. Long-press the details below to select and copy them. Review them before sharing; remove any personal path or account detail.",
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                },
+                new TextBox
+                {
+                    Text = details,
+                    IsReadOnly = true,
+                    AcceptsReturn = true,
+                    TextWrapping = Avalonia.Controls.TextWrapping.Wrap,
+                    MinHeight = 260
+                }
+            }
+        };
     }
 }
