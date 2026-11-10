@@ -342,6 +342,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasNowPlayingBook => NowPlayingBook is not null;
+    public void SetAudiobookMenuVisible(bool isVisible)
+    {
+        if (_isBookMenuVisible == isVisible) return;
+        _isBookMenuVisible = isVisible;
+        OnPropertyChanged(nameof(IsBookMenuVisible));
+    }
+
+    public void SetAudiobookInfoVisible(bool isVisible)
+    {
+        if (_isInfoVisible == isVisible) return;
+        _isInfoVisible = isVisible;
+        OnPropertyChanged(nameof(IsInfoVisible));
+    }
+
     public void SelectTab(int index)
     {
         _navigationHistory.Clear();
