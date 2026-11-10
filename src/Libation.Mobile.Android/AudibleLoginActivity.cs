@@ -11,7 +11,7 @@ namespace Libation.Mobile.Android;
     Exported = false,
     Label = "Audible sign-in",
     Theme = "@android:style/Theme.Material.NoActionBar",
-    ConfigurationChanges = Android.Content.PM.ConfigChanges.Orientation | Android.Content.PM.ConfigChanges.ScreenSize)]
+    ConfigurationChanges = global::Android.Content.PM.ConfigChanges.Orientation | global::Android.Content.PM.ConfigChanges.ScreenSize)]
 public sealed class AudibleLoginActivity : Activity
 {
     internal const string AuthorizationUrlExtra = "audible.authorization_url";
@@ -116,7 +116,7 @@ public sealed class AudibleLoginActivity : Activity
             MinLines = 3,
             MaxLines = 6,
             Gravity = GravityFlags.Top | GravityFlags.Start,
-            InputType = Android.Text.InputTypes.ClassText | Android.Text.InputTypes.TextFlagMultiLine
+            InputType = global::Android.Text.InputTypes.ClassText | global::Android.Text.InputTypes.TextFlagMultiLine
         };
         _responseInput.SetTextColor(Color.White);
         _responseInput.SetHintTextColor(Color.Rgb(150, 142, 164));
@@ -150,7 +150,7 @@ public sealed class AudibleLoginActivity : Activity
     {
         try
         {
-            var intent = new Intent(Intent.ActionView, Android.Net.Uri.Parse(_authorizationUrl));
+            var intent = new Intent(Intent.ActionView, global::Android.Net.Uri.Parse(_authorizationUrl));
             StartActivity(intent);
             SetStatus("Complete sign-in in your browser. Then copy the full final address-bar URL and return here.");
         }
