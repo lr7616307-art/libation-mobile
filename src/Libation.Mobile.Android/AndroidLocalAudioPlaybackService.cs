@@ -396,9 +396,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private Notification BuildNotification()
     {
-        Notification.Builder builder = Build.VERSION.SdkInt >= BuildVersionCodes.O
+        var builder = (Build.VERSION.SdkInt >= BuildVersionCodes.O
             ? new Notification.Builder(this, ChannelId)
-            : new Notification.Builder(this);
+            : new Notification.Builder(this))
+            ?? throw new InvalidOperationException("Android could not create a playback notification builder.");
         var launchIntent = new Intent(this, typeof(MainActivity));
         var contentPendingIntent = PendingIntent.GetActivity(
             this, 4102, launchIntent,
