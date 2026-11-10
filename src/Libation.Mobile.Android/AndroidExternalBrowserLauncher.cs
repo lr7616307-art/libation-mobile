@@ -4,8 +4,8 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Android;
 
 /// <summary>
-/// Hosts the Audible authorization page in a dedicated in-app WebView activity.
-/// Only the final Amazon marketplace callback URL is returned to the auth adapter.
+/// Opens Audible in the user's normal browser and collects the final URL that
+/// the user explicitly pastes back into the app. Credentials remain in the browser.
 /// </summary>
 public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalBrowserLauncher
 {

@@ -19,13 +19,13 @@ Therefore, cookie injection into Android's external browser is not a prerequisit
 
 1. User selects their Audible marketplace and starts sign-in.
 2. App creates one in-memory `ExternalLogin` instance and obtains its generated login URL.
-3. App opens that URL through Android's normal external browser resolver.
-4. App explains that the user must finish Amazon/Audible sign-in, then copy the complete final address-bar URL and return to the app.
-5. User pastes the URL into a dedicated response field and explicitly submits it.
-6. The app passes the exact response string directly to the same in-memory `ExternalLogin.Login(responseUrl)` instance. Do not parse/rewrite the query string in the UI layer.
+3. App opens that URL in the device's normal browser, outside the app.
+4. User completes password, OTP, CAPTCHA and any security checks in that browser.
+5. User copies the complete final address-bar URL, returns to the VØRATH sign-in screen, pastes it into the response field and explicitly submits it.
+6. The app validates the HTTPS scheme, exact marketplace host, default port, expected landing path and presence of a non-empty authorization-code query parameter. It then passes the unchanged URL directly to the same in-memory `ExternalLogin.Login(responseUrl)` instance.
 7. The app performs the upstream registration exchange and persists the resulting complete identity through the mobile-owned encrypted snapshot store. The UI reports connected only after registration and encrypted persistence both succeed.
 
-This is a user-assisted flow matching the desktop CLI, not an OAuth redirect/deep-link callback. Do not add an exported deep link or accept callback URLs from arbitrary Android intents.
+This is a user-assisted flow matching the desktop CLI, not an OAuth redirect/deep-link callback. Do not embed Amazon credentials in a WebView, add an exported deep link, or accept callback URLs from arbitrary Android intents.
 
 ## Response URL handling
 

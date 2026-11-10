@@ -1,5 +1,6 @@
 using Android.App;
 using Android.Content.PM;
+using Android.OS;
 using Avalonia.Android;
 
 namespace Libation.Mobile.Android;
@@ -13,4 +14,52 @@ namespace Libation.Mobile.Android;
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 public class MainActivity : AvaloniaMainActivity
 {
+    private Libation.Mobile.UI.Views.MainView? _mainView;
+
+    public bool HandleAppBack()
+        => _mainView?.HandleAndroidBack() ?? false;
+
+    public override void OnBackPressed()
+    {
+        if (HandleAppBack()) return;
+        base.OnBackPressed();
+    }
+
+    protected override void OnDestroy()
+    {
+        _mainView = null;
+        base.OnDestroy();
+    }
+
+    protected override void OnCreate(Bundle? savedInstanceState)
+    {
+        StartupDiagnostics.Install(this);
+
+        // Preserve a previous process failure, but let AppCompat initialize before
+        // replacing its content with the native diagnostic screen.
+        var previousFailure = StartupDiagnostics.Read(this);
+        try
+        {
+            if (Avalonia.Application.Current?.ApplicationLifetime is
+                Avalonia.Controls.ApplicationLifetimes.IActivityApplicationLifetime lifetime)
+            {
+                var originalFactory = lifetime.MainViewFactory;
+                lifetime.MainViewFactory = () =>
+                {
+                    var view = originalFactory?.Invoke();
+                    _mainView = view as Libation.Mobile.UI.Views.MainView;
+                    return view;
+                };
+            }
+
+            base.OnCreate(savedInstanceState);
+            if (!string.IsNullOrWhiteSpace(previousFailure))
+                StartupDiagnostics.Show(this, previousFailure);
+        }
+        catch (Exception exception)
+        {
+            StartupDiagnostics.Record(this, "MainActivity.OnCreate", exception);
+            StartupDiagnostics.Show(this, StartupDiagnostics.Read(this) ?? exception.ToString());
+        }
+    }
 }

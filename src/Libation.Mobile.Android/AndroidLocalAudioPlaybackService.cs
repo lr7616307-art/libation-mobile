@@ -158,9 +158,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             throw new FileNotFoundException("Audiobook audio file was not found.", path);
 
         StopPlayer();
-        _title = intent.GetStringExtra(ExtraTitle);
-        if (string.IsNullOrWhiteSpace(_title))
-            _title = System.IO.Path.GetFileNameWithoutExtension(path);
+        var requestedTitle = intent.GetStringExtra(ExtraTitle);
+        _title = string.IsNullOrWhiteSpace(requestedTitle)
+            ? System.IO.Path.GetFileNameWithoutExtension(path)
+            : requestedTitle;
         _currentFilePath = path;
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
@@ -170,18 +171,20 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         // large local audiobook is inspected, so promote before preparing it.
         StartForeground(NotificationId, BuildNotification());
 
-        _player = new ExoPlayerBuilder(this).Build();
-        _player.AddListener(this);
+        var player = new ExoPlayerBuilder(this).Build()
+            ?? throw new InvalidOperationException("Media3 could not create an audiobook player.");
+        _player = player;
+        player.AddListener(this);
         var mediaUri = global::Android.Net.Uri.FromFile(new Java.IO.File(path));
-        _player.SetMediaItem(MediaItem.FromUri(mediaUri));
+        player.SetMediaItem(MediaItem.FromUri(mediaUri));
         var position = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
-        if (position > 0) _player.SeekTo(position);
-        _player.Prepare();
+        if (position > 0) player.SeekTo(position);
+        player.Prepare();
         var speed = intent.GetFloatExtra(ExtraSpeed, 1f);
         if (!float.IsNaN(speed) && !float.IsInfinity(speed))
         {
             _playbackSpeed = Math.Clamp(speed, 0.5f, 3f);
-            _player.PlaybackParameters = new PlaybackParameters(_playbackSpeed, 1f);
+            player.PlaybackParameters = new PlaybackParameters(_playbackSpeed, 1f);
         }
         if (intent.GetBooleanExtra(ExtraAutoPlay, true))
             _player.Play();
@@ -250,10 +253,18 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private void RestoreSavedPlayback()
     {
         var snapshot = PlaybackRecoveryStore.Load(this);
-        if (snapshot is null) return;
+        if (snapshot is null)
+        {
+            // This service may have been started with StartForegroundService
+            // just before the recovery snapshot was cleared. Stop immediately
+            // instead of leaving Android waiting for a foreground notification.
+            StopSelf();
+            return;
+        }
         if (!File.Exists(snapshot.FilePath))
         {
             PlaybackRecoveryStore.Clear(this);
+            StopSelf();
             return;
         }
 
@@ -385,9 +396,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private Notification BuildNotification()
     {
-        var builder = Build.VERSION.SdkInt >= BuildVersionCodes.O
+        var builder = (Build.VERSION.SdkInt >= BuildVersionCodes.O
             ? new Notification.Builder(this, ChannelId)
-            : new Notification.Builder(this);
+            : new Notification.Builder(this))
+            ?? throw new InvalidOperationException("Android could not create a playback notification builder.");
         var launchIntent = new Intent(this, typeof(MainActivity));
         var contentPendingIntent = PendingIntent.GetActivity(
             this, 4102, launchIntent,
