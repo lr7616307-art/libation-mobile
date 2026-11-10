@@ -14,6 +14,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- Split native libraries into one directly installable APK per selected ABI. -->
+    <AndroidCreatePackagePerAbi>true</AndroidCreatePackagePerAbi>
     <!-- Strip native debug symbols from distributable builds; keep separate build diagnostics in CI. -->
     <AndroidStripNativeLibraries>true</AndroidStripNativeLibraries>
   </PropertyGroup>
