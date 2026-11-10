@@ -10,6 +10,8 @@ namespace Libation.Mobile.UI.Views;
 public partial class MainView : UserControl
 {
     private readonly MainViewModel _viewModel;
+    private readonly ILibraryRepository _libraryRepository;
+    private bool _catalogProviderInitialized;
     private ILocalAudioPlayer? _localAudioPlayer;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
@@ -47,6 +49,7 @@ public partial class MainView : UserControl
     {
         var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
+        _libraryRepository = repository;
         var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
         var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
@@ -63,6 +66,7 @@ public partial class MainView : UserControl
 
     public MainView(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
     {
+        _libraryRepository = repository;
         _viewModel = new MainViewModel(repository, downloadQueue, syncService);
         InitializeComponent();
         DataContext = _viewModel;
@@ -765,7 +769,27 @@ public partial class MainView : UserControl
         => await _viewModel.ReloadAsync();
 
     private async void SyncLibraryClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => await _viewModel.SyncLibraryAsync();
+    {
+        try
+        {
+            EnsureCatalogProvider();
+            await _viewModel.SyncLibraryAsync();
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ReportAudioStatus($"Audible sync initialization failed ({ex.GetType().Name}).");
+        }
+    }
+
+    private void EnsureCatalogProvider()
+    {
+        if (_catalogProviderInitialized) return;
+        var factory = PlatformLibraryCatalogProviderFactory;
+        if (factory is null) return;
+        var provider = factory();
+        _viewModel.ConfigureSyncService(new LibrarySyncService(provider, _libraryRepository));
+        _catalogProviderInitialized = true;
+    }
 
     private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.ProbeWidevine();
@@ -823,6 +847,7 @@ public partial class MainView : UserControl
             if (string.IsNullOrWhiteSpace(marketplace))
                 return;
 
+            EnsureCatalogProvider();
             var vm = PlatformSignInViewModelFactory();
             vm.Marketplace = marketplace;
             await vm.BeginSignInAsync();
