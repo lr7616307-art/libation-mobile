@@ -47,6 +47,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private int _selectedTabIndex;
     private bool _isFullPlayerVisible;
     private bool _isChaptersVisible;
+    private Audiobook? _menuBook;
+    private bool _isBookMenuVisible;
+    private bool _isInfoVisible;
+    private bool _isSelectionMode;
+    private bool _isStatusPickerVisible;
+    private readonly HashSet<string> _selectedAudiobookIds = new(StringComparer.Ordinal);
 
     private static readonly Audiobook[] InitialSamples = [];
 
@@ -119,6 +125,85 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsSettingsTab => _selectedTabIndex == 3 && !IsFullPlayerVisible && !IsChaptersVisible;
     public bool IsFullPlayerVisible => _isFullPlayerVisible;
     public bool IsChaptersVisible => _isChaptersVisible;
+    public Audiobook? MenuBook => _menuBook;
+    public bool IsBookMenuVisible => _isBookMenuVisible;
+    public bool IsInfoVisible => _isInfoVisible;
+    public bool IsSelectionMode => _isSelectionMode;
+    public bool IsStatusPickerVisible => _isStatusPickerVisible;
+    public bool HasSelectedAudiobooks => _selectedAudiobookIds.Count > 0;
+    public string SelectedAudiobookCountLabel => $"{_selectedAudiobookIds.Count} selected";
+    public bool IsMenuBookSelected => _menuBook is not null && _selectedAudiobookIds.Contains(_menuBook.Id);
+    public string MenuBookDescription => string.IsNullOrWhiteSpace(_menuBook?.Description) ? "No description was embedded in this audiobook file." : _menuBook.Description;
+    public string MenuBookMetadataLabel => _menuBook is null ? string.Empty :
+        $"{_menuBook.Author}\n{(string.IsNullOrWhiteSpace(_menuBook.Narrator) ? "Narrator not provided" : _menuBook.Narrator)}\n{(string.IsNullOrWhiteSpace(_menuBook.Length) ? "Duration not provided" : _menuBook.Length)}\n{_menuBook.Chapters.Count} chapters";
+    public string MenuBookStatus => _menuBook?.ListeningStatus ?? "Not started";
+    public string MenuBookStatusColor => MenuBookStatus switch { "Finished" => "#2EAD65", "In progress" => "#E34B4B", _ => "#E69A21" };
+    public void OpenBookMenu(string audiobookId)
+    {
+        _menuBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId && !book.Id.StartsWith("provider:", StringComparison.Ordinal));
+        _isBookMenuVisible = _menuBook is not null;
+        OnPropertyChanged(nameof(MenuBook));
+        OnPropertyChanged(nameof(IsBookMenuVisible));
+        OnPropertyChanged(nameof(MenuBookDescription));
+        OnPropertyChanged(nameof(MenuBookMetadataLabel));
+        OnPropertyChanged(nameof(MenuBookStatus));
+        OnPropertyChanged(nameof(MenuBookStatusColor));
+    }
+    public void CloseBookMenu() { _isBookMenuVisible = false; OnPropertyChanged(nameof(IsBookMenuVisible)); }
+    public void OpenBookInfo() { if (_menuBook is null) return; _isBookMenuVisible = false; _isInfoVisible = true; OnPropertyChanged(nameof(IsBookMenuVisible)); OnPropertyChanged(nameof(IsInfoVisible)); }
+    public void CloseBookInfo() { _isInfoVisible = false; OnPropertyChanged(nameof(IsInfoVisible)); }
+    public void BeginSelectionMode() { _isBookMenuVisible = false; _isSelectionMode = true; _selectedAudiobookIds.Clear(); RaiseSelectionState(); OnPropertyChanged(nameof(IsBookMenuVisible)); }
+    public void ToggleAudiobookSelection(string audiobookId)
+    {
+        if (!_isSelectionMode) return;
+        if (!_selectedAudiobookIds.Add(audiobookId)) _selectedAudiobookIds.Remove(audiobookId);
+        RaiseSelectionState();
+    }
+    public void SelectAllLocalAudiobooks()
+    {
+        foreach (var book in LocalAudioBooks) _selectedAudiobookIds.Add(book.Id);
+        RaiseSelectionState();
+    }
+    public void ExitSelectionMode() { _isSelectionMode = false; _isStatusPickerVisible = false; _selectedAudiobookIds.Clear(); RaiseSelectionState(); OnPropertyChanged(nameof(IsStatusPickerVisible)); }
+    public void OpenStatusPicker() { if (!_selectedAudiobookIds.Any()) return; _isStatusPickerVisible = true; OnPropertyChanged(nameof(IsStatusPickerVisible)); }
+    public async Task ApplyListeningStatusAsync(string status, CancellationToken cancellationToken = default)
+    {
+        if (status is not ("Finished" or "In progress" or "Not started")) return;
+        try
+        {
+            var selected = _allBooks.Where(book => _selectedAudiobookIds.Contains(book.Id)).ToArray();
+            foreach (var book in selected)
+                await _repository.UpsertAsync(book with { ListeningStatus = status }, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+            ExitSelectionMode();
+            AudioImportStatus = $"Updated {selected.Length} audiobook(s): {status}.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not update listening status for the selected audiobooks."; }
+    }
+    public async Task RemoveSelectedAudiobooksAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var selected = _selectedAudiobookIds.ToArray();
+            foreach (var id in selected) await _repository.RemoveAsync(id, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+            ExitSelectionMode();
+            AudioImportStatus = $"Removed {selected.Length} audiobook(s).";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not remove the selected audiobooks."; }
+    }
+    private void RaiseSelectionState()
+    {
+        OnPropertyChanged(nameof(IsSelectionMode));
+        OnPropertyChanged(nameof(HasSelectedAudiobooks));
+        OnPropertyChanged(nameof(SelectedAudiobookCountLabel));
+        OnPropertyChanged(nameof(IsMenuBookSelected));
+    }
+
     public bool HasNowPlayingBook => NowPlayingBook is not null;
     public void SelectTab(int index)
     {
