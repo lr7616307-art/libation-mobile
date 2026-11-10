@@ -311,6 +311,52 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ListeningStatusFilter_DefaultsToAllAndFiltersEachStatus()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("not-started", "Not started book", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "not-started.mp3",
+                ListeningStatus = "Not started"
+            },
+            new Audiobook("in-progress", "In progress book", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "in-progress.mp3",
+                ListeningStatus = "In progress"
+            },
+            new Audiobook("finished", "Finished book", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "finished.mp3",
+                ListeningStatus = "Finished"
+            }
+        ]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+
+        await vm.InitializeAsync();
+
+        Assert.Equal("All", vm.ListeningStatusFilter);
+        Assert.Equal(3, vm.AllCount);
+        Assert.Equal(3, vm.FilteredLocalAudioBooks.Count);
+
+        vm.SetListeningStatusFilter("Not started");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("Not started book", vm.FilteredLocalAudioBooks[0].Title);
+
+        vm.SetListeningStatusFilter("In progress");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("In progress book", vm.FilteredLocalAudioBooks[0].Title);
+
+        vm.SetListeningStatusFilter("Finished");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("Finished book", vm.FilteredLocalAudioBooks[0].Title);
+
+        vm.SetListeningStatusFilter("All");
+        Assert.Equal(3, vm.FilteredLocalAudioBooks.Count);
+    }
+
+    [Fact]
     public async Task Search_FiltersByTitleAuthorAndNarrator()
     {
         using var directory = new TemporaryDirectory();
