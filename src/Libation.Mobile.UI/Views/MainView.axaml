@@ -317,19 +317,23 @@
     </Grid>
 
     <Border Grid.Row="1" Background="#181421" BorderBrush="#51416F" BorderThickness="1,1,1,0"
-            Padding="10,8" IsVisible="{Binding HasNowPlayingBook}">
-      <Grid ColumnDefinitions="52,*,Auto,Auto" ColumnSpacing="9">
-        <Button Grid.Column="0" Padding="0" Background="Transparent" BorderThickness="0" Click="OpenFullPlayerClicked">
+            Padding="8,6" IsVisible="{Binding HasNowPlayingBook}">
+      <Grid ColumnDefinitions="52,*,Auto,Auto" ColumnSpacing="8">
+        <Button Grid.Column="0" Padding="0" Background="Transparent" BorderThickness="0" Click="OpenMiniPlayerSurfaceClicked">
           <Image Width="48" Height="48" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
         </Button>
-        <Button Grid.Column="1" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" Padding="2" Click="OpenFullPlayerClicked">
+        <Button Grid.Column="1" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" Padding="2" Click="OpenMiniPlayerSurfaceClicked">
           <StackPanel Spacing="2">
             <TextBlock Text="{Binding NowPlayingBook.Title}" FontSize="12" FontWeight="Bold" TextWrapping="Wrap" MaxLines="1"/>
             <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="10" Opacity="0.65" MaxLines="1"/>
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <ProgressBar x:Name="MiniPlaybackProgress" Grid.Column="0" Height="3" Minimum="0" Maximum="1000" Value="0" VerticalAlignment="Center"/>
+              <TextBlock x:Name="MiniPlaybackTimeLabel" Grid.Column="1" Text="00:00" FontSize="9" Opacity="0.65"/>
+            </Grid>
           </StackPanel>
         </Button>
-        <Button x:Name="MiniRewindButton" Grid.Column="2" Content="⟲ 10" FontSize="13" Padding="8" Click="RewindAudioClicked"/>
-        <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="20" Padding="10" Click="TogglePlaybackClicked"/>
+        <Button x:Name="MiniRewindButton" Grid.Column="2" Content="⟲ 10" FontSize="12" MinWidth="48" Padding="5" Click="RewindAudioClicked"/>
+        <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="18" MinWidth="46" Padding="6" Click="TogglePlaybackClicked"/>
       </Grid>
     </Border>
 
@@ -375,12 +379,32 @@
             </Border>
           </Border>
 
-    <Border Grid.Row="2" Background="#100D17" BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="8,6">
-      <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
-        <Button Grid.Column="0" Classes="bottom-nav" Content="⌂\nHome" Click="HomeTabClicked"/>
-        <Button Grid.Column="1" Classes="bottom-nav" Content="▤\nAudible Library" Click="AudibleLibraryTabClicked"/>
-        <Button Grid.Column="2" Classes="bottom-nav" Content="◉\nAccount" Click="AudibleAccountTabClicked"/>
-        <Button Grid.Column="3" Classes="bottom-nav" Content="⚙\nSettings" Click="SettingsTabClicked"/>
+    <Border Grid.Row="2" Background="#100D17" BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="6,5">
+      <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="2" MinHeight="60">
+        <Button Grid.Column="0" Classes="bottom-nav" Padding="2,4" Background="Transparent" BorderThickness="0" Click="HomeTabClicked">
+          <StackPanel Spacing="2" HorizontalAlignment="Center">
+            <TextBlock Text="⌂" FontSize="21" HorizontalAlignment="Center"/>
+            <TextBlock Text="Home" FontSize="10" HorizontalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="1" Classes="bottom-nav" Padding="2,4" Background="Transparent" BorderThickness="0" Click="AudibleLibraryTabClicked">
+          <StackPanel Spacing="2" HorizontalAlignment="Center">
+            <TextBlock Text="▤" FontSize="21" HorizontalAlignment="Center"/>
+            <TextBlock Text="Library" FontSize="10" HorizontalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="2" Classes="bottom-nav" Padding="2,4" Background="Transparent" BorderThickness="0" Click="AudibleAccountTabClicked">
+          <StackPanel Spacing="2" HorizontalAlignment="Center">
+            <TextBlock Text="◉" FontSize="21" HorizontalAlignment="Center"/>
+            <TextBlock Text="Account" FontSize="10" HorizontalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="3" Classes="bottom-nav" Padding="2,4" Background="Transparent" BorderThickness="0" Click="SettingsTabClicked">
+          <StackPanel Spacing="2" HorizontalAlignment="Center">
+            <TextBlock Text="⚙" FontSize="21" HorizontalAlignment="Center"/>
+            <TextBlock Text="Settings" FontSize="10" HorizontalAlignment="Center"/>
+          </StackPanel>
+        </Button>
       </Grid>
     </Border>
   </Grid>
