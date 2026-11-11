@@ -4,9 +4,8 @@ using System.Text;
 namespace Libation.Mobile.Audible;
 
 /// <summary>
-/// Builds the Android Audible PKCE authorization request. Android-specific
-/// callback, association and page identifiers follow the Android device
-/// profile documented by the go-audible implementation.
+/// Builds the Android Audible PKCE authorization request. The callback is the
+/// matching Amazon marketplace maplanding endpoint used by Audible OAuth.
 /// </summary>
 public static class AudibleOAuthFlow
 {
@@ -49,7 +48,7 @@ public static class AudibleOAuthFlow
         var serial = Convert.ToHexString(RandomNumberGenerator.GetBytes(10)).ToLowerInvariant();
         var serialAndType = $"{serial}#{AndroidDeviceType}";
         var clientId = Convert.ToHexString(Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
-        var callback = $"https://www.{market.AudibleDomain}/ap/maplanding";
+        var callback = $"https://www.{market.AmazonDomain}/ap/maplanding";
 
         var query = new List<KeyValuePair<string, string>>
         {
