@@ -103,6 +103,7 @@ public sealed class AudibleAccountAuthenticatorTests
         return new AudibleAccountAuthenticator(
             new AudibleIdentitySnapshotStore(secrets),
             new AudiblePkceRegistrationClient(new HttpClient()),
+            new AudibleTokenRefreshClient(new HttpClient(), clock),
             clock);
     }
 
