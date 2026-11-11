@@ -59,7 +59,7 @@ public sealed class AudiblePkceRegistrationClientTests
           "website_cookies":[{"Name":"session","Value":"cookie-one"},{"Name":"session","Value":"cookie-two"}],
           "store_authentication_cookie":{"cookie":"store-cookie"}},
           "extensions":{"device_info":{"device_name":"Audible for iPhone","device_serial_number":"registered-serial","device_type":"registered-device-type"},
-          "customer_info":{"user_id":"amazon-user-123"}}}}
+          "customer_info":{"user_id":"amazon-user-123"}}}}}
         """.Replace("__KEY__", JsonSerializer.Serialize(privateKey), StringComparison.Ordinal)
           .Replace("__ADP__", JsonSerializer.Serialize(adp), StringComparison.Ordinal);
         var handler = new CapturingHandler(response, HttpStatusCode.OK);
