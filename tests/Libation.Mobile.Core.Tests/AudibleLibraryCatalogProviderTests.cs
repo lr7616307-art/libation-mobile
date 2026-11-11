@@ -25,6 +25,7 @@ public sealed class AudibleLibraryCatalogProviderTests
         Assert.Equal(
             LibraryOptions.ResponseGroupOptions.Contributors
                 | LibraryOptions.ResponseGroupOptions.ProductAttrs
+                | LibraryOptions.ResponseGroupOptions.ProductDesc
                 | LibraryOptions.ResponseGroupOptions.IsPlayable
                 | LibraryOptions.ResponseGroupOptions.IsDownloaded,
             capturedOptions!.ResponseGroups);
