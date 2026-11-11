@@ -61,11 +61,11 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 AppVersion = profile.AppVersion,
                 DeviceSerial = challenge.DeviceSerial,
                 DeviceType = AudibleOAuthFlow.AndroidDeviceType,
-                DeviceName = profile.DeviceName,
+                DeviceName = profile.RegistrationDeviceName,
                 OsVersion = profile.OsVersion,
                 SoftwareVersion = profile.SoftwareVersion,
                 DeviceModel = profile.Model,
-                AppName = "com.audible.application"
+                AppName = profile.AppName
             },
             AuthData = new RegistrationAuthData
             {
@@ -82,10 +82,10 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 DeviceOsFamily = "android",
                 DeviceType = AudibleOAuthFlow.AndroidDeviceType,
                 DeviceSerial = challenge.DeviceSerial,
-                Manufacturer = "Android",
+                Manufacturer = profile.Manufacturer,
                 Model = profile.Model,
-                OsVersion = GetAndroidMajorVersion(profile.OsVersion),
-                Product = profile.Model
+                OsVersion = profile.OsVersionNumber,
+                Product = profile.Product
             },
             UserContextMap = new Dictionary<string, string>
             {
@@ -273,17 +273,17 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         offset = offset.Duration();
         var context = new Dictionary<string, string>
         {
-            ["ApplicationName"] = "com.audible.application",
+            ["ApplicationName"] = profile.AppName,
             ["ApplicationVersion"] = profile.AppVersion,
             ["DeviceOSVersion"] = profile.OsVersion,
-            ["DeviceName"] = "ranchu/Android/" + profile.Model,
+            ["DeviceName"] = profile.Product + "/" + profile.Manufacturer + "/" + profile.Model,
             ["ScreenWidthPixels"] = "1080",
             ["ScreenHeightPixels"] = "2400",
             ["ThirdPartyDeviceId"] = serial,
             ["FirstPartyDeviceId"] = serial,
             ["DeviceLanguage"] = CultureInfo.CurrentUICulture.Name.Replace('-', '_'),
             ["TimeZone"] = $"{sign}{(int)offset.TotalHours:00}:{offset.Minutes:00}",
-            ["Carrier"] = "unknown"
+            ["Carrier"] = "T-Mobile"
         };
 
         using var compressed = new MemoryStream();
@@ -353,17 +353,33 @@ public sealed record AudibleAndroidDeviceProfile(
     string OsVersion,
     string AppVersion,
     string SoftwareVersion,
-    string DeviceName)
+    string DeviceName,
+    string Manufacturer = "unknown",
+    string Product = "unknown",
+    string OsVersionNumber = "0",
+    string AndroidRelease = "unknown",
+    string BuildId = "unknown",
+    string AppName = "com.audible.application")
 {
+    public const string AudibleAndroidAppVersion = "2090263407";
+    public const string AudibleAndroidSoftwareVersion = "130050002";
+    public const string AndroidRegistrationDeviceName =
+        "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android";
+
+    public string RegistrationDeviceName => AndroidRegistrationDeviceName;
+
     public void Validate()
     {
         foreach (var (value, field) in new[]
         {
             (Model, nameof(Model)), (OsVersion, nameof(OsVersion)),
             (AppVersion, nameof(AppVersion)), (SoftwareVersion, nameof(SoftwareVersion)),
-            (DeviceName, nameof(DeviceName))
+            (DeviceName, nameof(DeviceName)), (Manufacturer, nameof(Manufacturer)),
+            (Product, nameof(Product)), (OsVersionNumber, nameof(OsVersionNumber)),
+            (AndroidRelease, nameof(AndroidRelease)), (BuildId, nameof(BuildId)),
+            (AppName, nameof(AppName))
         })
-            if (string.IsNullOrWhiteSpace(value) || value.Length > 256)
+            if (string.IsNullOrWhiteSpace(value) || value.Length > 512)
                 throw new ArgumentException($"Android device profile field {field} is invalid.");
     }
 }
