@@ -62,6 +62,7 @@ public sealed class AudibleLibraryCatalogProvider : ILibraryCatalogProvider
             // and the two status flags are separate response groups.
             ResponseGroups = LibraryOptions.ResponseGroupOptions.Contributors
                 | LibraryOptions.ResponseGroupOptions.ProductAttrs
+                | LibraryOptions.ResponseGroupOptions.ProductDesc
                 | LibraryOptions.ResponseGroupOptions.IsPlayable
                 | LibraryOptions.ResponseGroupOptions.IsDownloaded,
             ImageSizes = LibraryOptions.ImageSizeOptions._500
