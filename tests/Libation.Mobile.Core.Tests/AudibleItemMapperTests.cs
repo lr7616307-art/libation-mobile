@@ -40,6 +40,46 @@ public sealed class AudibleItemMapperTests
     }
 
     [Fact]
+    public void Map_UsesRawProductTitleAndNeverReturnsTheLibraryApiNullSentinel()
+    {
+        var item = new Item
+        {
+            Asin = "B012345678",
+            Title = null,
+            Subtitle = "A meaningful subtitle",
+            Authors = [new Person { Name = "Writer" }]
+        };
+
+        var result = AudibleItemMapper.Map(item);
+
+        Assert.Equal("A meaningful subtitle", result.Title);
+        Assert.DoesNotContain("[null]", result.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Map_UsesStableAsinFallbackWhenBothTitleFieldsAreMissing()
+    {
+        var result = AudibleItemMapper.Map(new Item { Asin = "B012345678" });
+
+        Assert.Equal("Untitled Audible audiobook (B012345678)", result.Title);
+    }
+
+    [Fact]
+    public void Map_CarriesAudiblePlaybackAndDownloadFlags()
+    {
+        var result = AudibleItemMapper.Map(new Item
+        {
+            Asin = "B012345678",
+            Title = "Title",
+            IsPlayable = true,
+            IsDownloaded = false
+        });
+
+        Assert.True(result.IsPlayableOnAudible);
+        Assert.False(result.IsDownloadedOnAudible);
+    }
+
+    [Fact]
     public void Map_UsesUnknownAuthorWhenAuthorArrayIsAbsent()
     {
         var item = new Item
