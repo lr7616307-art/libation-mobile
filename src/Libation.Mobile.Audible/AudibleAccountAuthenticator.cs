@@ -63,9 +63,7 @@ public sealed class AudibleAccountAuthenticator(
                     || !responseUri.IsDefaultPort || !string.IsNullOrEmpty(responseUri.UserInfo))
                     throw new InvalidOperationException("The Audible sign-in response does not match the selected marketplace callback.");
 
-                var authorizationCode = System.Web.HttpUtility.ParseQueryString(responseUri.Query)["openid.oa2.authorization_code"];
-                if (string.IsNullOrWhiteSpace(authorizationCode))
-                    throw new InvalidOperationException("Audible did not return an authorization code.");
+                var authorizationCode = AudibleOAuthFlow.ReadAuthorizationCode(responseUri);
 
                 var registered = await registrationClient.RegisterAsync(
                     state.Challenge, authorizationCode, deviceProfile, token).ConfigureAwait(false);
