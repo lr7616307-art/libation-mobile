@@ -55,7 +55,7 @@ public sealed class AudiblePkceRegistrationClientTests
         var response = """
         {"response":{"success":{"tokens":{
           "bearer":{"access_token":"Atna|test-access","refresh_token":"Atnr|test-refresh","expires_in":3600},
-          "mac_dms":{"device_private_key":__KEY__,"adp_token":"__ADP__"},
+          "mac_dms":{"device_private_key":__KEY__,"adp_token":__ADP__},
           "website_cookies":[{"Name":"session","Value":"cookie-one"},{"Name":"session","Value":"cookie-two"}],
           "store_authentication_cookie":{"cookie":"store-cookie"}},
           "extensions":{"device_info":{"device_name":"Audible for iPhone","device_serial_number":"registered-serial","device_type":"registered-device-type"},
