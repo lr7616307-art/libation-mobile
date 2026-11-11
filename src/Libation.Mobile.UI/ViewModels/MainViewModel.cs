@@ -58,6 +58,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string[] _pendingRemovalIds = [];
     private string _removalConfirmationMessage = string.Empty;
     private bool _isRemovalConfirmationVisible;
+    private bool _isAddAccountSheetVisible;
     private readonly HashSet<string> _selectedAudiobookIds = new(StringComparer.Ordinal);
 
     private static readonly Audiobook[] InitialSamples = [];
@@ -296,6 +297,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsSelectionMode => _isSelectionMode;
     public bool IsStatusPickerVisible => _isStatusPickerVisible;
     public bool IsRemovalConfirmationVisible => _isRemovalConfirmationVisible;
+    public bool IsAddAccountSheetVisible => _isAddAccountSheetVisible;
     public string RemovalConfirmationMessage => _removalConfirmationMessage;
     public bool HasSelectedAudiobooks => _selectedAudiobookIds.Count > 0;
     public string SelectedAudiobookCountLabel => $"{_selectedAudiobookIds.Count} selected";
@@ -306,6 +308,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
         $"{_menuBook.Author}\n{(string.IsNullOrWhiteSpace(_menuBook.Narrator) ? "Narrator not provided" : _menuBook.Narrator)}\n{(string.IsNullOrWhiteSpace(_menuBook.Length) ? "Duration not provided" : _menuBook.Length)}\n{_menuBook.Chapters.Count} chapters";
     public string MenuBookStatus => _menuBook?.ListeningStatus ?? "Not started";
     public string MenuBookStatusColor => MenuBookStatus switch { "Finished" => "#2EAD65", "In progress" => "#E34B4B", _ => "#E69A21" };
+    public void OpenAddAccountSheet()
+    {
+        if (_isAddAccountSheetVisible) return;
+        _isAddAccountSheetVisible = true;
+        OnPropertyChanged(nameof(IsAddAccountSheetVisible));
+    }
+
+    public void CloseAddAccountSheet()
+    {
+        if (!_isAddAccountSheetVisible) return;
+        _isAddAccountSheetVisible = false;
+        OnPropertyChanged(nameof(IsAddAccountSheetVisible));
+    }
+
     public void OpenBookMenu(string audiobookId)
     {
         _menuBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId && !book.Id.StartsWith("provider:", StringComparison.Ordinal));
@@ -443,6 +459,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     /// <summary>Handles one Android system Back press without tearing down the activity or player.</summary>
     public bool TryNavigateBack()
     {
+        if (_isAddAccountSheetVisible) { CloseAddAccountSheet(); return true; }
         if (IsRemovalConfirmationVisible) { CancelPendingRemoval(); return true; }
         if (_isStatusPickerVisible) { CloseStatusPicker(); return true; }
         if (_isBookMenuVisible) { CloseBookMenu(); return true; }
