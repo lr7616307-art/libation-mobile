@@ -21,6 +21,7 @@ public static class AudibleItemMapper
             JoinNames(item.Narrators?.Select(person => person?.Name)),
             FormatRuntime(item.RuntimeLengthMin))
         {
+            Description = item.Description?.Trim() ?? string.Empty,
             CoverImageUrl = item.ProductImages?.The500?.AbsoluteUri ?? string.Empty,
             IsPlayableOnAudible = item.IsPlayable,
             IsDownloadedOnAudible = item.IsDownloaded
