@@ -14,7 +14,7 @@ public sealed class AudibleOAuthFlowTests
         Assert.Equal("https", flow.AuthorizationUri.Scheme);
         Assert.Equal("www.amazon.in", flow.AuthorizationUri.Host);
         Assert.Equal("/ap/signin", flow.AuthorizationUri.AbsolutePath);
-        Assert.Equal("https://www.amazon.in/ap/maplanding", flow.CallbackUri.AbsoluteUri);
+        Assert.Equal("https://www.audible.in/ap/maplanding", flow.CallbackUri.AbsoluteUri);
         Assert.Equal(flow.CallbackUri.AbsoluteUri, query["openid.return_to"]);
         Assert.Equal("code", query["openid.oa2.response_type"]);
         Assert.Equal("S256", query["openid.oa2.code_challenge_method"]);
@@ -22,12 +22,12 @@ public sealed class AudibleOAuthFlowTests
         Assert.Equal("amzn_audible_android_aui_in", query["openid.assoc_handle"]);
         Assert.Equal("amzn_audible_android_aui_v2_dark_in", query["pageId"]);
         Assert.Equal("AJO3FBRUE6J4S", query["marketPlaceId"]);
-        Assert.Equal("true", query["forceMobileLayout"]);
-        Assert.Null(query["disableLoginPrepopulate"]);
+        Assert.Equal("1", query["disableLoginPrepopulate"]);
+        Assert.Null(query["forceMobileLayout"]);
         Assert.StartsWith("device:", query["openid.oa2.client_id"]);
         Assert.Equal(20, flow.DeviceSerial.Length);
         Assert.All(flow.DeviceSerial, c => Assert.Contains(c, "0123456789abcdef"));
-        Assert.Contains("forceMobileLayout", flow.AuthorizationUri.Query);
+        Assert.DoesNotContain("forceMobileLayout", flow.AuthorizationUri.Query);
     }
 
     [Fact]
@@ -56,8 +56,8 @@ public sealed class AudibleOAuthFlowTests
     }
 
     [Theory]
-    [InlineData("https://www.amazon.in/ap/maplanding?openid.oa2.authorization_code=openid-code", "openid-code")]
-    [InlineData("https://www.amazon.in/ap/maplanding?code=standard-code", "standard-code")]
+    [InlineData("https://www.audible.in/ap/maplanding?openid.oa2.authorization_code=openid-code", "openid-code")]
+    [InlineData("https://www.audible.in/ap/maplanding?code=standard-code", "standard-code")]
     public void ReadAuthorizationCode_AcceptsBothAmazonCallbackFormats(string callback, string expected)
     {
         var uri = new Uri(callback);
