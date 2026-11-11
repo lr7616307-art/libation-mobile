@@ -75,7 +75,7 @@ public sealed class AudibleMarketplaceActivity : Activity
 
     private Button CreateDemoModeButton()
     {
-        var button = new Button(this) { Text = "🎬  Demo Mode\\n       no login" };
+        var button = new Button(this) { Text = "🎬  Demo Mode\n       no login" };
         button.SetMinimumHeight(64);
         button.Enabled = false;
         button.Alpha = 0.65f;
@@ -84,7 +84,7 @@ public sealed class AudibleMarketplaceActivity : Activity
 
     private void AddMarketplace(LinearLayout root, string name, string domain, string code)
     {
-        var label = $"{name}\\n{domain}";
+        var label = $"{name}\n{domain}";
         var button = new Button(this)
         {
             Text = code == _defaultMarketplace ? label + "  ✓" : label
