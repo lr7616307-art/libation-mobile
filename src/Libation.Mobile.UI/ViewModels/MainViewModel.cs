@@ -638,6 +638,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string AudioImportStatus { get => _audioImportStatus; private set { if (_audioImportStatus == value) return; _audioImportStatus = value; OnPropertyChanged(); } }
     public bool CanImportAudio => _audioImportService is not null;
     public void ReportAudioStatus(string message) => AudioImportStatus = message;
+    public void ReportSyncStatus(string message) => SyncStatus = message;
     public string SortLabel => _sortAscending ? "Sort: A-Z" : "Sort: Z-A";
     public string FilterLabel => _catalogueFilterIndex switch { 1 => "Filter: Manual", 2 => "Filter: Demo", _ => "Filter: All" };
     public void ToggleSort() { _sortAscending = !_sortAscending; OnPropertyChanged(nameof(SortLabel)); ApplyFilter(_allBooks); }

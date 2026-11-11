@@ -241,14 +241,15 @@
           </StackPanel>
 
           <StackPanel IsVisible="{Binding IsAudibleAccountTab}" Spacing="16">
-            <TextBlock Text="Audible account" FontSize="28" FontWeight="Bold"/>
-            <Border CornerRadius="18" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="10">
-                <TextBlock Text="ACCOUNT &amp; SESSIONS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
-                <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap"/>
-                <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="12" Opacity="0.65"/>
-                <TextBlock Text="Choose your Audible marketplace, then sign in inside VØRATH. Your account identity is stored securely on this device." FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
-                <Button Content="Sign in with Audible" Click="AudibleSignInClicked"/>
+            <TextBlock Text="Accounts" FontSize="30" FontWeight="Bold"/>
+            <Border CornerRadius="18" Padding="20" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="14" HorizontalAlignment="Stretch">
+                <TextBlock Text="♙" FontSize="54" Foreground="#9CA3AF" HorizontalAlignment="Center" Margin="0,28,0,8"/>
+                <TextBlock Text="No accounts yet" FontSize="21" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock Text="Connect an audiobook source to sync and download your library." FontSize="13" Opacity="0.7" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+                <Button Content="Add Account" Click="AddAccountClicked" MinHeight="56" FontSize="17" Background="#174B55" HorizontalAlignment="Stretch"/>
+                <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap" FontSize="12" Opacity="0.7" Margin="0,10,0,0"/>
+                <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="11" Opacity="0.55"/>
                 <Button Content="Disconnect this session" Click="AudibleDisconnectClicked"/>
                 <Button Content="Sync Audible library" Click="SyncLibraryClicked" IsEnabled="{Binding CanSync}"/>
               </StackPanel>
@@ -423,6 +424,69 @@
         </StackPanel>
       </Border>
     </Border>
+
+    <Grid x:Name="AddAccountSheetOverlay" Grid.RowSpan="3" IsVisible="False"
+          Background="#99000000" ZIndex="29">
+      <Border VerticalAlignment="Bottom" Background="#242A35" CornerRadius="26,26,0,0"
+              Padding="24,28,24,30" BorderBrush="#343B49" BorderThickness="1,1,0,0">
+        <StackPanel Spacing="14">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="Add Account" FontSize="24" FontWeight="Bold"/>
+            <Button Grid.Column="1" Content="✕" Background="Transparent" BorderThickness="0"
+                    FontSize="22" Click="CloseAddAccountSheetClicked"/>
+          </Grid>
+          <TextBlock Text="Choose an audiobook source to connect." FontSize="14" Opacity="0.72"/>
+          <Button MinHeight="104" Padding="16" Background="#2B313D" BorderBrush="#3B4351"
+                  BorderThickness="1" CornerRadius="16" Click="AudibleAddAccountClicked">
+            <Grid ColumnDefinitions="76,*,Auto" ColumnSpacing="12">
+              <Border Grid.Column="0" Width="64" Height="64" CornerRadius="14" Background="#182E37"
+                      VerticalAlignment="Center">
+                <TextBlock Text="◉" FontSize="34" Foreground="#78B9C6"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="Audible" FontSize="18" FontWeight="Bold"/>
+                <TextBlock Text="Sign in to sync and download your Audible library."
+                           FontSize="13" Opacity="0.75" TextWrapping="Wrap"/>
+              </StackPanel>
+              <TextBlock Grid.Column="2" Text="›" FontSize="30" VerticalAlignment="Center" Opacity="0.8"/>
+            </Grid>
+          </Button>
+          <Border MinHeight="104" Padding="16" Background="#2B313D" BorderBrush="#3B4351"
+                  BorderThickness="1" CornerRadius="16" Opacity="0.58">
+            <Grid ColumnDefinitions="76,*,Auto" ColumnSpacing="12">
+              <Border Grid.Column="0" Width="64" Height="64" CornerRadius="14" Background="#253640"
+                      VerticalAlignment="Center">
+                <TextBlock Text="▤" FontSize="30" Foreground="#78B9C6"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="Libro.fm" FontSize="18" FontWeight="Bold"/>
+                <TextBlock Text="DRM-free audiobook accounts are not connected in this build."
+                           FontSize="13" Opacity="0.75" TextWrapping="Wrap"/>
+              </StackPanel>
+              <TextBlock Grid.Column="2" Text="›" FontSize="30" VerticalAlignment="Center" Opacity="0.8"/>
+            </Grid>
+          </Border>
+          <Border MinHeight="104" Padding="16" Background="#2B313D" BorderBrush="#3B4351"
+                  BorderThickness="1" CornerRadius="16" Opacity="0.58">
+            <Grid ColumnDefinitions="76,*,Auto" ColumnSpacing="12">
+              <Border Grid.Column="0" Width="64" Height="64" CornerRadius="14" Background="#253640"
+                      VerticalAlignment="Center">
+                <TextBlock Text="C" FontSize="32" FontWeight="Bold" Foreground="#78B9C6"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                <TextBlock Text="Chirp" FontSize="18" FontWeight="Bold"/>
+                <TextBlock Text="Chirp account connection is not available in this build."
+                           FontSize="13" Opacity="0.75" TextWrapping="Wrap"/>
+              </StackPanel>
+              <TextBlock Grid.Column="2" Text="›" FontSize="30" VerticalAlignment="Center" Opacity="0.8"/>
+            </Grid>
+          </Border>
+        </StackPanel>
+      </Border>
+    </Grid>
 
     <Border Grid.Row="2" HorizontalAlignment="Stretch" Background="#0B0911"
             BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="4,2">

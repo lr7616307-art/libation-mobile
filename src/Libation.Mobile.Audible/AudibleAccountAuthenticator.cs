@@ -1,4 +1,3 @@
-using System.Web;
 using AudibleApi;
 using AudibleApi.Authorization;
 using Dinah.Core;
@@ -13,6 +12,8 @@ namespace Libation.Mobile.Audible;
 /// </summary>
 public sealed class AudibleAccountAuthenticator(
     AudibleIdentitySnapshotStore snapshotStore,
+    AudiblePkceRegistrationClient registrationClient,
+    AudibleAndroidDeviceProfile deviceProfile,
     ISystemDateTime systemDateTime) : IAccountAuthenticator
 {
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromMinutes(10);
@@ -26,29 +27,15 @@ public sealed class AudibleAccountAuthenticator(
         ArgumentNullException.ThrowIfNull(request);
         request.Validate();
         cancellationToken.ThrowIfCancellationRequested();
-        var locale = Localization.Get(request.Marketplace);
-        if (locale == Locale.Empty || string.IsNullOrWhiteSpace(locale.Name))
-            throw new ArgumentException("The selected Audible marketplace is not supported.", nameof(request));
-
-        var login = new ExternalLogin(locale);
-        var loginUrl = login.GetLoginUrl();
-        if (!Uri.TryCreate(loginUrl, UriKind.Absolute, out var authorizationUri)
-            || !string.Equals(authorizationUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || string.IsNullOrWhiteSpace(authorizationUri.Host)
-            || !authorizationUri.IsDefaultPort)
-            throw new InvalidOperationException("Audible returned an invalid sign-in URL.");
-
-        // AudibleApi's openid.return_to, not the Amazon sign-in host, identifies
-        // the marketplace callback that carries the authorization code.
-        var callbackUri = GetExpectedCallback(authorizationUri);
+        var challenge = AudibleOAuthFlow.Create(request.Marketplace);
         var id = Guid.NewGuid().ToString("N");
         var expires = systemDateTime.UtcNow.Add(ChallengeLifetime);
         lock (gate)
         {
             pending.Clear();
-            pending.Add(id, new PendingLogin(login, expires, callbackUri.Host, callbackUri.AbsolutePath));
+            pending.Add(id, new PendingLogin(challenge, expires));
         }
-        return Task.FromResult(new ExternalSignInChallenge(id, authorizationUri, expires));
+        return Task.FromResult(new ExternalSignInChallenge(id, challenge.AuthorizationUri, expires));
     }
 
     public async Task<AccountSession> CompleteSignInAsync(
@@ -57,10 +44,10 @@ public sealed class AudibleAccountAuthenticator(
         ArgumentException.ThrowIfNullOrWhiteSpace(challengeId);
         ArgumentException.ThrowIfNullOrWhiteSpace(responseUrl);
         cancellationToken.ThrowIfCancellationRequested();
-        var identity = await lifecycleCoordinator.CreateAndSaveAsync(
+
+        var snapshot = await lifecycleCoordinator.CreateAndSaveAsync(
             async token =>
             {
-                token.ThrowIfCancellationRequested();
                 PendingLogin state;
                 lock (gate)
                 {
@@ -71,37 +58,25 @@ public sealed class AudibleAccountAuthenticator(
                     throw new InvalidOperationException("The Audible sign-in attempt expired. Start again.");
                 if (!Uri.TryCreate(responseUrl, UriKind.Absolute, out var responseUri)
                     || !string.Equals(responseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-                    || string.IsNullOrWhiteSpace(responseUri.Host)
-                    || !string.IsNullOrEmpty(responseUri.UserInfo))
-                    throw new InvalidOperationException("The Audible sign-in response must be an absolute HTTPS URL without embedded credentials.");
-                if (!responseUri.IsDefaultPort)
+                    || !string.Equals(responseUri.Host, state.Challenge.CallbackUri.Host, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(responseUri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase)
+                    || !responseUri.IsDefaultPort || !string.IsNullOrEmpty(responseUri.UserInfo))
                     throw new InvalidOperationException("The Audible sign-in response does not match the selected marketplace callback.");
 
-                var authorizationCode = HttpUtility.ParseQueryString(responseUri.Query)["openid.oa2.authorization_code"];
-                if (!string.Equals(responseUri.Host, state.ExpectedHost, StringComparison.OrdinalIgnoreCase)
-                    || !string.Equals(responseUri.AbsolutePath.TrimEnd('/'), state.ExpectedPath.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)
-                    || string.IsNullOrWhiteSpace(authorizationCode))
-                    throw new InvalidOperationException("The Audible sign-in response does not match the selected marketplace callback.");
+                var authorizationCode = AudibleOAuthFlow.ReadAuthorizationCode(responseUri);
 
-                // Pass the exact, unchanged user-supplied URL to the pinned parser.
-                var createdIdentity = state.Login.Login(responseUrl);
-                var authorization = createdIdentity.Authorization
-                    ?? throw new InvalidOperationException("Audible did not return an authorization code.");
+                var registered = await registrationClient.RegisterAsync(
+                    state.Challenge, authorizationCode, deviceProfile, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
-                var authorize = new Authorize(createdIdentity.Locale);
-                var registration = await authorize.RegisterAsync(authorization).ConfigureAwait(false);
-                token.ThrowIfCancellationRequested();
-                RegistrationParser.ParseRegistrationIntoIdentity(registration, createdIdentity, systemDateTime);
-                if (!createdIdentity.IsValid)
-                    throw new InvalidOperationException("Audible device registration did not produce a complete identity.");
-                return createdIdentity;
+                return registered;
             },
-            async (createdIdentity, token) =>
+            async (createdSnapshot, token) =>
             {
-                await snapshotStore.SaveAsync(Capture(createdIdentity), token).ConfigureAwait(false);
+                await snapshotStore.SaveAsync(createdSnapshot, token).ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
 
+        var identity = AudibleIdentitySnapshotMapper.Restore(snapshot);
         var refreshToken = identity.RefreshToken
             ?? throw new InvalidOperationException("Audible did not return a refresh token.");
         var expiry = identity.ExistingAccessToken.Expires;
@@ -171,20 +146,6 @@ public sealed class AudibleAccountAuthenticator(
             new DateTimeOffset(expiry));
     }
 
-    private static Uri GetExpectedCallback(Uri authorizationUri)
-    {
-        var returnTo = HttpUtility.ParseQueryString(authorizationUri.Query)["openid.return_to"];
-        if (!Uri.TryCreate(returnTo, UriKind.Absolute, out var callbackUri)
-            || !string.Equals(callbackUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || string.IsNullOrWhiteSpace(callbackUri.Host)
-            || !string.IsNullOrEmpty(callbackUri.UserInfo)
-            || !callbackUri.IsDefaultPort
-            || !string.Equals(callbackUri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Audible did not provide a valid marketplace callback URL.");
-
-        return callbackUri;
-    }
-
     private static AudibleIdentitySnapshot Capture(Identity identity)
     {
         var privateKey = identity.PrivateKey
@@ -220,9 +181,5 @@ public sealed class AudibleAccountAuthenticator(
         };
     }
 
-    private sealed record PendingLogin(
-        ExternalLogin Login,
-        DateTime ExpiresAtUtc,
-        string ExpectedHost,
-        string ExpectedPath);
+    private sealed record PendingLogin(AudibleOAuthChallenge Challenge, DateTime ExpiresAtUtc);
 }

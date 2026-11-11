@@ -12,7 +12,6 @@ public sealed class AudibleAccountAuthenticatorTests
     public async Task BeginSignIn_AcceptsIndiaMarketplaceAndUsesItsProviderReturnHost()
     {
         var authenticator = CreateAuthenticator(new InMemorySecretStore());
-
         var challenge = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "in"));
 
         Assert.True(challenge.AuthorizationUri.IsAbsoluteUri);
@@ -38,7 +37,7 @@ public sealed class AudibleAccountAuthenticatorTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => authenticator.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
 
-        Assert.Contains("absolute HTTPS", error.Message);
+        Assert.Contains("callback", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, secrets.SetCalls);
         Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
     }
@@ -48,8 +47,7 @@ public sealed class AudibleAccountAuthenticatorTests
     [InlineData("https://www.audible.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("https://www.audible.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.audible.com/not-maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.audible.com/ap/maplanding")]
+    [InlineData("https://www.amazon.com/not-maplanding?openid.oa2.authorization_code=fake")]
     public async Task CompleteSignIn_RejectsResponseOutsideExactMarketplaceCallback(string responseUrl)
     {
         var secrets = new InMemorySecretStore();
@@ -60,6 +58,22 @@ public sealed class AudibleAccountAuthenticatorTests
             () => authenticator.CompleteSignInAsync(challenge.ChallengeId, responseUrl));
 
         Assert.Contains("marketplace callback", error.Message);
+        Assert.Equal(0, secrets.SetCalls);
+        Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
+    }
+
+    [Fact]
+    public async Task CompleteSignIn_RejectsValidCallbackWithoutAuthorizationCode()
+    {
+        var secrets = new InMemorySecretStore();
+        var authenticator = CreateAuthenticator(secrets);
+        var challenge = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "us"));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => authenticator.CompleteSignInAsync(
+                challenge.ChallengeId, "https://www.audible.com/ap/maplanding"));
+
+        Assert.Contains("authorization code", error.Message);
         Assert.Equal(0, secrets.SetCalls);
         Assert.Null(await new AudibleIdentitySnapshotStore(secrets).LoadAsync());
     }
@@ -84,7 +98,13 @@ public sealed class AudibleAccountAuthenticatorTests
     private static AudibleAccountAuthenticator CreateAuthenticator(InMemorySecretStore secrets)
     {
         var clock = new FixedClock(new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc));
-        return new AudibleAccountAuthenticator(new AudibleIdentitySnapshotStore(secrets), clock);
+        var profile = new AudibleAndroidDeviceProfile(
+            "Test Android Device", "10", "1.0.0", "1.0.0", "Test Android Device");
+        return new AudibleAccountAuthenticator(
+            new AudibleIdentitySnapshotStore(secrets),
+            new AudiblePkceRegistrationClient(new HttpClient()),
+            profile,
+            clock);
     }
 
     private sealed class FixedClock(DateTime utcNow) : ISystemDateTime

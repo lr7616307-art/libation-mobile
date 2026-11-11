@@ -767,6 +767,22 @@ public partial class MainView : UserControl
             await _viewModel.RemoveBookAsync(book.Id);
     }
 
+    private void AddAccountClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        AddAccountSheetOverlay.IsVisible = true;
+    }
+
+    private void CloseAddAccountSheetClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        AddAccountSheetOverlay.IsVisible = false;
+    }
+
+    private void AudibleAddAccountClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        AddAccountSheetOverlay.IsVisible = false;
+        AudibleSignInClicked(sender, e);
+    }
+
     private async void AudibleSignInClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         try
@@ -778,13 +794,14 @@ public partial class MainView : UserControl
             }
             var vm = PlatformSignInViewModelFactory();
             await vm.BeginSignInAsync();
-            await vm.LoadStatusAsync();
-            await vm.LoadStatusAsync();
-            _viewModel.ReportAudioStatus(vm.ConnectionStatusLabel + ". " + vm.Status);
+            // BeginSignInAsync owns the final status (including the provider error).
+            // Reloading here would overwrite a useful failure message with generic
+            // "sign-in required" state when the account is not yet connected.
+            _viewModel.ReportSyncStatus(vm.ConnectionStatusLabel + ". " + vm.Status);
         }
         catch (Exception ex)
         {
-            _viewModel.ReportAudioStatus($"Audible sign-in failed ({ex.GetType().Name}).");
+            _viewModel.ReportSyncStatus($"Audible sign-in failed: {ex.Message}");
         }
     }
 

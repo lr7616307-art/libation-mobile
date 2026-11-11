@@ -1,3 +1,4 @@
+using Libation.Mobile.Audible;
 using Android.App;
 using Android.OS;
 using Android.Views;
@@ -14,7 +15,6 @@ public sealed class AudibleLoginActivity : Activity
     internal const string ExpectedHostExtra = "audible.expected_host";
     private WebView? _webView;
     private string _expectedHost = string.Empty;
-    private string _callbackUrl = string.Empty;
     private bool _finished;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -108,8 +108,18 @@ public sealed class AudibleLoginActivity : Activity
     private void HandleCallbackProbe(string? encodedUrl)
     {
         if (_finished || string.IsNullOrWhiteSpace(encodedUrl)) return;
-        var url = encodedUrl.Trim('"').Replace("\\\\u0026", "&", StringComparison.Ordinal)
-            .Replace("\\\\/", "/", StringComparison.Ordinal);
+        string url;
+        try
+        {
+            // EvaluateJavascript returns a JSON-encoded JavaScript string. Decode
+            // it as JSON so escaped query delimiters cannot hide the OAuth code.
+            url = System.Text.Json.JsonSerializer.Deserialize<string>(encodedUrl)
+                ?? string.Empty;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            url = encodedUrl.Trim('"');
+        }
         if (!TryValidateCallback(url)) return;
         FinishLogin(url);
     }
@@ -124,8 +134,7 @@ public sealed class AudibleLoginActivity : Activity
             || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var parameters = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        return !string.IsNullOrWhiteSpace(parameters["openid.oa2.authorization_code"]);
+        return AudibleOAuthFlow.HasAuthorizationResponse(uri);
     }
 
     private static bool HostsMatch(string actual, string expected)
@@ -146,18 +155,18 @@ public sealed class AudibleLoginActivity : Activity
             normalizedHost = normalizedHost[4..];
         var region = normalizedHost switch
         {
-            "audible.com" => "🇺🇸  United States",
-            "audible.co.uk" => "🇬🇧  United Kingdom",
-            "audible.de" => "🇩🇪  Germany",
-            "audible.fr" => "🇫🇷  France",
-            "audible.ca" => "🇨🇦  Canada",
-            "audible.com.au" => "🇦🇺  Australia",
-            "audible.it" => "🇮🇹  Italy",
-            "audible.es" => "🇪🇸  Spain",
-            "audible.in" => "🇮🇳  India",
-            "audible.co.jp" => "🇯🇵  Japan",
-            "audible.com.br" => "🇧🇷  Brazil",
-            _ => "Audible"
+            "amazon.com" or "audible.com" => "🇺🇸  United States",
+            "amazon.co.uk" or "audible.co.uk" => "🇬🇧  United Kingdom",
+            "amazon.de" or "audible.de" => "🇩🇪  Germany",
+            "amazon.fr" or "audible.fr" => "🇫🇷  France",
+            "amazon.ca" or "audible.ca" => "🇨🇦  Canada",
+            "amazon.com.au" or "audible.com.au" => "🇦🇺  Australia",
+            "amazon.it" or "audible.it" => "🇮🇹  Italy",
+            "amazon.es" or "audible.es" => "🇪🇸  Spain",
+            "amazon.in" or "audible.in" => "🇮🇳  India",
+            "amazon.co.jp" or "audible.co.jp" => "🇯🇵  Japan",
+            "amazon.com.br" or "audible.com.br" => "🇧🇷  Brazil",
+            _ => "Amazon sign-in"
         };
         return region;
     }
@@ -213,8 +222,7 @@ public sealed class AudibleLoginActivity : Activity
                 || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            var parameters = System.Web.HttpUtility.ParseQueryString(uri.Query);
-            if (string.IsNullOrWhiteSpace(parameters["openid.oa2.authorization_code"]))
+            if (!AudibleOAuthFlow.HasAuthorizationResponse(uri))
                 return false;
 
             completed(url);

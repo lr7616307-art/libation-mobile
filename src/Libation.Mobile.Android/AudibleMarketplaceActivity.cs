@@ -49,25 +49,56 @@ public sealed class AudibleMarketplaceActivity : Activity
         subtitle.SetPadding(0, 12, 0, 24);
         root.AddView(subtitle, MatchWidthWrapHeight());
 
-        AddMarketplace(root, "🇮🇳  India  ·  audible.in", "in");
-        AddMarketplace(root, "🇺🇸  United States  ·  audible.com", "us");
-        AddMarketplace(root, "🇬🇧  United Kingdom  ·  audible.co.uk", "uk");
+        var list = new ScrollView(this);
+        var markets = new LinearLayout(this) { Orientation = Orientation.Vertical };
+        markets.AddView(CreateDemoModeButton());
+        AddMarketplace(markets, "🇺🇸  United States", "audible.com", "us");
+        AddMarketplace(markets, "🇬🇧  United Kingdom", "audible.co.uk", "uk");
+        AddMarketplace(markets, "🇩🇪  Germany", "audible.de", "de");
+        AddMarketplace(markets, "🇫🇷  France", "audible.fr", "fr");
+        AddMarketplace(markets, "🇨🇦  Canada", "audible.ca", "ca");
+        AddMarketplace(markets, "🇦🇺  Australia", "audible.com.au", "au");
+        AddMarketplace(markets, "🇮🇹  Italy", "audible.it", "it");
+        AddMarketplace(markets, "🇪🇸  Spain", "audible.es", "es");
+        AddMarketplace(markets, "🇮🇳  India", "audible.in", "in");
+        AddMarketplace(markets, "🇯🇵  Japan", "audible.co.jp", "jp");
+        AddMarketplace(markets, "🇧🇷  Brazil", "audible.com.br", "br");
+        list.AddView(markets);
+        root.AddView(list, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, 0, 1));
 
-        var cancel = new Button(this) { Text = "Cancel" };
+        var cancel = new Button(this) { Text = "Back to Accounts" };
         cancel.Click += (_, _) => FinishSelection(null);
         root.AddView(cancel, MatchWidthWrapHeight());
         SetContentView(root);
     }
 
-    private void AddMarketplace(LinearLayout root, string label, string code)
+    private Button CreateDemoModeButton()
     {
+        var button = new Button(this) { Text = "🎬  Demo Mode\n       no login" };
+        button.SetMinimumHeight(64);
+        button.Enabled = false;
+        button.Alpha = 0.65f;
+        return button;
+    }
+
+    private void AddMarketplace(LinearLayout root, string name, string domain, string code)
+    {
+        var label = $"{name}\n{domain}";
         var button = new Button(this)
         {
             Text = code == _defaultMarketplace ? label + "  ✓" : label
         };
-        button.SetMinimumHeight(56);
+        button.SetAllCaps(false);
+        button.SetMinimumHeight(68);
+        button.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 15);
+        button.SetTextColor(Color.Rgb(225, 225, 232));
+        button.SetBackgroundColor(Color.Rgb(43, 49, 63));
+        var margin = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
+        { BottomMargin = 8 };
         button.Click += (_, _) => FinishSelection(code);
-        root.AddView(button, MatchWidthWrapHeight());
+        root.AddView(button, margin);
     }
 
     private static LinearLayout.LayoutParams MatchWidthWrapHeight()

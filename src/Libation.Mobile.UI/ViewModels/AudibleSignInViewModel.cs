@@ -139,7 +139,13 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
                 try { await _connection.CancelSignInAsync(challengeId, CancellationToken.None); }
                 catch (Exception) { /* The challenge expires automatically if cancellation fails. */ }
             }
-            Status = $"Audible sign-in failed ({ex.GetType().Name}). Check your connection and try again.";
+            var detail = ex.Message
+                .Replace("Atna|", "[token-redacted]", StringComparison.Ordinal)
+                .Replace("Atnr|", "[token-redacted]", StringComparison.Ordinal);
+            if (detail.Length > 180) detail = detail[..177] + "…";
+            Status = string.IsNullOrWhiteSpace(detail)
+                ? $"Audible sign-in failed ({ex.GetType().Name})."
+                : $"Audible sign-in failed: {detail}";
         }
         finally { IsBusy = false; }
     }
