@@ -24,9 +24,17 @@ public sealed class AudiblePkceRegistrationClientTests
         var root = body.RootElement;
         Assert.Equal("www.amazon.in", root.GetProperty("cookies").GetProperty("domain").GetString());
         Assert.Equal("DeviceLegacy", root.GetProperty("registration_data").GetProperty("domain").GetString());
+        Assert.Equal("2090263407", root.GetProperty("registration_data").GetProperty("app_version").GetString());
+        Assert.Equal("130050002", root.GetProperty("registration_data").GetProperty("software_version").GetString());
+        Assert.Equal("A10KISP2GWF0E4", root.GetProperty("registration_data").GetProperty("device_type").GetString());
+        Assert.Equal("%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android",
+            root.GetProperty("registration_data").GetProperty("device_name").GetString());
         Assert.Equal("com.audible.application", root.GetProperty("registration_data").GetProperty("app_name").GetString());
         Assert.Equal(challenge.DeviceSerial, root.GetProperty("device_metadata").GetProperty("device_serial").GetString());
         Assert.Equal("android", root.GetProperty("device_metadata").GetProperty("device_os_family").GetString());
+        Assert.Equal("Xiaomi", root.GetProperty("device_metadata").GetProperty("manufacturer").GetString());
+        Assert.Equal("29", root.GetProperty("device_metadata").GetProperty("os_version").GetString());
+        Assert.Equal("dandelion", root.GetProperty("device_metadata").GetProperty("product").GetString());
         Assert.Equal("true", root.GetProperty("auth_data").GetProperty("use_global_authentication").GetString());
         Assert.Equal(challenge.CodeVerifier, root.GetProperty("auth_data").GetProperty("code_verifier").GetString());
         Assert.True(Convert.FromBase64String(root.GetProperty("user_context_map").GetProperty("frc").GetString()!).Length > 32);
@@ -90,7 +98,16 @@ public sealed class AudiblePkceRegistrationClientTests
     }
 
     private static AudibleAndroidDeviceProfile CreateProfile() =>
-        new("Test Android Device", "10", "2090263407", "130050002", "Audible for Android");
+        new("Redmi 9i",
+            "google/dandelion/dandelion:10/QKQ1.200114.002/V12.0:user/release-keys",
+            AudibleAndroidDeviceProfile.AudibleAndroidAppVersion,
+            AudibleAndroidDeviceProfile.AudibleAndroidSoftwareVersion,
+            "Audible for Android",
+            "Xiaomi",
+            "dandelion",
+            "29",
+            "10",
+            "QKQ1.200114.002");
 
     private sealed class CapturingHandler(string responseBody, HttpStatusCode statusCode) : HttpMessageHandler
     {
