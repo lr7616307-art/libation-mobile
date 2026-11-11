@@ -84,6 +84,16 @@ public static class AudibleOAuthFlow
             challenge);
     }
 
+    /// <summary>Verifies that a callback belongs to the selected Android marketplace.</summary>
+    public static bool IsMarketplaceCallback(string marketplace, Uri callbackUri)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(marketplace);
+        ArgumentNullException.ThrowIfNull(callbackUri);
+        return Markets.TryGetValue(marketplace.Trim(), out var market)
+            && string.Equals(callbackUri.Host, "www." + market.AudibleDomain, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(callbackUri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Returns true when a marketplace maplanding URI contains a successful or
     /// failed OAuth result. Amazon has used both the OpenID extension parameter
