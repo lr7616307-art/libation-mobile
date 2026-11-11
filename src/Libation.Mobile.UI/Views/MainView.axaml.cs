@@ -794,7 +794,9 @@ public partial class MainView : UserControl
             }
             var vm = PlatformSignInViewModelFactory();
             await vm.BeginSignInAsync();
-            await vm.LoadStatusAsync();
+            // BeginSignInAsync owns the final status (including the provider error).
+            // Reloading here would overwrite a useful failure message with generic
+            // "sign-in required" state when the account is not yet connected.
             _viewModel.ReportSyncStatus(vm.ConnectionStatusLabel + ". " + vm.Status);
         }
         catch (Exception ex)
