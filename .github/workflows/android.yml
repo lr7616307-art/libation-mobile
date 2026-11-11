@@ -21,14 +21,6 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - rid: android-arm
-            name: ARMv7
-          - rid: android-arm64
-            name: ARM64
     steps:
       - uses: actions/checkout@v4
       - name: Install .NET
@@ -44,11 +36,11 @@ jobs:
         run: dotnet workload install android
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
-      - name: Build ABI-specific APK
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:RuntimeIdentifiers=${{ matrix.rid }} -p:AndroidCreatePackagePerAbi=true -p:AndroidPackageFormat=apk
-      - name: Upload signed APK
+      - name: Build ABI-specific APKs
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm -p:AndroidCreatePackagePerAbi=true -p:AndroidPackageFormat=apk
+      - name: Upload signed ABI APKs
         uses: actions/upload-artifact@v4
         with:
-          name: libation-mobile-${{ matrix.name }}
-          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*-Signed.apk
+          name: libation-mobile-ABI-specific
+          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish/*-Signed.apk
           if-no-files-found: error
