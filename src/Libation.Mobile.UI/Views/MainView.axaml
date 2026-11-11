@@ -241,14 +241,15 @@
           </StackPanel>
 
           <StackPanel IsVisible="{Binding IsAudibleAccountTab}" Spacing="16">
-            <TextBlock Text="Audible account" FontSize="28" FontWeight="Bold"/>
-            <Border CornerRadius="18" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="10">
-                <TextBlock Text="ACCOUNT &amp; SESSIONS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
-                <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap"/>
-                <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="12" Opacity="0.65"/>
-                <TextBlock Text="Choose your Audible marketplace, then sign in inside VØRATH. Your account identity is stored securely on this device." FontSize="12" Opacity="0.7" TextWrapping="Wrap"/>
-                <Button Content="Sign in with Audible" Click="AudibleSignInClicked"/>
+            <TextBlock Text="Accounts" FontSize="30" FontWeight="Bold"/>
+            <Border CornerRadius="18" Padding="20" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="14" HorizontalAlignment="Stretch">
+                <TextBlock Text="♙" FontSize="54" Foreground="#9CA3AF" HorizontalAlignment="Center" Margin="0,28,0,8"/>
+                <TextBlock Text="No accounts yet" FontSize="21" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock Text="Connect an audiobook source to sync and download your library." FontSize="13" Opacity="0.7" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+                <Button Content="Add Account" Click="AudibleSignInClicked" MinHeight="56" FontSize="17" Background="#174B55" HorizontalAlignment="Stretch"/>
+                <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap" FontSize="12" Opacity="0.7" Margin="0,10,0,0"/>
+                <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="11" Opacity="0.55"/>
                 <Button Content="Disconnect this session" Click="AudibleDisconnectClicked"/>
                 <Button Content="Sync Audible library" Click="SyncLibraryClicked" IsEnabled="{Binding CanSync}"/>
               </StackPanel>
