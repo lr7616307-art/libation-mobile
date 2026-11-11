@@ -22,11 +22,12 @@ public sealed class AudibleOAuthFlowTests
         Assert.Equal("amzn_audible_android_aui_in", query["openid.assoc_handle"]);
         Assert.Equal("amzn_audible_android_aui_v2_dark_in", query["pageId"]);
         Assert.Equal("AJO3FBRUE6J4S", query["marketPlaceId"]);
-        Assert.Equal("1", query["disableLoginPrepopulate"]);
+        Assert.Equal("true", query["forceMobileLayout"]);
+        Assert.Null(query["disableLoginPrepopulate"]);
         Assert.StartsWith("device:", query["openid.oa2.client_id"]);
         Assert.Equal(20, flow.DeviceSerial.Length);
         Assert.All(flow.DeviceSerial, c => Assert.Contains(c, "0123456789abcdef"));
-        Assert.DoesNotContain("forceMobileLayout", flow.AuthorizationUri.Query);
+        Assert.Contains("forceMobileLayout", flow.AuthorizationUri.Query);
     }
 
     [Fact]
@@ -52,6 +53,25 @@ public sealed class AudibleOAuthFlowTests
 
         Assert.Equal(host, flow.CallbackUri.Host);
         Assert.Equal(marketplaceId, query["marketPlaceId"]);
+    }
+
+    [Theory]
+    [InlineData("https://www.amazon.in/ap/maplanding?openid.oa2.authorization_code=openid-code", "openid-code")]
+    [InlineData("https://www.amazon.in/ap/maplanding?code=standard-code", "standard-code")]
+    public void ReadAuthorizationCode_AcceptsBothAmazonCallbackFormats(string callback, string expected)
+    {
+        var uri = new Uri(callback);
+        Assert.True(AudibleOAuthFlow.HasAuthorizationResponse(uri));
+        Assert.Equal(expected, AudibleOAuthFlow.ReadAuthorizationCode(uri));
+    }
+
+    [Fact]
+    public void ReadAuthorizationCode_ReportsAmazonOAuthError()
+    {
+        var uri = new Uri("https://www.amazon.in/ap/maplanding?error=access_denied&error_description=Account+not+eligible");
+        var error = Assert.Throws<InvalidOperationException>(() => AudibleOAuthFlow.ReadAuthorizationCode(uri));
+        Assert.Contains("access_denied", error.Message);
+        Assert.Contains("Account not eligible", error.Message);
     }
 
     [Fact]
