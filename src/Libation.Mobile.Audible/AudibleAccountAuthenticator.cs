@@ -13,7 +13,6 @@ namespace Libation.Mobile.Audible;
 public sealed class AudibleAccountAuthenticator(
     AudibleIdentitySnapshotStore snapshotStore,
     AudiblePkceRegistrationClient registrationClient,
-    AudibleAndroidDeviceProfile deviceProfile,
     ISystemDateTime systemDateTime) : IAccountAuthenticator
 {
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromMinutes(10);
@@ -66,7 +65,7 @@ public sealed class AudibleAccountAuthenticator(
                 var authorizationCode = AudibleOAuthFlow.ReadAuthorizationCode(responseUri);
 
                 var registered = await registrationClient.RegisterAsync(
-                    state.Challenge, authorizationCode, deviceProfile, token).ConfigureAwait(false);
+                    state.Challenge, authorizationCode, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
                 return registered;
             },
