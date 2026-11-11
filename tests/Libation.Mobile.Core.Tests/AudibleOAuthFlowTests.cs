@@ -6,7 +6,7 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleOAuthFlowTests
 {
     [Fact]
-    public void CreateIndiaChallenge_UsesAndroidAudibleAuthorizationShape()
+    public void CreateIndiaChallenge_UsesAmazonMarketplaceCallbackAndAndroidAuthorizationShape()
     {
         var flow = AudibleOAuthFlow.Create("in");
         var query = System.Web.HttpUtility.ParseQueryString(flow.AuthorizationUri.Query);
@@ -14,7 +14,8 @@ public sealed class AudibleOAuthFlowTests
         Assert.Equal("https", flow.AuthorizationUri.Scheme);
         Assert.Equal("www.amazon.in", flow.AuthorizationUri.Host);
         Assert.Equal("/ap/signin", flow.AuthorizationUri.AbsolutePath);
-        Assert.Equal("https://www.audible.in/ap/maplanding", flow.CallbackUri.AbsoluteUri);
+        Assert.Equal("https://www.amazon.in/ap/maplanding", flow.CallbackUri.AbsoluteUri);
+        Assert.Equal(flow.CallbackUri.AbsoluteUri, query["openid.return_to"]);
         Assert.Equal("code", query["openid.oa2.response_type"]);
         Assert.Equal("S256", query["openid.oa2.code_challenge_method"]);
         Assert.Equal(flow.CodeChallenge, query["openid.oa2.code_challenge"]);
@@ -41,10 +42,10 @@ public sealed class AudibleOAuthFlowTests
     }
 
     [Theory]
-    [InlineData("us", "www.audible.com", "AF2M0KC94RCEA")]
-    [InlineData("uk", "www.audible.co.uk", "A2I9A3Q2GNFNGQ")]
-    [InlineData("in", "www.audible.in", "AJO3FBRUE6J4S")]
-    public void Create_UsesMarketplaceSpecificAudibleCallback(string market, string host, string marketplaceId)
+    [InlineData("us", "www.amazon.com", "AF2M0KC94RCEA")]
+    [InlineData("uk", "www.amazon.co.uk", "A2I9A3Q2GNFNGQ")]
+    [InlineData("in", "www.amazon.in", "AJO3FBRUE6J4S")]
+    public void Create_UsesMarketplaceSpecificAmazonCallback(string market, string host, string marketplaceId)
     {
         var flow = AudibleOAuthFlow.Create(market);
         var query = System.Web.HttpUtility.ParseQueryString(flow.AuthorizationUri.Query);
