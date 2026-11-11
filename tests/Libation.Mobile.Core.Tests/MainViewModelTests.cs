@@ -115,6 +115,39 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AudibleLibraryEntries_OpenReadOnlyDetailsAndExposeAvailability()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var remote = new RemoteAudiobook("remote-asin", "Audible title", "Author", "Narrator", "5h")
+        {
+            Description = "Audible product summary",
+            IsPlayableOnAudible = true,
+            IsDownloadedOnAudible = false
+        };
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([remote]), repository));
+
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+
+        var book = Assert.Single(vm.AudibleBooks);
+        Assert.False(book.CanQueueDownload);
+        Assert.False(book.CanDelete);
+        Assert.Equal("↓ AVAILABLE", book.AudibleAvailabilityShortLabel);
+
+        vm.OpenBookDetails(book.Id);
+
+        Assert.True(vm.IsBookDetailsVisible);
+        Assert.True(vm.IsDetailProviderBook);
+        Assert.False(vm.CanEditDetailBook);
+        Assert.Equal("Available in Audible", vm.DetailAudibleAvailabilityLabel);
+        Assert.Equal("Audible product summary", vm.DetailBookDescription);
+    }
+
+    [Fact]
     public async Task SyncLibraryAsync_EmptyRemoteLibraryRemainsEmptyInsteadOfReseedingDemoBooks()
     {
         using var directory = new TemporaryDirectory();
