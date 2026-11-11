@@ -5,7 +5,7 @@ namespace Libation.Mobile.Audible;
 
 /// <summary>
 /// Builds the Android Audible PKCE authorization request. The callback is the
-/// matching Amazon marketplace maplanding endpoint used by Audible OAuth.
+/// Audible marketplace maplanding endpoint used by the Android Audible profile.
 /// </summary>
 public static class AudibleOAuthFlow
 {
@@ -48,7 +48,7 @@ public static class AudibleOAuthFlow
         var serial = Convert.ToHexString(RandomNumberGenerator.GetBytes(10)).ToLowerInvariant();
         var serialAndType = $"{serial}#{AndroidDeviceType}";
         var clientId = Convert.ToHexString(Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
-        var callback = $"https://www.{market.AmazonDomain}/ap/maplanding";
+        var callback = $"https://www.{market.AudibleDomain}/ap/maplanding";
 
         var query = new List<KeyValuePair<string, string>>
         {
@@ -69,7 +69,7 @@ public static class AudibleOAuthFlow
             new("accountStatusPolicy", "P1"),
             new("pageId", $"amzn_audible_android_aui_v2_dark_{market.CountryCode}"),
             new("marketPlaceId", market.MarketplaceId),
-            new("forceMobileLayout", "true")
+            new("disableLoginPrepopulate", "1")
         };
         var queryString = string.Join("&", query.Select(p =>
             Uri.EscapeDataString(p.Key) + "=" + Uri.EscapeDataString(p.Value)));
