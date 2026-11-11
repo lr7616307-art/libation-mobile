@@ -69,7 +69,7 @@ public static class AudibleOAuthFlow
             new("accountStatusPolicy", "P1"),
             new("pageId", $"amzn_audible_android_aui_v2_dark_{market.CountryCode}"),
             new("marketPlaceId", market.MarketplaceId),
-            new("disableLoginPrepopulate", "1")
+            new("forceMobileLayout", "true")
         };
         var queryString = string.Join("&", query.Select(p =>
             Uri.EscapeDataString(p.Key) + "=" + Uri.EscapeDataString(p.Value)));
@@ -82,6 +82,41 @@ public static class AudibleOAuthFlow
             serial,
             verifier,
             challenge);
+    }
+
+    /// <summary>
+    /// Returns true when a marketplace maplanding URI contains a successful or
+    /// failed OAuth result. Amazon has used both the OpenID extension parameter
+    /// and the standard OAuth "code" parameter across login variants.
+    /// </summary>
+    public static bool HasAuthorizationResponse(Uri responseUri)
+    {
+        ArgumentNullException.ThrowIfNull(responseUri);
+        var parameters = System.Web.HttpUtility.ParseQueryString(responseUri.Query);
+        return !string.IsNullOrWhiteSpace(parameters["openid.oa2.authorization_code"])
+            || !string.IsNullOrWhiteSpace(parameters["code"])
+            || !string.IsNullOrWhiteSpace(parameters["error"]);
+    }
+
+    /// <summary>Extracts the authorization code or reports a provider-side OAuth error.</summary>
+    public static string ReadAuthorizationCode(Uri responseUri)
+    {
+        ArgumentNullException.ThrowIfNull(responseUri);
+        var parameters = System.Web.HttpUtility.ParseQueryString(responseUri.Query);
+        var error = parameters["error"];
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            var description = parameters["error_description"];
+            if (string.IsNullOrWhiteSpace(description)) description = "Amazon rejected the sign-in request.";
+            description = description.Length > 200 ? description[..200] : description;
+            throw new InvalidOperationException($"Amazon sign-in failed: {error} — {description}");
+        }
+
+        var code = parameters["openid.oa2.authorization_code"];
+        if (string.IsNullOrWhiteSpace(code)) code = parameters["code"];
+        if (string.IsNullOrWhiteSpace(code))
+            throw new InvalidOperationException("Amazon returned the sign-in page without an authorization code.");
+        return code;
     }
 
     private static string Base64Url(byte[] bytes)
