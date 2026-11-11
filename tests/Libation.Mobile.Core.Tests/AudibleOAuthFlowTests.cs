@@ -6,7 +6,7 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleOAuthFlowTests
 {
     [Fact]
-    public void CreateIndiaChallenge_UsesAmazonMarketplaceCallbackAndAndroidAuthorizationShape()
+    public void CreateIndiaChallenge_UsesAudibleMarketplaceCallbackAndAndroidAuthorizationShape()
     {
         var flow = AudibleOAuthFlow.Create("in");
         var query = System.Web.HttpUtility.ParseQueryString(flow.AuthorizationUri.Query);
@@ -43,10 +43,10 @@ public sealed class AudibleOAuthFlowTests
     }
 
     [Theory]
-    [InlineData("us", "www.amazon.com", "AF2M0KC94RCEA")]
-    [InlineData("uk", "www.amazon.co.uk", "A2I9A3Q2GNFNGQ")]
-    [InlineData("in", "www.amazon.in", "AJO3FBRUE6J4S")]
-    public void Create_UsesMarketplaceSpecificAmazonCallback(string market, string host, string marketplaceId)
+    [InlineData("us", "www.audible.com", "AF2M0KC94RCEA")]
+    [InlineData("uk", "www.audible.co.uk", "A2I9A3Q2GNFNGQ")]
+    [InlineData("in", "www.audible.in", "AJO3FBRUE6J4S")]
+    public void Create_UsesMarketplaceSpecificAudibleCallback(string market, string host, string marketplaceId)
     {
         var flow = AudibleOAuthFlow.Create(market);
         var query = System.Web.HttpUtility.ParseQueryString(flow.AuthorizationUri.Query);
@@ -58,7 +58,7 @@ public sealed class AudibleOAuthFlowTests
     [Theory]
     [InlineData("https://www.audible.in/ap/maplanding?openid.oa2.authorization_code=openid-code", "openid-code")]
     [InlineData("https://www.audible.in/ap/maplanding?code=standard-code", "standard-code")]
-    public void ReadAuthorizationCode_AcceptsBothAmazonCallbackFormats(string callback, string expected)
+    public void ReadAuthorizationCode_AcceptsBothMarketplaceCallbackFormats(string callback, string expected)
     {
         var uri = new Uri(callback);
         Assert.True(AudibleOAuthFlow.HasAuthorizationResponse(uri));
@@ -66,9 +66,9 @@ public sealed class AudibleOAuthFlowTests
     }
 
     [Fact]
-    public void ReadAuthorizationCode_ReportsAmazonOAuthError()
+    public void ReadAuthorizationCode_ReportsMarketplaceOAuthError()
     {
-        var uri = new Uri("https://www.amazon.in/ap/maplanding?error=access_denied&error_description=Account+not+eligible");
+        var uri = new Uri("https://www.audible.in/ap/maplanding?error=access_denied&error_description=Account+not+eligible");
         var error = Assert.Throws<InvalidOperationException>(() => AudibleOAuthFlow.ReadAuthorizationCode(uri));
         Assert.Contains("access_denied", error.Message);
         Assert.Contains("Account not eligible", error.Message);
