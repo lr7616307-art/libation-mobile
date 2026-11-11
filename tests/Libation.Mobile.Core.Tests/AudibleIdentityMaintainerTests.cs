@@ -216,6 +216,28 @@ public sealed class AudibleIdentityMaintainerTests
         Assert.Equal(0, secrets.SetCalls);
     }
 
+    [Fact]
+    public async Task RotatedRefreshToken_IsPersistedWithNewAccessToken()
+    {
+        using var rsa = RSA.Create(2048);
+        var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
+        var identity = AudibleIdentitySnapshotMapper.Restore(CreateSnapshot(rsa.ExportRSAPrivateKeyPem(), now.AddMinutes(-1)));
+        var secrets = new RecordingSecretStore();
+        var refresher = new FakeRefresher(_ => Task.FromResult(new AudibleTokenRefreshResult(
+            new AccessToken(new SecretString("Atna|refreshed"), now.AddHours(2)),
+            new RefreshToken(new SecretString("Atnr|rotated")))));
+        var maintainer = new AudibleIdentityMaintainer(
+            identity, refresher, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
+
+        var accessToken = await maintainer.GetAccessTokenAsync();
+
+        Assert.Equal("Atna|refreshed", accessToken!.Reveal());
+        Assert.Equal("Atnr|rotated", identity.RefreshToken!.Reveal());
+        var saved = AudibleIdentitySnapshotSerializer.Deserialize(secrets.LastValue!);
+        Assert.Equal("Atna|refreshed", saved.AccessToken);
+        Assert.Equal("Atnr|rotated", saved.RefreshToken);
+    }
+
     private static AudibleIdentitySnapshot CreateSnapshot(string privateKey, DateTime expiry) => new()
     {
         SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
