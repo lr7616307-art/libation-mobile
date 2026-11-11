@@ -30,7 +30,13 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     public string Marketplace
     {
         get => _marketplace;
-        set { if (_marketplace == value) return; _marketplace = value; OnPropertyChanged(); }
+        set
+        {
+            if (_marketplace == value) return;
+            _marketplace = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(MarketplaceLabel));
+        }
     }
     public string Status
     {
@@ -191,9 +197,15 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             _lastState = state;
             NotifyAccountSummaryChanged();
             challengeId = null;
-            Status = state.Status == AccountConnectionStatus.Connected
-                ? "Audible account connected. Your encrypted device identity is saved."
-                : "Sign-in completed, but the account needs attention.";
+            if (state.Status == AccountConnectionStatus.Connected)
+            {
+                UpdateLibrarySummary(0, null, "Account connected. Sync your Audible library to load its titles.");
+                Status = "Audible account connected. Your encrypted device identity is saved.";
+            }
+            else
+            {
+                Status = "Sign-in completed, but the account needs attention.";
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
