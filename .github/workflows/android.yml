@@ -37,10 +37,37 @@ jobs:
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
       - name: Build ABI-specific APKs
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm -p:AndroidCreatePackagePerAbi=true -p:AndroidPackageFormat=apk
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -p:AndroidCreatePackagePerAbi=true -p:AndroidPackageFormat=apk
+      - name: Verify ABI-specific APKs
+        shell: python
+        run: |
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          root = Path("src/Libation.Mobile.Android/bin/Release/net10.0-android36.0")
+          apks = sorted(root.rglob("*-Signed.apk"))
+          if not apks:
+              raise SystemExit(f"No signed APKs found under {root}")
+
+          expected = {"armeabi-v7a", "arm64-v8a"}
+          found = set()
+          for apk in apks:
+              with ZipFile(apk) as package:
+                  abis = {
+                      name.split("/")[1]
+                      for name in package.namelist()
+                      if name.startswith("lib/") and len(name.split("/")) > 2
+                  }
+              print(f"{apk}: {sorted(abis)} ({apk.stat().st_size} bytes)")
+              if len(abis) != 1:
+                  raise SystemExit(f"{apk} is not single-ABI: {sorted(abis)}")
+              found.update(abis)
+
+          if found != expected:
+              raise SystemExit(f"Expected APKs for {sorted(expected)}, found {sorted(found)}")
       - name: Upload signed ABI APKs
         uses: actions/upload-artifact@v4
         with:
           name: libation-mobile-ABI-specific
-          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish/*-Signed.apk
+          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/**/*-Signed.apk
           if-no-files-found: error
