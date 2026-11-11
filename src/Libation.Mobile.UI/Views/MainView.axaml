@@ -425,7 +425,7 @@
       </Border>
     </Border>
 
-    <Border x:Name="AddAccountSheetOverlay" Grid.Row="0" IsVisible="False"
+    <Border Grid.Row="0" IsVisible="{Binding IsAddAccountSheetVisible}"
             Background="#99000000" ZIndex="31">
       <Border VerticalAlignment="Bottom" Background="#242A35" CornerRadius="26,26,0,0"
               Padding="24,28,24,30" BorderBrush="#343B49" BorderThickness="1,1,0,0">
