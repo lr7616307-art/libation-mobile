@@ -36,8 +36,10 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         var connection = new AccountConnectionService(authenticator, new AccountSessionStore(secrets));
         var browser = new AndroidExternalBrowserLauncher(this);
 
-        MainView.PlatformSignInViewModelFactory =
-            () => new AudibleSignInViewModel(connection, browser);
+        // Share one live view model so account state changes after login, sync and
+        // disconnect are reflected by the account tile without rebuilding the view.
+        var signInViewModel = new AudibleSignInViewModel(connection, browser);
+        MainView.PlatformSignInViewModelFactory = () => signInViewModel;
 
         // The provider restores only the identity already stored on this device.
         // If the user has not signed in, sync reports that sign-in is required.
