@@ -146,18 +146,18 @@ public sealed class AudibleLoginActivity : Activity
             normalizedHost = normalizedHost[4..];
         var region = normalizedHost switch
         {
-            "audible.com" => "🇺🇸  United States",
-            "audible.co.uk" => "🇬🇧  United Kingdom",
-            "audible.de" => "🇩🇪  Germany",
-            "audible.fr" => "🇫🇷  France",
-            "audible.ca" => "🇨🇦  Canada",
-            "audible.com.au" => "🇦🇺  Australia",
-            "audible.it" => "🇮🇹  Italy",
-            "audible.es" => "🇪🇸  Spain",
-            "audible.in" => "🇮🇳  India",
-            "audible.co.jp" => "🇯🇵  Japan",
-            "audible.com.br" => "🇧🇷  Brazil",
-            _ => "Audible"
+            "amazon.com" or "audible.com" => "🇺🇸  United States",
+            "amazon.co.uk" or "audible.co.uk" => "🇬🇧  United Kingdom",
+            "amazon.de" or "audible.de" => "🇩🇪  Germany",
+            "amazon.fr" or "audible.fr" => "🇫🇷  France",
+            "amazon.ca" or "audible.ca" => "🇨🇦  Canada",
+            "amazon.com.au" or "audible.com.au" => "🇦🇺  Australia",
+            "amazon.it" or "audible.it" => "🇮🇹  Italy",
+            "amazon.es" or "audible.es" => "🇪🇸  Spain",
+            "amazon.in" or "audible.in" => "🇮🇳  India",
+            "amazon.co.jp" or "audible.co.jp" => "🇯🇵  Japan",
+            "amazon.com.br" or "audible.com.br" => "🇧🇷  Brazil",
+            _ => "Amazon sign-in"
         };
         return region;
     }
