@@ -767,6 +767,22 @@ public partial class MainView : UserControl
             await _viewModel.RemoveBookAsync(book.Id);
     }
 
+    private void AddAccountClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        AddAccountSheetOverlay.IsVisible = true;
+    }
+
+    private void CloseAddAccountSheetClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        AddAccountSheetOverlay.IsVisible = false;
+    }
+
+    private void AudibleAddAccountClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        AddAccountSheetOverlay.IsVisible = false;
+        AudibleSignInClicked(sender, e);
+    }
+
     private async void AudibleSignInClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         try
