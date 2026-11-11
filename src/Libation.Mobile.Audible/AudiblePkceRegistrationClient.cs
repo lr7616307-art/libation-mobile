@@ -10,8 +10,8 @@ using System.Text.Json.Serialization;
 namespace Libation.Mobile.Audible;
 
 /// <summary>
-/// Performs the PKCE device-registration exchange after the in-app Amazon
-/// callback. Device details are supplied by the Android host so the request
+/// Performs the PKCE device-registration exchange after the in-app Audible
+/// marketplace callback. Device details are supplied by the Android host so the request
 /// does not claim that an Android handset is an iPhone.
 /// </summary>
 public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
@@ -53,7 +53,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         var clientIdHex = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
         var request = new RegistrationRequest
         {
-            RequestedTokenType = ["bearer", "mac_dms", "website_cookies", "store_authentication_cookie"],
+            RequestedTokenType = ["bearer", "mac_dms", "store_authentication_cookie", "website_cookies"],
             Cookies = new RegistrationCookies { WebsiteCookies = [], Domain = "www." + amazonDomain },
             RegistrationData = new RegistrationData
             {
@@ -100,7 +100,9 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         message.Headers.TryAddWithoutValidation("Accept", "application/json");
         message.Headers.TryAddWithoutValidation("x-amzn-identity-auth-domain", "api." + amazonDomain);
         message.Headers.TryAddWithoutValidation("User-Agent",
-            "Mozilla/5.0 (Linux; Android " + profile.OsVersion + "; " + profile.Model + ") AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.0.0 Mobile Safari/537.36");
+            "Mozilla/5.0 (Linux; Android " + profile.AndroidRelease + "; " + profile.Model
+            + " Build/" + profile.BuildId + "; wv) AppleWebKit/537.36 (KHTML, like Gecko) "
+            + "Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36");
         using var response = await httpClient.SendAsync(message, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
@@ -257,13 +259,6 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 && seconds > 0;
         seconds = 0;
         return false;
-    }
-
-    private static string GetAndroidMajorVersion(string version)
-    {
-        var first = version.Split('.', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-        return int.TryParse(first, NumberStyles.Integer, CultureInfo.InvariantCulture, out var major)
-            ? major.ToString(CultureInfo.InvariantCulture) : version;
     }
 
     private static string CreateAndroidFrc(string serial, AudibleAndroidDeviceProfile profile)
