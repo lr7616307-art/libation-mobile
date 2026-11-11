@@ -102,6 +102,8 @@ public partial class MainView : UserControl
         // service keeps running. Recreate its lightweight adapter on each load.
         _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
         await _viewModel.InitializeAsync();
+        if (PlatformSignInViewModelFactory?.Invoke() is { } accountViewModel)
+            await accountViewModel.LoadStatusAsync();
         UpdateAudibleAccountSummary();
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
@@ -735,10 +737,25 @@ public partial class MainView : UserControl
     private void UpdateAudibleAccountSummary()
     {
         var accountViewModel = PlatformSignInViewModelFactory?.Invoke();
-        accountViewModel?.UpdateLibrarySummary(
-            _viewModel.AudibleBooks.Count,
-            _viewModel.LastSuccessfulSync,
-            _viewModel.SyncStatus);
+        if (accountViewModel is null) return;
+
+        if (!accountViewModel.HasConnectedAccount)
+        {
+            accountViewModel.UpdateLibrarySummary(0, null, "Connect an Audible account to sync its library.");
+            return;
+        }
+
+        if (_viewModel.LastSuccessfulSync is null)
+        {
+            accountViewModel.UpdateLibrarySummary(
+                0, null, "Account connected. Sync your Audible library to load its titles.");
+            return;
+        }
+
+        var status = _viewModel.SyncStatus.StartsWith("Provider not connected", StringComparison.Ordinal)
+            ? "Your previously synced library is saved. Sync to refresh it."
+            : _viewModel.SyncStatus;
+        accountViewModel.UpdateLibrarySummary(_viewModel.AudibleBooks.Count, _viewModel.LastSuccessfulSync, status);
     }
 
     private void AudibleBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -812,7 +829,8 @@ public partial class MainView : UserControl
             }
             var vm = PlatformSignInViewModelFactory();
             await vm.BeginSignInAsync();
-            UpdateAudibleAccountSummary();
+            if (!vm.HasConnectedAccount)
+                UpdateAudibleAccountSummary();
             // BeginSignInAsync owns the final status (including the provider error).
             // Reloading here would overwrite a useful failure message with generic
             // "sign-in required" state when the account is not yet connected.
