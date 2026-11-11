@@ -72,5 +72,5 @@ public sealed record Audiobook(
     public bool CanQueueDownload => !IsProviderCatalogueEntry;
 
     [JsonIgnore]
-    public bool CanDelete => !string.Equals(Status, "Demo", StringComparison.Ordinal);
+    public bool CanDelete => !IsProviderCatalogueEntry && !string.Equals(Status, "Demo", StringComparison.Ordinal);
 }
