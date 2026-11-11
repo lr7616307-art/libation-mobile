@@ -34,10 +34,12 @@ jobs:
           java-version: 17
       - name: Install Android workload
         run: dotnet workload install android
-      - name: Restore
+      - name: Restore both Android runtimes
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
-      - name: Build ABI-specific APKs
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -p:AndroidCreatePackagePerAbi=true -p:AndroidPackageFormat=apk
+      - name: Publish ARMv7 APK
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk
+      - name: Publish ARM64 APK
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm64 --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk
       - name: Verify ABI-specific APKs
         shell: python
         run: |
@@ -46,8 +48,8 @@ jobs:
 
           root = Path("src/Libation.Mobile.Android/bin/Release/net10.0-android36.0")
           apks = sorted(root.rglob("*-Signed.apk"))
-          if not apks:
-              raise SystemExit(f"No signed APKs found under {root}")
+          if len(apks) != 2:
+              raise SystemExit(f"Expected exactly 2 signed APKs, found {len(apks)}: {apks}")
 
           expected = {"armeabi-v7a", "arm64-v8a"}
           found = set()
