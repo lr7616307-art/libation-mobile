@@ -49,7 +49,9 @@ public sealed class LibrarySyncService
                 Series = item.Series?.Trim() ?? string.Empty,
                 Genre = item.Genre?.Trim() ?? string.Empty,
                 Description = item.Description?.Trim() ?? string.Empty,
-                CoverImageUrl = NormalizeCoverUrl(item.CoverImageUrl)
+                CoverImageUrl = NormalizeCoverUrl(item.CoverImageUrl),
+                IsPlayableOnAudible = item.IsPlayableOnAudible,
+                IsDownloadedOnAudible = item.IsDownloadedOnAudible
             });
         }
 
