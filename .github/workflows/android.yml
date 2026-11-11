@@ -44,11 +44,11 @@ jobs:
         run: dotnet workload install android
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
-      - name: Build APK
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:AndroidPackageFormat=apk
-      - name: Upload APK
+      - name: Build ABI-specific APK
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:RuntimeIdentifiers=${{ matrix.rid }} -p:AndroidCreatePackagePerAbi=true -p:AndroidPackageFormat=apk
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
           name: libation-mobile-${{ matrix.name }}
-          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*.apk
+          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*-Signed.apk
           if-no-files-found: error
