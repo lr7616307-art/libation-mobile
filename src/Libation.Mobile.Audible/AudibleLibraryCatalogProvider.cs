@@ -57,9 +57,14 @@ public sealed class AudibleLibraryCatalogProvider : ILibraryCatalogProvider
 
         var options = new LibraryOptions
         {
-            // Contributor fields are explicitly requested; core title/runtime fields are
-            // part of the library response itself.
+            // Audible omits product title/subtitle and image metadata from the base
+            // library page unless product_attrs and image sizes are requested. Contributors
+            // and the two status flags are separate response groups.
             ResponseGroups = LibraryOptions.ResponseGroupOptions.Contributors
+                | LibraryOptions.ResponseGroupOptions.ProductAttrs
+                | LibraryOptions.ResponseGroupOptions.IsPlayable
+                | LibraryOptions.ResponseGroupOptions.IsDownloaded,
+            ImageSizes = LibraryOptions.ImageSizeOptions._500
         };
 
         var results = new List<RemoteAudiobook>();
