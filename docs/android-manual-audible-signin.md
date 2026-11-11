@@ -57,7 +57,7 @@ Do not copy the Android profile's 20-hex serial, Android device type, Android pa
 
 - Build and unit-test the updated branch.
 - Test the full flow on the Redmi 9i / Android 10 / ARMv7, including browser/WebView handoff, MFA/CAPTCHA, callback capture, app background/resume, registration, encrypted save, force-stop/restart restore, and library sync.
-- Verify token refresh against the same current profile. The current refresh maintainer still uses the pinned AudibleApi `Authorize.RefreshAccessTokenAsync` path; it has not yet been proven equivalent to LibriSync's updated refresh request.
+- Automated tests now cover the current LibriSync-style refresh request, optional refresh-token rotation, and encrypted persistence/rollback. Physical-device refresh still needs a real-account test.
 - Verify actual account access and library sync with the account owner. A CI build is not proof that Amazon accepts a live registration.
 
 ## Security and scope boundaries
