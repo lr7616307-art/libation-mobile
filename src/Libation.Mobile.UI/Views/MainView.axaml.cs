@@ -768,18 +768,14 @@ public partial class MainView : UserControl
     }
 
     private void AddAccountClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        AddAccountSheetOverlay.IsVisible = true;
-    }
+        => _viewModel.OpenAddAccountSheet();
 
     private void CloseAddAccountSheetClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        AddAccountSheetOverlay.IsVisible = false;
-    }
+        => _viewModel.CloseAddAccountSheet();
 
     private void AudibleAddAccountClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        AddAccountSheetOverlay.IsVisible = false;
+        _viewModel.CloseAddAccountSheet();
         AudibleSignInClicked(sender, e);
     }
 
