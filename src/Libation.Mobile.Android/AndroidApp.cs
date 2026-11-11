@@ -30,8 +30,9 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         // Follow LibriSync's current Audible registration profile. This is a provider
         // registration choice and intentionally does not fabricate Android build details.
         var registrationClient = new AudiblePkceRegistrationClient(new HttpClient());
+        var tokenRefresher = new AudibleTokenRefreshClient(new HttpClient(), new SystemDateTime());
         var authenticator = new AudibleAccountAuthenticator(
-            snapshots, registrationClient, new SystemDateTime());
+            snapshots, registrationClient, tokenRefresher, new SystemDateTime());
         var connection = new AccountConnectionService(authenticator, new AccountSessionStore(secrets));
         var browser = new AndroidExternalBrowserLauncher(this);
 
