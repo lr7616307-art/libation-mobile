@@ -32,6 +32,17 @@ public sealed record Audiobook(
                 : "Availability not reported by Audible";
 
     [JsonIgnore]
+    public string AudibleAvailabilityShortLabel => !IsProviderCatalogueEntry
+        ? string.Empty
+        : IsDownloadedOnAudible == true ? "DOWNLOADED"
+        : IsPlayableOnAudible == true ? "↓ AVAILABLE"
+        : IsPlayableOnAudible == false ? "UNAVAILABLE"
+        : "STATUS UNKNOWN";
+
+    [JsonIgnore]
+    public bool HasNoCoverArt => string.IsNullOrWhiteSpace(CoverImagePath);
+
+    [JsonIgnore]
     public string DownloadActionLabel => IsProviderCatalogueEntry
         ? "Download in Audible app"
         : "Add to queue";
