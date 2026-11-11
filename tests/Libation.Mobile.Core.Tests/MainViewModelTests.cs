@@ -523,7 +523,7 @@ public sealed class MainViewModelTests
 
         var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
         Assert.False(book.CanQueueDownload);
-        Assert.Equal("Audible download unavailable", book.DownloadActionLabel);
+        Assert.Equal("Download in Audible app", book.DownloadActionLabel);
 
         await vm.EnqueueAsync(book.Id);
 
