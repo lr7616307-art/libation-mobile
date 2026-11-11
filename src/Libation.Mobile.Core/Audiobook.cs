@@ -64,17 +64,12 @@ public sealed record Audiobook(
     [JsonIgnore]
     public bool IsSelectedForBulkAction { get; init; }
 
-    /// <summary>Provider catalogue entries currently have no verified full-audiobook download source.</summary>
+    /// <summary>Provider catalogue entries are metadata-only in VØRATH; protected Audible audio is not downloaded here.</summary>
     [JsonIgnore]
     public bool IsProviderCatalogueEntry => Id.StartsWith("provider:", StringComparison.Ordinal);
 
     [JsonIgnore]
     public bool CanQueueDownload => !IsProviderCatalogueEntry;
-
-    [JsonIgnore]
-    public string DownloadActionLabel => IsProviderCatalogueEntry
-        ? "Audible download unavailable"
-        : "Add to queue";
 
     [JsonIgnore]
     public bool CanDelete => !string.Equals(Status, "Demo", StringComparison.Ordinal);
