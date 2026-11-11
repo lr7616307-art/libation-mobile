@@ -87,7 +87,7 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
                 if (disconnected)
                     throw new InvalidOperationException("The Audible session has been disconnected.");
 
-                if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
+                if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow.AddMinutes(30))
                     return (RefreshResult: (AudibleTokenRefreshResult?)null, Refreshed: false);
 
                 var refreshToken = identity.RefreshToken
