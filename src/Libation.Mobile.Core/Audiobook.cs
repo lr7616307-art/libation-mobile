@@ -18,6 +18,24 @@ public sealed record Audiobook(
     /// <summary>HTTPS cover-art URL supplied by the catalogue provider; local imported artwork remains separate.</summary>
     public string CoverImageUrl { get; init; } = string.Empty;
 
+    /// <summary>Provider-reported playability/download state. Null means the provider did not report it.</summary>
+    public bool? IsPlayableOnAudible { get; init; }
+    public bool? IsDownloadedOnAudible { get; init; }
+
+    [JsonIgnore]
+    public string AudibleAvailabilityLabel => !IsProviderCatalogueEntry
+        ? string.Empty
+        : IsPlayableOnAudible == true
+            ? (IsDownloadedOnAudible == true ? "Downloaded in Audible" : "Available in Audible")
+            : IsPlayableOnAudible == false
+                ? "Not currently playable in Audible"
+                : "Availability not reported by Audible";
+
+    [JsonIgnore]
+    public string DownloadActionLabel => IsProviderCatalogueEntry
+        ? "Download in Audible app"
+        : "Add to queue";
+
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>
     public IReadOnlyList<AudiobookChapter> Chapters { get; init; } = Array.Empty<AudiobookChapter>();
 
