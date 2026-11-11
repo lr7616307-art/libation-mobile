@@ -102,6 +102,7 @@ public partial class MainView : UserControl
         // service keeps running. Recreate its lightweight adapter on each load.
         _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
         await _viewModel.InitializeAsync();
+        UpdateAudibleAccountSummary();
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
 
@@ -723,7 +724,28 @@ public partial class MainView : UserControl
         => await _viewModel.ReloadAsync();
 
     private async void SyncLibraryClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => await _viewModel.SyncLibraryAsync();
+        => await SyncLibraryAndUpdateAccountAsync();
+
+    internal async Task SyncLibraryAndUpdateAccountAsync()
+    {
+        await _viewModel.SyncLibraryAsync();
+        UpdateAudibleAccountSummary();
+    }
+
+    private void UpdateAudibleAccountSummary()
+    {
+        var accountViewModel = PlatformSignInViewModelFactory?.Invoke();
+        accountViewModel?.UpdateLibrarySummary(
+            _viewModel.AudibleBooks.Count,
+            _viewModel.LastSuccessfulSync,
+            _viewModel.SyncStatus);
+    }
+
+    private void AudibleBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: Audiobook book })
+            _viewModel.OpenBookDetails(book.Id);
+    }
 
     private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.ProbeWidevine();
@@ -790,6 +812,7 @@ public partial class MainView : UserControl
             }
             var vm = PlatformSignInViewModelFactory();
             await vm.BeginSignInAsync();
+            UpdateAudibleAccountSummary();
             // BeginSignInAsync owns the final status (including the provider error).
             // Reloading here would overwrite a useful failure message with generic
             // "sign-in required" state when the account is not yet connected.
@@ -809,6 +832,7 @@ public partial class MainView : UserControl
             var vm = PlatformSignInViewModelFactory();
             await vm.DisconnectAsync();
             await vm.LoadStatusAsync();
+            UpdateAudibleAccountSummary();
             _viewModel.ReportAudioStatus(vm.Status);
         }
         catch (Exception ex)
