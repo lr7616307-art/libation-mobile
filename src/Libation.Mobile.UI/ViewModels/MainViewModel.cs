@@ -190,10 +190,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsChaptersVisible => _isChaptersVisible;
     public bool IsBookDetailsVisible => _isBookDetailsVisible;
     public Audiobook? DetailBook => _detailBook;
+    public bool IsDetailProviderBook => _detailBook?.IsProviderCatalogueEntry == true;
+    public bool IsDetailLocalBook => _detailBook is not null && !_detailBook.IsProviderCatalogueEntry;
+    public bool CanEditDetailBook => IsDetailLocalBook;
+    public string DetailAudibleAvailabilityLabel => IsDetailProviderBook
+        ? _detailBook!.AudibleAvailabilityLabel
+        : string.Empty;
     public string DetailBookDescription
     {
         get
         {
+            if (IsDetailProviderBook && string.IsNullOrWhiteSpace(_detailBook?.Description))
+                return "Audible did not include a description in the library response.";
             if (string.IsNullOrWhiteSpace(_detailBook?.Description))
                 return "No summary was embedded in this audiobook file.";
             var decoded = System.Net.WebUtility.HtmlDecode(_detailBook.Description);
@@ -201,9 +209,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return System.Text.RegularExpressions.Regex.Replace(plainText.Replace('\u00A0', ' '), @"\s+", " ").Trim();
         }
     }
-    public string DetailFileSizeLabel => _detailBook?.FileSizeBytes > 0 ? $"{_detailBook.FileSizeBytes / 1048576d:0.0} MB" : "File size unavailable";
+    public string DetailFileSizeLabel => IsDetailProviderBook
+        ? "Audio not downloaded to VØRATH"
+        : _detailBook?.FileSizeBytes > 0 ? $"{_detailBook.FileSizeBytes / 1048576d:0.0} MB" : "File size unavailable";
     public string DetailDurationLabel => string.IsNullOrWhiteSpace(_detailBook?.Length) ? "Duration unavailable" : _detailBook.Length;
-    public string DetailChapterLabel => $"{_detailBook?.Chapters.Count ?? 0} chapters";
+    public string DetailChapterLabel => IsDetailProviderBook
+        ? "Not synced"
+        : $"{_detailBook?.Chapters.Count ?? 0} chapters";
     public bool HasDetailBookChapters => (_detailBook?.Chapters.Count ?? 0) > 0;
     public bool HasNoDetailBookChapters => !HasDetailBookChapters;
     public int AllCount => LocalAudioBooks.Count;
@@ -233,7 +245,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     public void OpenBookDetails(string audiobookId)
     {
-        _detailBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId && !book.Id.StartsWith("provider:", StringComparison.Ordinal));
+        _detailBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
         if (_detailBook is null) return;
         _isBookDetailsVisible = true;
         _isBookMenuVisible = false;
@@ -243,6 +255,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsInfoVisible));
         OnPropertyChanged(nameof(DetailBook));
         OnPropertyChanged(nameof(IsBookDetailsVisible));
+        OnPropertyChanged(nameof(IsDetailProviderBook));
+        OnPropertyChanged(nameof(IsDetailLocalBook));
+        OnPropertyChanged(nameof(CanEditDetailBook));
+        OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
         OnPropertyChanged(nameof(DetailBookDescription));
         OnPropertyChanged(nameof(DetailFileSizeLabel));
         OnPropertyChanged(nameof(DetailDurationLabel));
@@ -258,7 +274,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     public void BeginDetailBookEdit()
     {
-        if (_detailBook is null) return;
+        if (_detailBook is null || _detailBook.IsProviderCatalogueEntry) return;
         BeginEdit(_detailBook.Id);
         if (IsEditing) { _isBookDetailsVisible = false; _isEditVisible = true; RaiseNavigationState(); OnPropertyChanged(nameof(IsEditVisible)); }
     }
@@ -699,7 +715,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void BeginEdit(string audiobookId)
     {
         var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
-        if (book is null || !book.CanDelete) return;
+        if (book is null || !book.CanDelete || book.IsProviderCatalogueEntry) return;
         _editingBookId = book.Id;
         NewTitle = book.Title;
         NewAuthor = book.Author;
