@@ -44,9 +44,8 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             amazonDomain = amazonDomain[4..];
         if (!amazonDomain.StartsWith("amazon.", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("The OAuth authorization host is not an Amazon marketplace.");
-        if (!challenge.CallbackUri.Host.StartsWith("www.amazon.", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(challenge.CallbackUri.Host, challenge.AuthorizationUri.Host, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("The OAuth callback is not the matching Amazon marketplace.");
+        if (!AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
+            throw new InvalidOperationException("The OAuth callback is not the selected Audible marketplace.");
         if (challenge.DeviceSerial.Length != 20 || challenge.DeviceSerial.Any(c => !Uri.IsHexDigit(c)))
             throw new InvalidOperationException("The Android device serial must be 20 hexadecimal characters.");
 
