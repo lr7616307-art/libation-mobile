@@ -425,8 +425,8 @@
       </Border>
     </Border>
 
-    <Grid x:Name="AddAccountSheetOverlay" Grid.RowSpan="3" IsVisible="False"
-          Background="#99000000" ZIndex="29">
+    <Border x:Name="AddAccountSheetOverlay" Grid.Row="0" IsVisible="False"
+            Background="#99000000" ZIndex="31">
       <Border VerticalAlignment="Bottom" Background="#242A35" CornerRadius="26,26,0,0"
               Padding="24,28,24,30" BorderBrush="#343B49" BorderThickness="1,1,0,0">
         <StackPanel Spacing="14">
@@ -486,7 +486,7 @@
           </Border>
         </StackPanel>
       </Border>
-    </Grid>
+    </Border>
 
     <Border Grid.Row="2" HorizontalAlignment="Stretch" Background="#0B0911"
             BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="4,2">
