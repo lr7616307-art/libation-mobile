@@ -47,9 +47,9 @@ jobs:
           from zipfile import ZipFile
 
           root = Path("src/Libation.Mobile.Android/bin/Release/net10.0-android36.0")
-          apks = sorted(root.rglob("*-Signed.apk"))
+          apks = sorted(root.rglob("publish/*-Signed.apk"))
           if len(apks) != 2:
-              raise SystemExit(f"Expected exactly 2 signed APKs, found {len(apks)}: {apks}")
+              raise SystemExit(f"Expected exactly 2 signed publish APKs, found {len(apks)}: {apks}")
 
           expected = {"armeabi-v7a", "arm64-v8a"}
           found = set()
@@ -71,5 +71,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: libation-mobile-ABI-specific
-          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/**/*-Signed.apk
+          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/**/publish/*-Signed.apk
           if-no-files-found: error
