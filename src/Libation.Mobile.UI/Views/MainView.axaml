@@ -224,17 +224,33 @@
             <ItemsControl ItemsSource="{Binding AudibleBooks}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Border CornerRadius="16" Padding="12" Margin="0,0,0,8" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-                    <Grid ColumnDefinitions="78,*,Auto">
-                      <Image Grid.Column="0" Width="68" Height="92" Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
-                      <StackPanel Grid.Column="1" Margin="12,0" Spacing="3">
-                        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.7"/>
-                        <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
-                      </StackPanel>
-                      <TextBlock Grid.Column="2" Text="AUDIBLE" FontSize="9" LetterSpacing="1" Foreground="#B9A5E8" VerticalAlignment="Center"/>
-                    </Grid>
-                  </Border>
+                  <Button Background="Transparent" BorderThickness="0" Padding="0"
+                          HorizontalAlignment="Stretch" Click="AudibleBookClicked">
+                    <Border CornerRadius="16" Padding="12" Margin="0,0,0,8" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+                      <Grid ColumnDefinitions="78,*,Auto">
+                        <Border Grid.Column="0" Width="68" Height="92" CornerRadius="8" ClipToBounds="True" Background="#292238">
+                          <Grid>
+                            <Image Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                            <TextBlock Text="◉" FontSize="28" Foreground="#B9A5E8"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       IsVisible="{Binding HasNoCoverArt}"/>
+                          </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="12,0" Spacing="3" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
+                          <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.78"/>
+                          <TextBlock Text="{Binding Narrator}" FontSize="11" Opacity="0.68"
+                                     IsVisible="{Binding Narrator, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                          <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
+                          <TextBlock Text="↓" FontSize="22" Foreground="#B9A5E8" HorizontalAlignment="Center"/>
+                          <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" FontSize="8" LetterSpacing="0.5"
+                                     Foreground="#B9A5E8" TextAlignment="Center" TextWrapping="Wrap"/>
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
@@ -242,18 +258,6 @@
 
           <StackPanel IsVisible="{Binding IsAudibleAccountTab}" Spacing="16">
             <TextBlock Text="Accounts" FontSize="30" FontWeight="Bold"/>
-            <Border CornerRadius="18" Padding="20" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="14" HorizontalAlignment="Stretch">
-                <TextBlock Text="♙" FontSize="54" Foreground="#9CA3AF" HorizontalAlignment="Center" Margin="0,28,0,8"/>
-                <TextBlock Text="No accounts yet" FontSize="21" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                <TextBlock Text="Connect an audiobook source to sync and download your library." FontSize="13" Opacity="0.7" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                <Button Content="Add Account" Click="AddAccountClicked" MinHeight="56" FontSize="17" Background="#174B55" HorizontalAlignment="Stretch"/>
-                <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap" FontSize="12" Opacity="0.7" Margin="0,10,0,0"/>
-                <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="11" Opacity="0.55"/>
-                <Button Content="Disconnect this session" Click="AudibleDisconnectClicked"/>
-                <Button Content="Sync Audible library" Click="SyncLibraryClicked" IsEnabled="{Binding CanSync}"/>
-              </StackPanel>
-            </Border>
           </StackPanel>
 
           <StackPanel IsVisible="{Binding IsSettingsTab}" Spacing="16">
