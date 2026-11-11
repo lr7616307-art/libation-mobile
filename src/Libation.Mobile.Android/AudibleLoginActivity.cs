@@ -133,7 +133,6 @@ public sealed class AudibleLoginActivity : Activity
             || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var parameters = System.Web.HttpUtility.ParseQueryString(uri.Query);
         return AudibleOAuthFlow.HasAuthorizationResponse(uri);
     }
 
@@ -222,7 +221,6 @@ public sealed class AudibleLoginActivity : Activity
                 || !string.Equals(uri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            var parameters = System.Web.HttpUtility.ParseQueryString(uri.Query);
             if (!AudibleOAuthFlow.HasAuthorizationResponse(uri))
                 return false;
 
