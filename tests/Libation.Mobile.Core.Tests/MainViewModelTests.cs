@@ -7,6 +7,36 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public void AddAccountSheet_UsesViewModelStateAndRaisesNotifications()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        var notifications = new List<string?>();
+        vm.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+
+        vm.OpenAddAccountSheet();
+        Assert.True(vm.IsAddAccountSheetVisible);
+        Assert.Contains(nameof(vm.IsAddAccountSheetVisible), notifications);
+
+        vm.CloseAddAccountSheet();
+        Assert.False(vm.IsAddAccountSheetVisible);
+        Assert.Equal(2, notifications.Count(name => name == nameof(vm.IsAddAccountSheetVisible)));
+    }
+
+    [Fact]
+    public void SystemBack_ClosesAccountSheetBeforeLeavingAccountTab()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        vm.SelectTab(2);
+        vm.OpenAddAccountSheet();
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsAddAccountSheetVisible);
+        Assert.True(vm.IsAudibleAccountTab);
+    }
+
+    [Fact]
     public void ProbeWidevine_UsesPlatformDiagnosticAndRaisesNotification()
     {
         using var directory = new TemporaryDirectory();
