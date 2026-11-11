@@ -55,7 +55,7 @@ public sealed class AudiblePkceRegistrationClientTests
 
         var snapshot = await client.RegisterAsync(challenge, "authorization-code", CreateProfile());
 
-        Assert.Equal("in", snapshot.LocaleName);
+        Assert.Equal(AudibleApi.Localization.Get("in").Name, snapshot.LocaleName);
         Assert.Equal("Atna|test-access", snapshot.AccessToken);
         Assert.Equal("Atnr|test-refresh", snapshot.RefreshToken);
         Assert.Equal(privateKey, snapshot.PrivateKey);
