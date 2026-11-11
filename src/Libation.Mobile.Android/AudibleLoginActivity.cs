@@ -14,7 +14,6 @@ public sealed class AudibleLoginActivity : Activity
     internal const string ExpectedHostExtra = "audible.expected_host";
     private WebView? _webView;
     private string _expectedHost = string.Empty;
-    private string _callbackUrl = string.Empty;
     private bool _finished;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -108,8 +107,18 @@ public sealed class AudibleLoginActivity : Activity
     private void HandleCallbackProbe(string? encodedUrl)
     {
         if (_finished || string.IsNullOrWhiteSpace(encodedUrl)) return;
-        var url = encodedUrl.Trim('"').Replace("\\\\u0026", "&", StringComparison.Ordinal)
-            .Replace("\\\\/", "/", StringComparison.Ordinal);
+        string url;
+        try
+        {
+            // EvaluateJavascript returns a JSON-encoded JavaScript string. Decode
+            // it as JSON so escaped query delimiters cannot hide the OAuth code.
+            url = System.Text.Json.JsonSerializer.Deserialize<string>(encodedUrl)
+                ?? string.Empty;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            url = encodedUrl.Trim('"');
+        }
         if (!TryValidateCallback(url)) return;
         FinishLogin(url);
     }
@@ -125,7 +134,7 @@ public sealed class AudibleLoginActivity : Activity
             return false;
 
         var parameters = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        return !string.IsNullOrWhiteSpace(parameters["openid.oa2.authorization_code"]);
+        return AudibleOAuthFlow.HasAuthorizationResponse(uri);
     }
 
     private static bool HostsMatch(string actual, string expected)
@@ -214,7 +223,7 @@ public sealed class AudibleLoginActivity : Activity
                 return false;
 
             var parameters = System.Web.HttpUtility.ParseQueryString(uri.Query);
-            if (string.IsNullOrWhiteSpace(parameters["openid.oa2.authorization_code"]))
+            if (!AudibleOAuthFlow.HasAuthorizationResponse(uri))
                 return false;
 
             completed(url);
