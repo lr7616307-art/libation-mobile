@@ -795,11 +795,11 @@ public partial class MainView : UserControl
             var vm = PlatformSignInViewModelFactory();
             await vm.BeginSignInAsync();
             await vm.LoadStatusAsync();
-            _viewModel.ReportAudioStatus(vm.ConnectionStatusLabel + ". " + vm.Status);
+            _viewModel.ReportSyncStatus(vm.ConnectionStatusLabel + ". " + vm.Status);
         }
         catch (Exception ex)
         {
-            _viewModel.ReportAudioStatus($"Audible sign-in failed ({ex.GetType().Name}).");
+            _viewModel.ReportSyncStatus($"Audible sign-in failed: {ex.Message}");
         }
     }
 
