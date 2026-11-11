@@ -13,6 +13,7 @@ namespace Libation.Mobile.Audible;
 public sealed class AudibleAccountAuthenticator(
     AudibleIdentitySnapshotStore snapshotStore,
     AudiblePkceRegistrationClient registrationClient,
+    IAudibleTokenRefresher tokenRefresher,
     ISystemDateTime systemDateTime) : IAccountAuthenticator
 {
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromMinutes(10);
@@ -122,7 +123,7 @@ public sealed class AudibleAccountAuthenticator(
         var identity = AudibleIdentitySnapshotMapper.Restore(snapshot);
         var maintainer = new AudibleIdentityMaintainer(
             identity,
-            new Authorize(identity.Locale),
+            tokenRefresher,
             systemDateTime,
             snapshotStore);
 
