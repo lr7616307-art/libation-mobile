@@ -91,9 +91,9 @@ public sealed class AudibleMarketplaceActivity : Activity
         };
         button.SetAllCaps(false);
         button.SetMinimumHeight(68);
-        button.SetTextSize(Android.Util.ComplexUnitType.Sp, 15);
+        button.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 15);
         button.SetTextColor(Color.Rgb(225, 225, 232));
-        button.SetBackgroundTintList(Android.Content.Res.ColorStateList.ValueOf(Color.Rgb(43, 49, 63)));
+        button.SetBackgroundColor(Color.Rgb(43, 49, 63));
         var margin = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent)
         { BottomMargin = 8 };
