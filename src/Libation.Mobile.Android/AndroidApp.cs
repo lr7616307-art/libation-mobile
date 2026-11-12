@@ -52,10 +52,10 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         var audibleDownloadDirectory = Path.Combine(
             global::System.Environment.GetFolderPath(global::System.Environment.SpecialFolder.LocalApplicationData),
             "audible-downloads");
-        MainView.PlatformAudibleDownloadSourceFactory = async cancellationToken =>
+        MainView.PlatformAudibleDownloadSourceFactory = async (quality, cancellationToken) =>
         {
             var source = await AudibleAudioDownloadSource.FromSavedIdentityAsync(
-                snapshots, audibleDownloadDirectory, cancellationToken);
+                snapshots, audibleDownloadDirectory, quality, cancellationToken);
             return (IAuthorizedAudioDownloadSource?)source;
         };
         MainView.PlatformLocalAudioPlayerFactory = () => new AndroidLocalAudioPlayer();

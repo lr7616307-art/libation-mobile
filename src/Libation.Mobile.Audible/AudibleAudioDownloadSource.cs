@@ -20,11 +20,17 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
     private readonly Func<string, CancellationToken, Task<ContentLicense>> _requestLicense;
     private readonly string _downloadDirectory;
 
-    public AudibleAudioDownloadSource(Api api, string downloadDirectory)
+    public AudibleAudioDownloadSource(
+        Api api,
+        string downloadDirectory,
+        AudibleDownloadQuality quality = AudibleDownloadQuality.High)
     {
         ArgumentNullException.ThrowIfNull(api);
+        var apiQuality = quality == AudibleDownloadQuality.Normal
+            ? DownloadQuality.Normal
+            : DownloadQuality.High;
         _requestLicense = (asin, _) => api.GetDownloadLicenseAsync(
-            asin, DownloadQuality.High, ChapterTitlesType.Tree, DrmType.Adrm);
+            asin, apiQuality, ChapterTitlesType.Tree, DrmType.Adrm);
         ArgumentException.ThrowIfNullOrWhiteSpace(downloadDirectory);
         _downloadDirectory = Path.GetFullPath(downloadDirectory);
     }
@@ -36,6 +42,7 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
     public static async Task<AudibleAudioDownloadSource?> FromSavedIdentityAsync(
         AudibleIdentitySnapshotStore snapshotStore,
         string downloadDirectory,
+        AudibleDownloadQuality quality = AudibleDownloadQuality.High,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(snapshotStore);
@@ -43,7 +50,7 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         var api = await new AudibleApiSessionFactory(snapshotStore)
             .CreateFromSavedIdentityAsync(cancellationToken)
             .ConfigureAwait(false);
-        return api is null ? null : new AudibleAudioDownloadSource(api, downloadDirectory);
+        return api is null ? null : new AudibleAudioDownloadSource(api, downloadDirectory, quality);
     }
 
     public async Task<AuthorizedAudioDownload> ResolveAsync(

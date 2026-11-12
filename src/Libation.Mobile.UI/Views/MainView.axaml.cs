@@ -66,7 +66,7 @@ public partial class MainView : UserControl
             ordinaryDownloadSource,
             cancellationToken => PlatformAudibleDownloadSourceFactory is null
                 ? Task.FromResult<IAuthorizedAudioDownloadSource?>(null)
-                : PlatformAudibleDownloadSourceFactory(cancellationToken));
+                : PlatformAudibleDownloadSourceFactory(_viewModel.CurrentDownloadSettings.AudibleQuality, cancellationToken));
         _downloadWorker = new DownloadQueueWorker(
             queue,
             new AudioFileDownloader(new HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
@@ -1190,6 +1190,19 @@ public partial class MainView : UserControl
         {
             System.Diagnostics.Debug.WriteLine($"Download organization preference save failed: {ex}");
             _viewModel.ReportDownloadSettingsStatus("Could not save the file organization preference.");
+        }
+    }
+
+    private async void CycleAudibleDownloadQualityClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            await _viewModel.CycleAudibleDownloadQualityAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Audible download quality preference save failed: {ex}");
+            _viewModel.ReportDownloadSettingsStatus("Could not save the Audible download quality preference.");
         }
     }
 

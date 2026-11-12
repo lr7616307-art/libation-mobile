@@ -91,6 +91,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public DownloadSettings CurrentDownloadSettings => _downloadSettings;
     public string DownloadDirectoryLabel => _downloadSettings.DirectoryLabel;
     public string DownloadFolderOrganizationLabel => _downloadSettings.FolderOrganizationLabel;
+    public string AudibleDownloadQualityLabel => _downloadSettings.AudibleQuality == AudibleDownloadQuality.High
+        ? "High quality"
+        : "Normal quality";
     public string DownloadFolderOrganizationExample => _downloadSettings.FolderOrganizationExample;
     public bool HasSelectedDownloadDirectory => _downloadSettings.HasSelectedDirectory;
     public string DownloadSettingsStatus
@@ -133,6 +136,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         DownloadSettingsStatus = "File organization preference saved.";
     }
 
+    public async Task CycleAudibleDownloadQualityAsync(CancellationToken cancellationToken = default)
+    {
+        var next = _downloadSettings.AudibleQuality == AudibleDownloadQuality.High
+            ? AudibleDownloadQuality.Normal
+            : AudibleDownloadQuality.High;
+        _downloadSettings = (_downloadSettings with { AudibleQuality = next }).Normalize();
+        if (_downloadSettingsStore is not null)
+            await _downloadSettingsStore.SaveAsync(_downloadSettings, cancellationToken);
+        RaiseDownloadSettingsChanged();
+        DownloadSettingsStatus = $"Audible download quality set to {AudibleDownloadQualityLabel.ToLowerInvariant()}. Applies to all new Audible downloads.";
+    }
+
     public void ReportDownloadSettingsStatus(string message) => DownloadSettingsStatus = message;
 
     private async Task LoadDownloadSettingsAsync(CancellationToken cancellationToken)
@@ -155,6 +170,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CurrentDownloadSettings));
         OnPropertyChanged(nameof(DownloadDirectoryLabel));
         OnPropertyChanged(nameof(DownloadFolderOrganizationLabel));
+        OnPropertyChanged(nameof(AudibleDownloadQualityLabel));
         OnPropertyChanged(nameof(DownloadFolderOrganizationExample));
         OnPropertyChanged(nameof(HasSelectedDownloadDirectory));
     }
