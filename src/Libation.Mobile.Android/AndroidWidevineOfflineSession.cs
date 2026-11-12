@@ -82,7 +82,7 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
             OfflineKeyRequestType,
             optionalParameters: null);
 
-        var challenge = keyRequest.Data;
+        var challenge = keyRequest.GetData();
         if (challenge is null || challenge.Length == 0)
             throw new InvalidDataException(
                 "Android MediaDrm returned an empty Widevine key request.");
