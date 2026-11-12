@@ -8,7 +8,11 @@ using Android.Graphics;
 
 namespace Libation.Mobile.Android;
 
-[Activity(Exported = false, Label = "Audible sign-in", Theme = "@android:style/Theme.Material.NoActionBar")]
+[Activity(
+    Exported = false,
+    Label = "Audible sign-in",
+    Theme = "@android:style/Theme.Material.NoActionBar",
+    ConfigurationChanges = global::Android.Content.PM.ConfigChanges.Orientation | global::Android.Content.PM.ConfigChanges.ScreenSize)]
 public sealed class AudibleLoginActivity : Activity
 {
     internal const string AuthorizationUrlExtra = "audible.authorization_url";
