@@ -230,6 +230,10 @@
                     <TextBlock Text="{Binding DetailProtectedDownloadLabel}"
                                IsVisible="{Binding HasProtectedDetailDownload}"
                                FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
+                    <Button Content="Remove offline copy"
+                            IsVisible="{Binding DetailBook.IsWidevineOfflineAvailable}"
+                            HorizontalAlignment="Stretch"
+                            Click="RemoveAudibleOfflineBookClicked"/>
                   </StackPanel>
                 </Border>
                 <Border CornerRadius="12" Padding="12" Background="#211A2D"
