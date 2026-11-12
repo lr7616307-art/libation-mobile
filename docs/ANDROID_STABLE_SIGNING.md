@@ -47,9 +47,11 @@ Do not add these as ordinary repository variables; they must be Actions **secret
 
 ## 4. Build a persistent-signed APK
 
-After all four secrets are saved, run the **Android APK** workflow with the `workflow_dispatch` event and select the branch containing this workflow. GitHub only offers manual dispatch for a workflow that is present on the repository's default branch; therefore, this manual release path becomes available after the workflow change is merged into the default branch. Do not assume that a PR branch's edited workflow is already the workflow GitHub is running for that PR.
+This workflow listens for pushes to `fix/pass-5-current-librisync-iphone-profile`. On a feature-branch push it always runs core tests and both ABI compile checks. The release job also starts, but it checks for the four signing secrets first and safely skips APK publishing when they are not configured. This keeps ordinary PR/feature-branch checks green without creating installable APKs signed by temporary keys.
 
-Pull requests and pushes to the Pass 5 feature branch perform compile/test checks only. They do not publish installable APKs. The release workflow validates the keystore, builds ARMv7 and ARM64 APKs with the same key, checks their signing-certificate fingerprints, and assigns an increasing Android version code. Download the artifact named `VORATH-StableSigned-ABI-specific`.
+After all four secrets are saved, a new push to that feature branch triggers stable APK publishing automatically. The release workflow validates the keystore, builds ARMv7 and ARM64 APKs with the same key, checks their signing-certificate fingerprints, and assigns an increasing Android version code. Download the artifact named `VORATH-StableSigned-ABI-specific`.
+
+Manual `workflow_dispatch` is an alternative once this workflow exists on the repository's default branch; GitHub does not offer manual dispatch for a workflow file that exists only on a non-default branch.
 
 For the Redmi 9i, use the **ARMv7 / armeabi-v7a** APK. Keep the keystore backup safe for the lifetime of this app.
 
