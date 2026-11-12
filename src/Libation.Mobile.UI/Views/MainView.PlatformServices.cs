@@ -4,8 +4,18 @@ using Libation.Mobile.UI.ViewModels;
 
 namespace Libation.Mobile.UI.Views;
 
+public interface IAudibleWidevinePlaybackCoordinator
+{
+    Task AcquireOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
+    Task PlayAsync(string asin, string title, long startPositionMilliseconds = 0, CancellationToken cancellationToken = default);
+    Task RemoveOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
+}
+
 public partial class MainView
 {
+    /// <summary>Creates an authorized Widevine offline-licence/playback coordinator on demand.</summary>
+    public static Func<CancellationToken, Task<IAudibleWidevinePlaybackCoordinator?>>? PlatformWidevinePlaybackCoordinatorFactory { get; set; }
+
     /// <summary>Set by the platform host before Avalonia creates the main view.</summary>
     public static Func<AudibleSignInViewModel>? PlatformSignInViewModelFactory { get; set; }
 
