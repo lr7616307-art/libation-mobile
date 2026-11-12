@@ -121,6 +121,16 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Delete the renewal reference with the corresponding offline licence/cache metadata during title removal or account disconnect.
 - Add tests for ACR/file-version extraction, per-account/title storage isolation, missing/incomplete metadata, and removal cleanup.
 - This is renewal groundwork only. It does not yet create a Widevine renewal challenge, call `/1.0/content-license-refresh`, interpret provider renewal denials, or replace an existing key set. The endpoint is community-documented, not an official public API contract; production renewal remains disabled pending account/title-specific validation.
+## Pass 20 — provider refresh and Android DRM exchange primitives
+
+- Add a typed Audible refresh-envelope builder for the observed `POST /1.0/content-license-refresh` contract. It sends one title's ASIN, ACR, string-serialized file version, `drm_type=Widevine`, and the Base64 opaque MediaDrm challenge under `license_refresh_requests`, with `tenant_id=Audible`.
+- Add an authenticated request method through AudibleApi's ADP/bearer-authenticated transport. The challenge-bearing body is not included in diagnostics; HTTP errors expose only the status code.
+- Parse the per-title `license_refresh_responses` element, preserving status code, error text, opaque licence value and metadata strings verbatim. HTTP 200 is not interpreted as a successful per-title grant; duplicate/missing ASIN matches, malformed JSON and oversized responses fail closed.
+- Add tests for exact request fields, Base64 challenge transport, granted and denied per-title responses, duplicate/missing title responses, invalid metadata and cancellation.
+- Add Android MediaDrm primitives to create a renewal challenge by restoring the saved key set and requesting an offline key update, and to accept the returned offline response into the active session.
+- Add Android MediaDrm release primitives using `KEY_TYPE_RELEASE`, the stored key-set ID as request/response scope, and the provider response. Android marks the key set RELEASED when the release challenge is generated; it is unusable until the provider response is accepted.
+- These primitives are deliberately not wired to automatic renewal, playback fallback, title removal or account disconnect. The renewal response has not yet been proven to create a replacement key-set ID for Audible, and the community-observed refresh endpoint has not been proven to accept Android's release challenge. Never remove the old key-set record/cache or clear account state merely because an HTTP 200 response was received.
+- Android's release flow requires a provider response to `provideKeyResponse(keySetId, response)`; direct `removeOfflineLicense` remains only the exceptional local cleanup path. See the Android API reference and the community-observed Audible refresh schema.
 ## Remaining implementation — not yet verified
 
 1. Implement and validate Audible's server-confirmed KEY_TYPE_RELEASE exchange and documented licence renewal/revocation semantics before claiming provider-side licence release.
