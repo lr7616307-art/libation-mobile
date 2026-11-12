@@ -132,6 +132,8 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             await keySetStore.SaveAsync(accountId, asin, keySetId, cancellationToken)
                 .ConfigureAwait(false);
             persisted = true;
+            await keySetStore.SaveProviderLicenseReferenceAsync(
+                accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
