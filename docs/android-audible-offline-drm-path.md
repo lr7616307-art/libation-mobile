@@ -77,10 +77,10 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Reconcile stale index entries against the actual cache and recover orphan cache keys for safe later deletion. Incomplete/missing ranges invalidate the completion marker and block offline playback until retried.
 ## Remaining implementation — not yet verified
 
-1. Add an explicit user-facing cancel action and progress state for an in-flight Audible licence/download operation. The underlying downloader already observes cancellation, but the current detail-page flow does not yet expose a cancel control.
-2. Add a startup cache-integrity audit that validates the selected DASH representation's initialization/index/media resources and reconciles stale index entries after interrupted downloads.
+1. Add a startup/library-refresh audit so missing or partial offline resources are identified before a title is presented as ready, not only when the user opens or plays it.
+2. Add focused automated tests for cache-range completion, stale-index reconciliation and interrupted-download retry behavior.
 3. Add licence expiry/renewal and provider release/revocation handling, plus cleanup when an Audible account is disconnected or loses access.
-4. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, challenge/response compatibility, persistent key-set validity, DASH segment completion, offline playback with network disabled, app restart, removal/release and reinstall behavior.
+4. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, challenge/response compatibility, persistent key-set validity, DASH segment completion, offline playback with network disabled, cancellation/retry, app restart, removal/release and reinstall behavior.
 
 ## Android 10 / device constraints
 
