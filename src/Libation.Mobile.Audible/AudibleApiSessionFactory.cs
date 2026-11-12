@@ -36,6 +36,9 @@ public sealed class AudibleApiSessionFactory
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Capture before reading the snapshot. A login or disconnect racing with
+        // restore makes this API session stale instead of binding it to a new account.
+        var identityGeneration = snapshotStore.LifecycleCoordinator.CurrentGeneration;
         var snapshot = await snapshotStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
             return null;
@@ -47,7 +50,8 @@ public sealed class AudibleApiSessionFactory
             identity,
             tokenRefresher,
             systemDateTime,
-            snapshotStore);
+            snapshotStore,
+            identityGeneration: identityGeneration);
 
         return new Api(maintainer);
     }
