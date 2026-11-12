@@ -47,9 +47,9 @@ Do not add these as ordinary repository variables; they must be Actions **secret
 
 ## 4. Build a persistent-signed APK
 
-After all four secrets are saved, open **Actions → Android APK → Run workflow** and select branch `fix/pass-5-current-librisync-iphone-profile`.
+After all four secrets are saved, run the **Android APK** workflow with the `workflow_dispatch` event and select the branch containing this workflow. GitHub only offers manual dispatch for a workflow that is present on the repository's default branch; therefore, this manual release path becomes available after the workflow change is merged into the default branch. Do not assume that a PR branch's edited workflow is already the workflow GitHub is running for that PR.
 
-The workflow validates the keystore, builds ARMv7 and ARM64 APKs with the same key, checks their signing-certificate fingerprints, and assigns an increasing Android version code. Download the artifact named `VORATH-StableSigned-ABI-specific`.
+Pull requests and pushes to the Pass 5 feature branch perform compile/test checks only. They do not publish installable APKs. The release workflow validates the keystore, builds ARMv7 and ARM64 APKs with the same key, checks their signing-certificate fingerprints, and assigns an increasing Android version code. Download the artifact named `VORATH-StableSigned-ABI-specific`.
 
 For the Redmi 9i, use the **ARMv7 / armeabi-v7a** APK. Keep the keystore backup safe for the lifetime of this app.
 
