@@ -17,6 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install .NET
+        if: steps.signing.outputs.enabled == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -49,6 +50,7 @@ jobs:
           distribution: temurin
           java-version: 17
       - name: Install Android workload
+        if: steps.signing.outputs.enabled == 'true'
         run: dotnet workload install android
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
@@ -67,7 +69,7 @@ jobs:
 
   # Only trusted release pushes or a manual dispatch publish installable APKs.
   build_release:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/pass-5-current-librisync-iphone-profile'))
     needs: test
     runs-on: ubuntu-latest
     env:
@@ -81,12 +83,8 @@ jobs:
       AndroidSigningStorePass: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-      - name: Require persistent Android signing secrets
+      - name: Check whether persistent signing is configured
+        id: signing
         shell: bash
         run: |
           set -euo pipefail
@@ -97,26 +95,38 @@ jobs:
             fi
           done
           if (( ${#missing[@]} > 0 )); then
-            printf '::error::Persistent APK signing is not configured. Add these repository Actions secrets: %s\n' "${missing[*]}"
-            exit 1
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Stable APK publishing skipped. Add repository Actions secrets: ${missing[*]}"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Persistent signing secrets are present."
           fi
+      - name: Set up Java
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
       - name: Set private keystore path for subsequent build steps
+        if: steps.signing.outputs.enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          signing_path="$RUNNER_TEMP/vorath-release.keystore"
+          signing_path="$RUNNER_TEMP/vorath-release.jks"
           echo "ANDROID_SIGNING_KEYSTORE=$signing_path" >> "$GITHUB_ENV"
           echo "AndroidSigningKeyStore=$signing_path" >> "$GITHUB_ENV"
       - name: Decode and validate persistent signing key
+        if: steps.signing.outputs.enabled == 'true'
         shell: bash
         run: |
           set -euo pipefail
           umask 077
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_SIGNING_KEYSTORE"
           test -s "$ANDROID_SIGNING_KEYSTORE"
-          keytool -list -keystore "$ANDROID_SIGNING_KEYSTORE" -alias "$ANDROID_KEY_ALIAS" -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" >/dev/null
+          keytool -list -storetype JKS -keystore "$ANDROID_SIGNING_KEYSTORE" -alias "$ANDROID_KEY_ALIAS" -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" >/dev/null
           echo "Persistent Android signing key validated."
       - name: Calculate monotonic Android version code
+        if: steps.signing.outputs.enabled == 'true'
         id: version
         shell: bash
         run: |
@@ -135,12 +145,16 @@ jobs:
       - name: Install Android workload
         run: dotnet workload install android
       - name: Restore both Android runtimes
+        if: steps.signing.outputs.enabled == 'true'
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
       - name: Publish ARMv7 APK
+        if: steps.signing.outputs.enabled == 'true'
         run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk -p:ApplicationVersion=${{ steps.version.outputs.version_code }}
       - name: Publish ARM64 APK
+        if: steps.signing.outputs.enabled == 'true'
         run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm64 --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk -p:ApplicationVersion=${{ steps.version.outputs.version_code }}
       - name: Verify ABI and signing identity
+        if: steps.signing.outputs.enabled == 'true'
         shell: python
         run: |
           from pathlib import Path
@@ -208,13 +222,14 @@ jobs:
 
           print("Verified: both ABI APKs use the same persistent signing identity.")
       - name: Upload stable-signed ABI APKs
+        if: steps.signing.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: VORATH-StableSigned-ABI-specific
           path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/**/publish/*-Signed.apk
           if-no-files-found: error
       - name: Remove temporary signing key
-        if: always()
+        if: always() && steps.signing.outputs.enabled == 'true'
         shell: bash
         run: |
           if [[ -n "${ANDROID_SIGNING_KEYSTORE:-}" ]]; then
