@@ -166,6 +166,7 @@ public sealed class MainViewModelTests
 
         await vm.InitializeAsync();
         await vm.SyncLibraryAsync();
+        vm.SelectTab(1);
         vm.AudibleSearchText = "Ikigai";
         var book = Assert.Single(vm.AudibleBooks);
 
