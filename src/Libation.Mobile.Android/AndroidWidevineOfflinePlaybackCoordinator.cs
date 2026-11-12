@@ -46,9 +46,9 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         string asin,
         CancellationToken cancellationToken = default)
     {
-        var isComplete = await keySetStore.IsDashDownloadCompleteAsync(accountId, asin, cancellationToken)
+        var hasCompletionMarker = await keySetStore.IsDashDownloadCompleteAsync(accountId, asin, cancellationToken)
             .ConfigureAwait(false);
-        if (!isComplete)
+        if (!hasCompletionMarker)
             return false;
 
         var reference = await keySetStore.LoadDashManifestAsync(accountId, asin, cancellationToken)
@@ -57,14 +57,14 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             return false;
 
         var offlineStore = new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context);
-        var isComplete = await offlineStore.HasCachedResourcesAsync(accountId, asin, cancellationToken)
+        var hasCachedResources = await offlineStore.HasCachedResourcesAsync(accountId, asin, cancellationToken)
             .ConfigureAwait(false);
-        if (!isComplete)
+        if (!hasCachedResources)
         {
             await keySetStore.InvalidateDashDownloadCompleteAsync(accountId, asin, cancellationToken)
                 .ConfigureAwait(false);
         }
-        return isComplete;
+        return hasCachedResources;
     }
 
     /// <summary>
