@@ -21,6 +21,7 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
     private const int MaximumAccountTitles = 5000;
     private const string ManifestStorageKeySuffix = "_dash_manifest_v1";
     private const string ManifestCompleteStorageKeySuffix = "_dash_manifest_complete_v1";
+    private const string ProviderReferenceStorageKeySuffix = "_provider_license_reference_v1";
     private static readonly Regex AsinPattern = new(
         "^[A-Za-z0-9]{10}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -183,6 +184,82 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         return new AudibleWidevineOfflineMediaReference(manifestUri, streamKeys);
     }
 
+    /// <summary>
+    /// Persists the minimum Audible content-reference values required by the
+    /// documented licence-refresh request. These identifiers are encrypted
+    /// through ISecretStore and are not placed in ordinary catalogue metadata.
+    /// Missing values clear an older reference rather than leaving stale renewal
+    /// metadata associated with a different content grant.
+    /// </summary>
+    public async Task SaveProviderLicenseReferenceAsync(
+        string accountId,
+        string asin,
+        string? acr,
+        string? fileVersion,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var hasAcr = !string.IsNullOrWhiteSpace(acr);
+        var hasFileVersion = !string.IsNullOrWhiteSpace(fileVersion);
+        if (hasAcr != hasFileVersion)
+            throw new ArgumentException(
+                "Audible renewal metadata must include both ACR and file version, or neither.");
+
+        var storageKey = GetProviderReferenceStorageKey(accountId, asin);
+        if (!hasAcr)
+        {
+            await secrets.RemoveAsync(storageKey, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (acr!.Length > 8192 || fileVersion!.Length > 256)
+            throw new ArgumentOutOfRangeException(
+                nameof(acr), "The Audible content-reference metadata exceeds its supported size.");
+
+        var json = JsonSerializer.Serialize(new StoredProviderLicenseReference(acr, fileVersion));
+        if (Encoding.UTF8.GetByteCount(json) > 12 * 1024)
+            throw new InvalidDataException("The Audible content-reference metadata exceeds the secure storage limit.");
+
+        await secrets.SetAsync(storageKey, json, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AudibleWidevineProviderLicenseReference?> LoadProviderLicenseReferenceAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var json = await secrets.GetAsync(
+            GetProviderReferenceStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+        if (json is null)
+            return null;
+        if (Encoding.UTF8.GetByteCount(json) > 12 * 1024)
+            throw new InvalidDataException("The stored Audible content-reference metadata is oversized.");
+
+        StoredProviderLicenseReference? value;
+        try
+        {
+            value = JsonSerializer.Deserialize<StoredProviderLicenseReference>(json);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("The stored Audible content-reference metadata is malformed.", exception);
+        }
+
+        if (value is null ||
+            string.IsNullOrWhiteSpace(value.Acr) ||
+            string.IsNullOrWhiteSpace(value.FileVersion) ||
+            value.Acr.Length > 8192 ||
+            value.FileVersion.Length > 256)
+            throw new InvalidDataException("The stored Audible content-reference metadata is invalid.");
+
+        return new AudibleWidevineProviderLicenseReference(value.Acr, value.FileVersion);
+    }
+
     public async Task MarkDashDownloadCompleteAsync(
         string accountId,
         string asin,
@@ -225,6 +302,7 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         ValidateIdentity(accountId, asin);
         await secrets.RemoveAsync(GetManifestStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
         await secrets.RemoveAsync(GetManifestCompleteStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+        await secrets.RemoveAsync(GetProviderReferenceStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
     }
 
     public async Task RemoveAsync(
@@ -241,6 +319,7 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
             await secrets.RemoveAsync(GetStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
             await secrets.RemoveAsync(GetManifestStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
             await secrets.RemoveAsync(GetManifestCompleteStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+            await secrets.RemoveAsync(GetProviderReferenceStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
 
             var titles = await ReadAccountTitlesUnderGateAsync(accountId, cancellationToken)
                 .ConfigureAwait(false);
@@ -334,6 +413,9 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
     private static string GetManifestCompleteStorageKey(string accountId, string asin)
         => GetStorageKey(accountId, asin) + ManifestCompleteStorageKeySuffix;
 
+    private static string GetProviderReferenceStorageKey(string accountId, string asin)
+        => GetStorageKey(accountId, asin) + ProviderReferenceStorageKeySuffix;
+
     private static string GetStorageKey(string accountId, string asin)
     {
         var identity = Encoding.UTF8.GetBytes(
@@ -380,7 +462,10 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
 
     private sealed record StoredDashManifest(string ManifestUri, StoredStreamKey[] StreamKeys);
     private sealed record StoredStreamKey(int PeriodIndex, int GroupIndex, int TrackIndex);
+    private sealed record StoredProviderLicenseReference(string Acr, string FileVersion);
 }
+
+public sealed record AudibleWidevineProviderLicenseReference(string Acr, string FileVersion);
 
 public sealed record AudibleWidevineOfflineMediaReference(
     Uri ManifestUri,
