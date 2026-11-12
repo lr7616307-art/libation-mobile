@@ -31,6 +31,27 @@ public sealed class AudibleWidevineLicenseBridgeTests
     }
 
     [Fact]
+    public async Task RequestWidevineLicenseBytesAsync_Base64TransportsOpaquePlatformMessages()
+    {
+        const string asin = "B012345678";
+        byte[] challenge = [0x00, 0x01, 0x7F, 0x80, 0xFE, 0xFF];
+        byte[] license = [0x10, 0x20, 0x30, 0x80, 0xFE];
+        string? observedChallenge = null;
+
+        var source = CreateSource((requestedAsin, requestedChallenge, _) =>
+        {
+            Assert.Equal(asin, requestedAsin);
+            observedChallenge = requestedChallenge;
+            return Task.FromResult(Convert.ToBase64String(license));
+        });
+
+        var actual = await source.RequestWidevineLicenseBytesAsync(asin, challenge);
+
+        Assert.Equal(Convert.ToBase64String(challenge), observedChallenge);
+        Assert.Equal(license, actual);
+    }
+
+    [Fact]
     public async Task RequestWidevineLicenseAsync_RejectsInvalidAsinBeforeCallingProvider()
     {
         var called = false;
