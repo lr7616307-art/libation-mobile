@@ -64,7 +64,8 @@ public static class AudibleWidevineLicenseRefreshProtocol
         string responseJson,
         string expectedAsin)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(responseJson);
+        if (string.IsNullOrWhiteSpace(responseJson))
+            throw new InvalidDataException("Audible returned an empty licence-refresh response.");
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedAsin);
         if (!AsinPattern.IsMatch(expectedAsin))
             throw new ArgumentException("The Audible audiobook identifier is invalid.", nameof(expectedAsin));
@@ -74,7 +75,15 @@ public static class AudibleWidevineLicenseRefreshProtocol
         JObject payload;
         try
         {
-            payload = JObject.Parse(responseJson);
+            using var stringReader = new StringReader(responseJson);
+            using var jsonReader = new JsonTextReader(stringReader)
+            {
+                DateParseHandling = DateParseHandling.None,
+                MaxDepth = 32
+            };
+            payload = JObject.Load(jsonReader);
+            if (jsonReader.Read())
+                throw new InvalidDataException("Audible returned trailing data after the licence-refresh response.");
         }
         catch (Newtonsoft.Json.JsonException exception)
         {
