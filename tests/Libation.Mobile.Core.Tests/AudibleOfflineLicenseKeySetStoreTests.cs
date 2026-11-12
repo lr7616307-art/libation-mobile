@@ -89,10 +89,68 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
             store.LoadAsync("account-a", "B012345678"));
     }
 
+    [Fact]
+    public async Task DashManifestReference_RoundTripsEncryptedStoreMetadata()
+    {
+        var secrets = new MemorySecretStore();
+        var store = new AudibleOfflineLicenseKeySetStore(secrets);
+        var expectedUri = new Uri("https://media.example.invalid/path/manifest.mpd?signature=short-lived");
+        AudibleWidevineStreamKey[] expectedKeys =
+        [
+            new AudibleWidevineStreamKey(0, 0, 2),
+            new AudibleWidevineStreamKey(1, 0, 1)
+        ];
+
+        await store.SaveDashManifestAsync("account-a", "B012345678", expectedUri, expectedKeys);
+        var actual = await store.LoadDashManifestAsync("account-a", "B012345678");
+
+        Assert.NotNull(actual);
+        Assert.Equal(expectedUri, actual.ManifestUri);
+        Assert.Equal(expectedKeys, actual.StreamKeys);
+        Assert.DoesNotContain("B012345678", secrets.Keys.Single(), StringComparison.Ordinal);
+        Assert.DoesNotContain("signature=short-lived", secrets.Values.Single(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RemoveDashManifest_OnlyRemovesMatchingAccountAndTitle()
+    {
+        var secrets = new MemorySecretStore();
+        var store = new AudibleOfflineLicenseKeySetStore(secrets);
+        var uri = new Uri("https://media.example.invalid/title/manifest.mpd");
+        AudibleWidevineStreamKey[] keys = [new AudibleWidevineStreamKey(0, 0, 0)];
+
+        await store.SaveDashManifestAsync("account-a", "B012345678", uri, keys);
+        await store.SaveDashManifestAsync("account-b", "B012345678", uri, keys);
+
+        await store.RemoveDashManifestAsync("account-a", "B012345678");
+
+        Assert.Null(await store.LoadDashManifestAsync("account-a", "B012345678"));
+        Assert.NotNull(await store.LoadDashManifestAsync("account-b", "B012345678"));
+    }
+
+    [Fact]
+    public async Task SaveDashManifest_RejectsNonHttpsUriAndInvalidSelection()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            store.SaveDashManifestAsync(
+                "account-a", "B012345678",
+                new Uri("http://media.example.invalid/manifest.mpd"),
+                [new AudibleWidevineStreamKey(0, 0, 0)]));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            store.SaveDashManifestAsync(
+                "account-a", "B012345678",
+                new Uri("https://media.example.invalid/manifest.mpd"),
+                [new AudibleWidevineStreamKey(-1, 0, 0)]));
+    }
+
     private sealed class MemorySecretStore : ISecretStore
     {
         private readonly Dictionary<string, string> values = new();
         public IReadOnlyCollection<string> Keys => values.Keys.ToArray();
+        public IReadOnlyCollection<string> Values => values.Values.ToArray();
 
         public Task SetAsync(string key, string value, CancellationToken cancellationToken = default)
         {
