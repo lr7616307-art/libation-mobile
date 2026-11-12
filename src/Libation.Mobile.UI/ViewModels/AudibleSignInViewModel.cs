@@ -138,13 +138,17 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     {
         try
         {
-            var state = await _connection.GetStateAsync(cancellationToken);
+            // Refresh the saved account before deciding whether it is usable. The Audible
+            // maintainer has a 30-minute renewal window, so this is a no-network fast path
+            // for healthy tokens and prevents an expired session marker from blocking sync
+            // when a valid refresh credential is still available.
+            var state = await _connection.RefreshAsync(cancellationToken);
             _lastState = state;
             NotifyAccountSummaryChanged();
             Status = state.Status switch
             {
                 AccountConnectionStatus.Connected => "Audible account connected.",
-                AccountConnectionStatus.Expired => "Your Audible session has expired. Sign in again to restore access.",
+                AccountConnectionStatus.Expired => "Your Audible session expired and automatic refresh did not succeed. Check your connection and try again.",
                 AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
                 _ => "Sign in to Audible inside VØRATH to access your library."
             };
@@ -152,7 +156,29 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception)
         {
-            Status = "Could not read the saved account status. Your encrypted account data was not changed.";
+            // A transient refresh failure must not hide an otherwise restorable
+            // account. Preserve the persisted session and report its actual state.
+            try
+            {
+                var state = await _connection.GetStateAsync(cancellationToken);
+                _lastState = state;
+                NotifyAccountSummaryChanged();
+                Status = state.Status switch
+                {
+                    AccountConnectionStatus.Expired => "Audible token refresh failed. Check your internet connection and retry; saved credentials were not changed.",
+                    AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
+                    AccountConnectionStatus.Connected => "Could not refresh account status, but your saved Audible connection is still valid.",
+                    _ => "Sign in to Audible inside VØRATH to access your library."
+                };
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                Status = "Could not refresh or read the saved account status. Your encrypted account data was not changed.";
+            }
         }
     }
 
