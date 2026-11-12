@@ -22,6 +22,7 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
     private const string ManifestStorageKeySuffix = "_dash_manifest_v1";
     private const string ManifestCompleteStorageKeySuffix = "_dash_manifest_complete_v1";
     private const string ProviderReferenceStorageKeySuffix = "_provider_license_reference_v1";
+    private const string PendingRenewalStorageKeySuffix = "_pending_renewal_keyset_v1";
     private static readonly Regex AsinPattern = new(
         "^[A-Za-z0-9]{10}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -513,6 +514,9 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
 
     private static string GetProviderReferenceStorageKey(string accountId, string asin)
         => GetStorageKey(accountId, asin) + ProviderReferenceStorageKeySuffix;
+
+    private static string GetPendingRenewalStorageKey(string accountId, string asin)
+        => GetStorageKey(accountId, asin) + PendingRenewalStorageKeySuffix;
 
     private static string GetStorageKey(string accountId, string asin)
     {
