@@ -123,6 +123,37 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
     /// The key-set identifier must come from the encrypted app-private store.
     /// </summary>
     /// <summary>Removes the offline licence associated with the currently restored session.</summary>
+    /// <summary>
+    /// Reports Android's persistent offline-licence state. Unknown is kept
+    /// distinct from released so a transient DRM/plugin error cannot cause
+    /// VØRATH to overwrite a potentially valid saved key set.
+    /// </summary>
+    public int GetOfflineLicenseState(byte[] keySetId)
+    {
+        EnsureNotDisposed();
+        ArgumentNullException.ThrowIfNull(keySetId);
+        if (keySetId.Length is 0 or > 1024)
+            throw new ArgumentOutOfRangeException(nameof(keySetId));
+        return (int)mediaDrm.GetOfflineLicenseState(keySetId);
+    }
+
+    /// <summary>
+    /// Removes a persistent offline licence from this device. Android's direct
+    /// removal API does not send a release confirmation to the licence server;
+    /// use only for local cleanup when account identity is being disconnected
+    /// or a key set is already inactive.
+    /// </summary>
+    public void RemoveOfflineLicense(byte[] keySetId)
+    {
+        EnsureNotDisposed();
+        ArgumentNullException.ThrowIfNull(keySetId);
+        if (keySetId.Length is 0 or > 1024)
+            throw new ArgumentOutOfRangeException(nameof(keySetId));
+        mediaDrm.RemoveOfflineLicense(keySetId);
+        hasPendingOfflineRequest = false;
+    }
+
+    /// <summary>Removes only temporary keys held by this active DRM session.</summary>
     public void RemoveOfflineKeys()
     {
         EnsureNotDisposed();
