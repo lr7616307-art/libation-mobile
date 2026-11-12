@@ -23,6 +23,7 @@ public partial class MainView : UserControl
     private readonly IDownloadQueue? _downloadQueue;
     private readonly DownloadQueueWorker? _downloadWorker;
     private CancellationTokenSource? _downloadRunCts;
+    private CancellationTokenSource? _protectedAudibleOperationCts;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly DispatcherTimer _playbackCheckpointTimer = new() { Interval = TimeSpan.FromSeconds(15) };
@@ -1003,9 +1004,20 @@ public partial class MainView : UserControl
             return;
         }
 
+        if (_protectedAudibleOperationCts is not null)
+        {
+            _viewModel.ReportAudioStatus("Another Audible offline operation is already running. Cancel it before starting another.");
+            return;
+        }
+
+        var operationCts = new CancellationTokenSource();
+        _protectedAudibleOperationCts = operationCts;
+        _viewModel.SetProtectedAudibleOperationInProgress(true);
+        var cancellationToken = operationCts.Token;
+
         try
         {
-            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(CancellationToken.None);
+            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
             if (coordinator is null)
             {
                 _viewModel.ReportAudioStatus("Sign in to Audible again before playing this protected audiobook.");
@@ -1013,24 +1025,26 @@ public partial class MainView : UserControl
             }
 
             var asin = book.Id["provider:".Length..];
-            if (!await coordinator.HasOfflineLicenseAsync(asin))
+            if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken))
             {
                 _viewModel.ReportAudioStatus("Requesting an Audible-authorized Widevine offline licence…");
-                await coordinator.AcquireOfflineLicenseAsync(asin);
+                await coordinator.AcquireOfflineLicenseAsync(asin, cancellationToken);
             }
 
-            if (!await coordinator.HasOfflineMediaAsync(asin))
+            if (!await coordinator.HasOfflineMediaAsync(asin, cancellationToken))
             {
                 _viewModel.ReportAudioStatus(
-                    "Downloading Audible's encrypted DASH audio segments for offline playback. Keep the app open and stay connected.");
-                await coordinator.DownloadOfflineMediaAsync(asin);
+                    "Downloading Audible's encrypted DASH audio segments. You can cancel this operation here.");
+                await coordinator.DownloadOfflineMediaAsync(asin, cancellationToken);
             }
 
-            await _viewModel.MarkWidevineOfflineAvailableAsync(book.Id);
+            cancellationToken.ThrowIfCancellationRequested();
+            await _viewModel.MarkWidevineOfflineAvailableAsync(book.Id, cancellationToken);
             await coordinator.PlayAsync(
                 asin,
                 book.Title,
-                _viewModel.GetResumePositionMilliseconds(book.Id));
+                _viewModel.GetResumePositionMilliseconds(book.Id),
+                cancellationToken: cancellationToken);
 
             _playingAudiobookId = book.Id;
             _viewModel.SetNowPlayingBook(book.Id);
@@ -1047,14 +1061,40 @@ public partial class MainView : UserControl
             _viewModel.ReportAudioStatus(
                 "Audible or this device did not provide a supported Widevine licence for this title.");
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _viewModel.ReportAudioStatus("Protected Audible playback was cancelled.");
+            _viewModel.ReportAudioStatus("Audible offline operation cancelled. Any partial encrypted segments are retained for retry.");
         }
         catch (Exception)
         {
             _viewModel.ReportAudioStatus(
                 "Could not start protected Audible playback. Check the Audible account, connection and device registration.");
+        }
+        finally
+        {
+            if (ReferenceEquals(_protectedAudibleOperationCts, operationCts))
+                _protectedAudibleOperationCts = null;
+            _viewModel.SetProtectedAudibleOperationInProgress(false);
+            operationCts.Dispose();
+        }
+    }
+
+    private void CancelProtectedAudibleOperationClicked(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var cancellation = _protectedAudibleOperationCts;
+        if (cancellation is null)
+            return;
+
+        try
+        {
+            cancellation.Cancel();
+            _viewModel.ReportAudioStatus("Cancelling the Audible licence/download request…");
+        }
+        catch (ObjectDisposedException)
+        {
+            // The operation completed between the button tap and cancellation.
         }
     }
 
