@@ -1,13 +1,29 @@
 namespace Libation.Mobile.Core;
 
 /// <summary>
-/// Resolves a provider-issued, authorized HTTPS media URL and destination for a purchased title.
+/// Resolves a provider-issued, authorized HTTPS media URL and a staging destination.
 /// Implementations must not bypass access controls or decrypt protected media.
 /// </summary>
 public interface IAuthorizedAudioDownloadSource
 {
     Task<AuthorizedAudioDownload> ResolveAsync(
         string audiobookId, CancellationToken cancellationToken = default);
+
+    Task<AuthorizedAudioDownload> ResolveAsync(
+        DownloadQueueItem item, CancellationToken cancellationToken = default)
+        => ResolveAsync(item.AudiobookId, cancellationToken);
+}
+
+public interface IAudioDownloadCompletionHandler
+{
+    /// <summary>
+    /// Publishes a fully downloaded staging file to the user's selected destination
+    /// and attaches a playable local copy to the VØRATH catalogue.
+    /// </summary>
+    Task PublishAsync(
+        DownloadQueueItem item,
+        string stagingFilePath,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record AuthorizedAudioDownload(Uri DownloadUri, string DestinationPath);
@@ -20,27 +36,31 @@ public sealed record DownloadQueueProgress(
 
 /// <summary>
 /// Executes one queued download using a provider-supplied authorized URL.
+/// Only one item is processed at a time to limit bandwidth and memory use.
 /// </summary>
 public sealed class DownloadQueueWorker
 {
     private readonly IDownloadQueue _queue;
     private readonly AudioFileDownloader _downloader;
     private readonly IAuthorizedAudioDownloadSource _source;
+    private readonly IAudioDownloadCompletionHandler? _completionHandler;
     private readonly SemaphoreSlim _runGate = new(1, 1);
 
     public DownloadQueueWorker(
         IDownloadQueue queue,
         AudioFileDownloader downloader,
-        IAuthorizedAudioDownloadSource source)
+        IAuthorizedAudioDownloadSource source,
+        IAudioDownloadCompletionHandler? completionHandler = null)
     {
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         _downloader = downloader ?? throw new ArgumentNullException(nameof(downloader));
         _source = source ?? throw new ArgumentNullException(nameof(source));
+        _completionHandler = completionHandler;
     }
 
     /// <summary>
-    /// Processes the oldest queued item. Returns false when no work is queued.
-    /// Cancellation returns the item to Queued so it can safely be resumed later.
+    /// Requeues items left in Downloading state after process death. The app does not
+    /// automatically restart them on mobile data; the user starts the pending queue.
     /// </summary>
     public async Task<int> RecoverInterruptedDownloadsAsync(CancellationToken cancellationToken = default)
     {
@@ -48,7 +68,8 @@ public sealed class DownloadQueueWorker
         var recovered = 0;
         foreach (var item in items.Where(x => x.Status == DownloadStatus.Downloading))
         {
-            await _queue.UpdateStatusAsync(item.AudiobookId, DownloadStatus.Queued, cancellationToken: cancellationToken);
+            await _queue.UpdateStatusAsync(
+                item.AudiobookId, DownloadStatus.Queued, cancellationToken: cancellationToken);
             recovered++;
         }
         return recovered;
@@ -61,59 +82,81 @@ public sealed class DownloadQueueWorker
         await _runGate.WaitAsync(cancellationToken);
         try
         {
-        var item = (await _queue.GetItemsAsync(cancellationToken))
-            .Where(x => x.Status == DownloadStatus.Queued)
-            .OrderBy(x => x.AddedAtUtc)
-            .FirstOrDefault();
+            var item = (await _queue.GetItemsAsync(cancellationToken))
+                .Where(x => x.Status == DownloadStatus.Queued)
+                .OrderBy(x => x.AddedAtUtc)
+                .FirstOrDefault();
 
-        if (item is null)
-            return false;
-
-        await _queue.UpdateStatusAsync(
-            item.AudiobookId, DownloadStatus.Downloading,
-            cancellationToken: cancellationToken);
-
-        try
-        {
-            var target = await _source.ResolveAsync(item.AudiobookId, cancellationToken);
-            if (target is null)
-                throw new InvalidOperationException("The audio provider returned no download target.");
-
-            var result = await _downloader.DownloadAsync(
-                target.DownloadUri,
-                target.DestinationPath,
-                new Progress<AudioDownloadProgress>(value =>
-                    progress?.Report(new DownloadQueueProgress(
-                        item.AudiobookId, value.BytesReceived, value.TotalBytes, value.Percentage))),
-                cancellationToken);
+            if (item is null)
+                return false;
 
             await _queue.UpdateStatusAsync(
-                item.AudiobookId, DownloadStatus.Completed,
+                item.AudiobookId, DownloadStatus.Downloading,
                 cancellationToken: cancellationToken);
-            return true;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            await _queue.UpdateStatusAsync(
-                item.AudiobookId, DownloadStatus.Queued,
-                cancellationToken: CancellationToken.None);
-            throw;
-        }
-        catch (Exception exception)
-        {
-            // Provider/network exceptions can include signed media URLs or query tokens.
-            // Persist only a stable, user-safe category; never store raw exception text.
-            await _queue.UpdateStatusAsync(
-                item.AudiobookId, DownloadStatus.Failed,
-                GetSafeFailureMessage(exception),
-                cancellationToken: CancellationToken.None);
-            return true;
-        }
+
+            AuthorizedAudioDownload? target = null;
+            try
+            {
+                target = await _source.ResolveAsync(item, cancellationToken);
+                if (target is null)
+                    throw new InvalidOperationException("The audio provider returned no download target.");
+
+                var result = await _downloader.DownloadAsync(
+                    target.DownloadUri,
+                    target.DestinationPath,
+                    new Progress<AudioDownloadProgress>(value =>
+                        progress?.Report(new DownloadQueueProgress(
+                            item.AudiobookId, value.BytesReceived, value.TotalBytes, value.Percentage))),
+                    cancellationToken);
+
+                if (_completionHandler is not null)
+                    await _completionHandler.PublishAsync(item, result.FilePath, cancellationToken);
+
+                await _queue.UpdateStatusAsync(
+                    item.AudiobookId, DownloadStatus.Completed,
+                    cancellationToken: cancellationToken);
+                return true;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await _queue.UpdateStatusAsync(
+                    item.AudiobookId, DownloadStatus.Queued,
+                    cancellationToken: CancellationToken.None);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                // Provider/network exceptions can include signed media URLs or query tokens.
+                // Persist only a stable, user-safe category; never store raw exception text.
+                await _queue.UpdateStatusAsync(
+                    item.AudiobookId, DownloadStatus.Failed,
+                    GetSafeFailureMessage(exception),
+                    cancellationToken: CancellationToken.None);
+                return true;
+            }
+            finally
+            {
+                // The app's completion handler copies into SAF and app-private storage.
+                // Do not retain staging copies after publication or a failed attempt.
+                if (_completionHandler is not null && target is not null)
+                    TryDeleteStagingFile(target.DestinationPath);
+            }
         }
         finally
         {
             _runGate.Release();
         }
+    }
+
+    private static void TryDeleteStagingFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private static string GetSafeFailureMessage(Exception exception) => exception switch
@@ -122,6 +165,7 @@ public sealed class DownloadQueueWorker
         InvalidDataException => "The downloaded audio failed validation.",
         UnauthorizedAccessException => "The app cannot write to the selected download location.",
         InvalidOperationException => "The provider could not authorize this download.",
+        ArgumentException => exception.Message,
         _ => "The download could not be completed. Please retry."
     };
 }
