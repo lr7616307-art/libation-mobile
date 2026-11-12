@@ -113,6 +113,14 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Do not automatically replace or delete an expired key set. Audible's documented-but-unofficial `content-license-refresh` flow requires the original ACR, file version and a renewal challenge; provider-side renewal and server-confirmed release remain separate work. A direct Android `removeOfflineLicense` call is local-only and can leave the server's offline allocation unchanged.
 - Added unit tests for positive durations, zero-duration expiry, absent fields and malformed/negative values. Physical-device behavior remains unverified.
 
+## Pass 19 — preserve provider renewal references
+
+- Read Audible's `ContentReference.Acr` and numeric `ContentReference.FileVersion` from the actual Widevine content grant. The pinned AudibleApi DTO exposes `FileVersion` as a numeric value, so the mobile layer keeps it numeric and serializes it only when forming a provider request.
+- Persist the ACR and file version as a separate per-account/per-ASIN record through the encrypted `ISecretStore`. The storage key uses the existing hashed account/title scope; these identifiers are not written to catalogue records or ordinary playback recovery preferences.
+- Save the renewal reference only after the Android offline key-set ID has been stored and indexed. A download retry refreshes the reference from the new provider grant; missing grant metadata clears stale values rather than leaving an old content version attached to the title.
+- Delete the renewal reference with the corresponding offline licence/cache metadata during title removal or account disconnect.
+- Add tests for ACR/file-version extraction, per-account/title storage isolation, missing/incomplete metadata, and removal cleanup.
+- This is renewal groundwork only. It does not yet create a Widevine renewal challenge, call `/1.0/content-license-refresh`, interpret provider renewal denials, or replace an existing key set. The endpoint is community-documented, not an official public API contract; production renewal remains disabled pending account/title-specific validation.
 ## Remaining implementation — not yet verified
 
 1. Implement and validate Audible's server-confirmed KEY_TYPE_RELEASE exchange and documented licence renewal/revocation semantics before claiming provider-side licence release.
