@@ -252,7 +252,6 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
 
         if (value is null ||
             string.IsNullOrWhiteSpace(value.Acr) ||
-            string.IsNullOrWhiteSpace(value.FileVersion) ||
             value.Acr.Length > 8192 ||
             value.FileVersion < 0)
             throw new InvalidDataException("The stored Audible content-reference metadata is invalid.");
