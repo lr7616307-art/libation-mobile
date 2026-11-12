@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Libation.Mobile.Core;
 using Libation.Mobile.UI.ViewModels;
+using Libation.Mobile.UI.Services;
 
 namespace Libation.Mobile.UI.Views;
 
@@ -19,6 +20,9 @@ public partial class MainView : UserControl
             && view._viewModel.TryNavigateBack();
     }
     private ILocalAudioPlayer? _localAudioPlayer;
+    private readonly IDownloadQueue? _downloadQueue;
+    private readonly DownloadQueueWorker? _downloadWorker;
+    private CancellationTokenSource? _downloadRunCts;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly DispatcherTimer _playbackCheckpointTimer = new() { Interval = TimeSpan.FromSeconds(15) };
@@ -43,6 +47,7 @@ public partial class MainView : UserControl
         var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
         var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
+        _downloadQueue = queue;
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
@@ -53,6 +58,14 @@ public partial class MainView : UserControl
         _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
             syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory),
             PlatformAudiobookDetailsProviderFactory?.Invoke(), downloadSettingsStore);
+        var downloadPublisher = new StorageFolderAudioDownloadPublisher(
+            () => TopLevel.GetTopLevel(this)?.StorageProvider,
+            downloadSettingsStore, repository, audioImport);
+        _downloadWorker = new DownloadQueueWorker(
+            queue,
+            new AudioFileDownloader(new HttpClient()),
+            new QueuedHttpsAudioDownloadSource(Path.Combine(dataDirectory, "download-staging")),
+            downloadPublisher);
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
@@ -69,6 +82,7 @@ public partial class MainView : UserControl
     public MainView(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
     {
         _viewModel = new MainViewModel(repository, downloadQueue, syncService);
+        _downloadQueue = downloadQueue;
         InitializeComponent();
         DataContext = _viewModel;
         _activeView = new WeakReference<MainView>(this);
@@ -112,6 +126,14 @@ public partial class MainView : UserControl
         _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
         AttachPlaybackStateNotifications();
         await _viewModel.InitializeAsync();
+        if (_downloadWorker is not null)
+        {
+            var recovered = await _downloadWorker.RecoverInterruptedDownloadsAsync();
+            await _viewModel.RefreshDownloadQueueAsync();
+            if (recovered > 0)
+                _viewModel.ReportDownloadSettingsStatus(
+                    $"{recovered} interrupted download(s) were returned to the queue. Tap Start pending downloads when you are ready.");
+        }
         await ValidateSavedDownloadFolderBookmarkAsync();
         if (PlatformSignInViewModelFactory?.Invoke() is { } accountViewModel)
             await accountViewModel.LoadStatusAsync();
@@ -445,6 +467,7 @@ public partial class MainView : UserControl
 
     private async void MainViewUnloaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        _downloadRunCts?.Cancel();
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
@@ -1207,6 +1230,99 @@ public partial class MainView : UserControl
         await _viewModel.ImportCoverArtAsync(book.Id, files[0].Name, stream);
     }
 
+    private async void QueueAuthorizedDownloadClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.DetailBook is not { } book || book.IsProviderCatalogueEntry)
+            return;
+
+        var urlBox = ResolveControl(AuthorizedDownloadUrlBox, "AuthorizedDownloadUrlBox");
+        var sourceUrl = urlBox?.Text ?? string.Empty;
+        await _viewModel.EnqueueAuthorizedDownloadAsync(book.Id, sourceUrl);
+        if (_viewModel.DownloadSettingsStatus.StartsWith("Added to the download queue.", StringComparison.Ordinal))
+        {
+            if (urlBox is not null) urlBox.Text = string.Empty;
+            await StartPendingDownloadsAsync();
+        }
+    }
+
+    private async void DownloadQueueActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_downloadRunCts is { IsCancellationRequested: false })
+        {
+            _downloadRunCts.Cancel();
+            _viewModel.ReportDownloadSettingsStatus("Pausing after the current network read. The item will remain queued for retry.");
+            return;
+        }
+
+        await StartPendingDownloadsAsync();
+    }
+
+    private async Task StartPendingDownloadsAsync()
+    {
+        if (_downloadWorker is null || _downloadQueue is null)
+        {
+            _viewModel.ReportDownloadSettingsStatus("The download worker is unavailable in this build.");
+            return;
+        }
+        if (!_viewModel.HasSelectedDownloadDirectory)
+        {
+            _viewModel.ReportDownloadSettingsStatus("Choose a download folder in Settings before starting downloads.");
+            return;
+        }
+        if (_downloadRunCts is { IsCancellationRequested: false })
+            return;
+
+        var queued = (await _downloadQueue.GetItemsAsync())
+            .Any(item => item.Status == DownloadStatus.Queued);
+        if (!queued)
+        {
+            _viewModel.ReportDownloadSettingsStatus("There are no pending downloads.");
+            await _viewModel.RefreshDownloadQueueAsync();
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _downloadRunCts = cancellation;
+        _viewModel.SetDownloadQueueRunning(true);
+        _viewModel.ReportDownloadSettingsStatus("Download queue started. Downloads run one at a time.");
+        var progress = new Progress<DownloadQueueProgress>(_viewModel.ReportDownloadProgress);
+
+        try
+        {
+            while (await _downloadWorker.ProcessNextAsync(progress, cancellation.Token))
+            {
+                await _viewModel.RefreshDownloadQueueAsync(cancellation.Token);
+                await _viewModel.RefreshLibraryAfterDownloadAsync(cancellation.Token);
+            }
+
+            await _viewModel.RefreshDownloadQueueAsync(CancellationToken.None);
+            await _viewModel.RefreshLibraryAfterDownloadAsync(CancellationToken.None);
+            var failed = (await _downloadQueue.GetItemsAsync(CancellationToken.None))
+                .Count(item => item.Status == DownloadStatus.Failed);
+            _viewModel.ReportDownloadSettingsStatus(failed == 0
+                ? "All queued downloads finished successfully."
+                : $"{failed} download(s) failed. Check the queue for details and retry options.");
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            await _viewModel.RefreshDownloadQueueAsync(CancellationToken.None);
+            _viewModel.ReportDownloadSettingsStatus("Downloads paused. Any unfinished item remains queued.");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Download queue processing failed: {ex}");
+            _viewModel.ReportDownloadSettingsStatus("The download queue stopped unexpectedly. Pending items are preserved.");
+        }
+        finally
+        {
+            _viewModel.ReportDownloadProgress(null);
+            _viewModel.SetDownloadQueueRunning(false);
+            if (ReferenceEquals(_downloadRunCts, cancellation))
+                _downloadRunCts = null;
+            cancellation.Dispose();
+        }
+    }
+
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
@@ -1216,7 +1332,11 @@ public partial class MainView : UserControl
     private async void RetryQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: DownloadQueueItem item } && item.Status == DownloadStatus.Failed)
+        {
             await _viewModel.RetryFailedAsync(item.AudiobookId);
+            if (item.SourceUrl is not null)
+                await StartPendingDownloadsAsync();
+        }
     }
 
     private async void RemoveQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
