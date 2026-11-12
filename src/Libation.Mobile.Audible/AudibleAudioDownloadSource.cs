@@ -88,7 +88,7 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
     public Task<AuthorizedAudioDownload> ResolveAsync(
         string audiobookId,
         CancellationToken cancellationToken = default)
-        => ResolveWithDrmAsync(audiobookId, DrmType.Adrm, requireWidevine: false, cancellationToken);
+        => ResolveWithDrmAsync(audiobookId, DrmType.Adrm, cancellationToken);
 
     /// <summary>
     /// Requests a Widevine content licence specifically. AudibleApi may downgrade
@@ -132,7 +132,6 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
     private async Task<AuthorizedAudioDownload> ResolveWithDrmAsync(
         string audiobookId,
         DrmType requestedDrm,
-        bool requireWidevine,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -148,10 +147,6 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
                 "Audible did not grant an offline download licence for this audiobook.");
 
         var grantedDrm = license.DrmType.ToString();
-        if (requireWidevine && !string.Equals(grantedDrm, "Widevine", StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException(
-                "Audible did not issue a Widevine licence for this device registration. No DRM fallback was used.");
-
         var offlineUrl = license.ContentMetadata?.ContentUrl?.OfflineUrl;
         if (string.IsNullOrWhiteSpace(offlineUrl) ||
             !Uri.TryCreate(offlineUrl, UriKind.Absolute, out var downloadUri) ||
