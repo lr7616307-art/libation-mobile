@@ -11,7 +11,7 @@ The intended Android path is Audible-authorized Widevine content, an offline lic
 The pinned AudibleApi source exposes two distinct operations:
 
 1. `Api.GetDownloadLicenseAsync(asin, quality, chapterTitlesType, DrmType.Widevine)` requests the content licence and media URL.
-2. `Api.WidevineDrmLicense(asin, licenseChallenge)` posts the platform-generated Widevine challenge to Audible's authenticated `/drmlicense` endpoint and returns the provider's licence response string.
+2. Audible's authenticated `/drmlicense` endpoint accepts the platform-generated Widevine challenge and returns the provider's licence response string. The pinned package also exposes `Api.AdHocAuthenticatedRequestAsync`, which can perform the authenticated request without the logging wrapper.
 
 Important registration behavior: AudibleApi changes a requested Widevine content licence to ADRM when the saved identity's `DeviceType` does not match its Android Audible profile. Therefore, VØRATH must inspect the actual returned `DrmType`; it must never assume that asking for Widevine means Widevine was granted.
 
@@ -21,11 +21,11 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 
 - Added `AudibleAudioDownloadSource.ResolveWidevineAsync`, which explicitly requests Widevine, rejects a response that AudibleApi downgraded to ADRM, and returns the provider's HTTPS DASH manifest URL as a manifest reference (not as an ordinary audio-file download target).
 - Preserved the existing ADRM download request path separately, so the new Widevine experiment does not silently change existing queue behavior.
-- Added `RequestWidevineLicenseAsync`, which forwards the exact platform-generated challenge to AudibleApi's authenticated `WidevineDrmLicense` operation. The challenge/response encoding contract still needs verification on Android `MediaDrm`; the upstream API's error logging behavior also needs a safe redaction solution before production use.
+- Added `RequestWidevineLicenseAsync`, which forwards the exact challenge string through a new safe adapter using `Api.AdHocAuthenticatedRequestAsync` and the same restored identity authentication. The implementation intentionally omits request/response bodies from errors. The exact byte/string encoding contract still needs to be verified against Android `MediaDrm` before calling this from a DRM session.
 - Added validation for the 10-character ASIN, non-empty challenge, cancellation before the provider request, and non-empty provider response.
 - Added unit tests for challenge forwarding and safe validation behavior.
 
-## Remaining implementation — not yet complete
+## Pass 9 implementation\n\n- Refactored `AudibleApiSessionFactory` to return the validated account marketplace together with the authenticated API client, ensuring the DRM request uses the corresponding regional Audible API host from the same saved identity snapshot.\n- Replaced the unsafe `Api.WidevineDrmLicense` wrapper in the production constructor with the public authenticated request primitive. It preserves ADP/bearer authentication while preventing challenge-bearing JSON from being written to Serilog or exception details. HTTP failures report only their numeric status code.\n- Kept the challenge/response as transient strings at this adapter boundary; no encoding conversion is attempted here.\n\n## Remaining implementation — not yet complete
 
 1. Implement an Android `MediaDrm` session adapter. It must call `GetKeyRequest` with `KEY_TYPE_OFFLINE`, pass the exact challenge to `RequestWidevineLicenseAsync`, and pass the returned licence bytes to `ProvideKeyResponse`. The exact encoding contract must be verified against Audible's response and Android's API; do not guess or transform the challenge/response.
 2. Store only the resulting offline key-set identifier in app-private, encrypted storage backed by Android Keystore. Do not store the challenge, licence response, content keys, or DRM session secrets in queue JSON, backups, logs, or analytics.
