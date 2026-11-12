@@ -20,6 +20,36 @@ public sealed class AudibleWidevineManifestParserTests
 
         Assert.Equal(pssh, result.InitializationData);
         Assert.Equal("audio/mp4", result.MimeType);
+        Assert.Equal([new AudibleWidevineStreamKey(0, 0, 0)], result.AudioStreamKeys);
+    }
+
+    [Fact]
+    public void Parse_SelectsHighestBandwidthAudioRepresentation()
+    {
+        var pssh = CreatePssh(version: 0, [0x01, 0x02]);
+        var xml = CreateManifest(Convert.ToBase64String(pssh), "audio/mp4")
+            .Replace(
+                "<Representation mimeType=\"audio/mp4\" />",
+                "<Representation mimeType=\"audio/mp4\" bandwidth=\"64000\" />" +
+                "<Representation mimeType=\"audio/mp4\" bandwidth=\"128000\" />",
+                StringComparison.Ordinal);
+
+        var result = AudibleWidevineManifestParser.Parse(xml);
+
+        Assert.Equal([new AudibleWidevineStreamKey(0, 0, 1)], result.AudioStreamKeys);
+    }
+
+    [Fact]
+    public void Parse_RejectsMultipleAdaptationSetsInsteadOfDownloadingNonAudioTracks()
+    {
+        var pssh = CreatePssh(version: 0, [0x01]);
+        var xml = CreateManifest(Convert.ToBase64String(pssh), "audio/mp4")
+            .Replace(
+                "</Period>",
+                "<AdaptationSet mimeType=\"video/mp4\"><Representation mimeType=\"video/mp4\" /></AdaptationSet></Period>",
+                StringComparison.Ordinal);
+
+        Assert.Throws<NotSupportedException>(() => AudibleWidevineManifestParser.Parse(xml));
     }
 
     [Fact]
