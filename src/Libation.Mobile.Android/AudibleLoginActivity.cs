@@ -117,7 +117,8 @@ public sealed class AudibleLoginActivity : Activity
         }
 
         // Cancellation can originate from the view model's continuation thread.
-        activity?.RunOnUiThread(() => activity.FinishLogin(null));
+        if (activity is { } target)
+            target.RunOnUiThread(() => target.FinishLogin(null));
     }
 
     public override void OnBackPressed()
