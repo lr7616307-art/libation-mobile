@@ -1028,6 +1028,13 @@ public partial class MainView : UserControl
                 await coordinator.AcquireOfflineLicenseAsync(asin);
             }
 
+            if (!await coordinator.HasOfflineMediaAsync(asin))
+            {
+                _viewModel.ReportAudioStatus(
+                    "Downloading Audible's encrypted DASH audio segments for offline playback. Keep the app open and stay connected.");
+                await coordinator.DownloadOfflineMediaAsync(asin);
+            }
+
             await coordinator.PlayAsync(
                 asin,
                 book.Title,
@@ -1041,7 +1048,7 @@ public partial class MainView : UserControl
             BeginChapterMetadataLoad(book.Id);
             UpdatePlaybackProgressUi();
             _viewModel.ReportAudioStatus(
-                "Playing through Audible's protected DASH stream with the saved Widevine licence. Keep internet connected; encrypted audio segments are not cached for offline playback yet.");
+                "Playing the saved Audible audiobook offline through Android Widevine. The encrypted DASH media stays in VØRATH's private cache.");
         }
         catch (NotSupportedException)
         {
