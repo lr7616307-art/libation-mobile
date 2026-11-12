@@ -119,7 +119,12 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                 refresh.LicenseRefreshDate,
                 refresh.LicenseRemovalDate,
                 refresh.LicenseExpirationDate,
-                refresh.ErrorMessage);
+                refresh.ErrorMessage)
+            {
+                GrantedRight = refresh.GrantedRight,
+                AccessExpiryDate = refresh.AccessExpiryDate,
+                LicenseDenialReasons = refresh.LicenseDenialReasons
+            };
         }
         finally
         {
