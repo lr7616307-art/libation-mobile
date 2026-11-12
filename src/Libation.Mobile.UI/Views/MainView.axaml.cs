@@ -992,8 +992,11 @@ public partial class MainView : UserControl
         }
 
         await _viewModel.EnqueueAsync(book.Id);
-        if (string.IsNullOrWhiteSpace(_viewModel.ErrorMessage))
+        if (string.IsNullOrWhiteSpace(_viewModel.ErrorMessage) &&
+            _viewModel.DownloadSettingsStatus.StartsWith("Added to the Audible download queue.", StringComparison.Ordinal))
+        {
             await StartPendingDownloadsAsync();
+        }
     }
 
     private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
