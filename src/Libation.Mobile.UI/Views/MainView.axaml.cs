@@ -1230,7 +1230,7 @@ public partial class MainView : UserControl
         await _viewModel.ImportCoverArtAsync(book.Id, files[0].Name, stream);
     }
 
-    private async void QueueAuthorizedDownloadClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    public async void QueueAuthorizedDownloadClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_viewModel.DetailBook is not { } book || book.IsProviderCatalogueEntry)
             return;
@@ -1245,7 +1245,7 @@ public partial class MainView : UserControl
         }
     }
 
-    private async void DownloadQueueActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    public async void DownloadQueueActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_downloadRunCts is { IsCancellationRequested: false })
         {
