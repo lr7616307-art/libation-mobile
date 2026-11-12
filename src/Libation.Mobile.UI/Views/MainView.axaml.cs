@@ -468,8 +468,6 @@ public partial class MainView : UserControl
         catch (Exception) { /* Cleanup must continue even if saving progress fails. */ }
         finally
         {
-            if (_localAudioPlayer is ILocalAudioPlayerStateNotifier notifier)
-                notifier.PlaybackStateChanged -= LocalAudioPlayerStateChanged;
             _localAudioPlayer.Dispose();
             _localAudioPlayer = null;
             _playingAudiobookId = null;
