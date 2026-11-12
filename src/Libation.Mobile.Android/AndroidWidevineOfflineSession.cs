@@ -44,8 +44,14 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
         }
         catch
         {
-            mediaDrm.Close();
-            mediaDrm.Dispose();
+            try
+            {
+                mediaDrm.Close();
+            }
+            finally
+            {
+                mediaDrm.Dispose();
+            }
             throw;
         }
     }
@@ -139,8 +145,14 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
         finally
         {
             CryptographicOperations.ZeroMemory(sessionId);
-            mediaDrm.Close();
-            mediaDrm.Dispose();
+            try
+            {
+                mediaDrm.Close();
+            }
+            finally
+            {
+                mediaDrm.Dispose();
+            }
         }
     }
 
