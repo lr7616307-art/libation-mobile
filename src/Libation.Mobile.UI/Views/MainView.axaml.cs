@@ -1058,6 +1058,46 @@ public partial class MainView : UserControl
         }
     }
 
+    private async void RemoveAudibleOfflineBookClicked(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var book = _viewModel.DetailBook;
+        if (book is null || !book.IsWidevineOfflineAvailable)
+            return;
+
+        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+        {
+            _viewModel.ReportAudioStatus("Offline Audible management is unavailable on this platform.");
+            return;
+        }
+
+        try
+        {
+            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(CancellationToken.None);
+            if (coordinator is null)
+            {
+                _viewModel.ReportAudioStatus("Sign in to the Audible account that downloaded this title.");
+                return;
+            }
+
+            var asin = book.Id["provider:".Length..];
+            _viewModel.ReportAudioStatus("Stopping protected playback and releasing the Audible offline licence…");
+            await coordinator.RemoveOfflineLicenseAsync(asin);
+            await _viewModel.MarkWidevineOfflineRemovedAsync(book.Id);
+            _viewModel.ReportAudioStatus("The Audible offline copy and its protected cache have been removed from VØRATH.");
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.ReportAudioStatus("Offline title removal was cancelled.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus(
+                "Could not remove this offline Audible title. The saved licence is retained when release fails; check the account and try again.");
+        }
+    }
+
     private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.ProbeWidevine();
 
