@@ -295,6 +295,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string DetailAudibleAvailabilityLabel => IsDetailProviderBook
         ? _detailBook!.AudibleAvailabilityLabel
         : string.Empty;
+    public string DetailProtectedDownloadLabel => string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
+        ? string.Empty
+        : $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved; this protected file is not playable in VØRATH yet.";
     public string DetailBookDescription
     {
         get
@@ -361,6 +364,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsDetailLocalBook));
         OnPropertyChanged(nameof(CanEditDetailBook));
         OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+        OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
         OnPropertyChanged(nameof(DetailBookDescription));
         OnPropertyChanged(nameof(DetailFileSizeLabel));
         OnPropertyChanged(nameof(DetailDurationLabel));
@@ -1276,13 +1280,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
-        if (audiobookId.StartsWith("provider:", StringComparison.Ordinal))
-        {
-            ErrorMessage = "Direct Audible downloads are not supported yet. Use the official Audible app for protected titles.";
+        if (string.IsNullOrWhiteSpace(audiobookId))
             return;
-        }
 
-        try { await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken); await ReloadQueueAsync(cancellationToken); ErrorMessage = string.Empty; }
+        try
+        {
+            await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken);
+            await ReloadQueueAsync(cancellationToken);
+            ErrorMessage = string.Empty;
+            DownloadSettingsStatus = audiobookId.StartsWith("provider:", StringComparison.Ordinal)
+                ? "Added to the Audible download queue. VØRATH will request an Audible-issued offline licence and save the granted file to your selected folder."
+                : "Added to the download queue.";
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { ErrorMessage = "Could not update the local download queue."; }
     }
@@ -1357,6 +1366,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _allBooks = await _repository.GetBooksAsync(cancellationToken);
         ApplyFilter(_allBooks);
         RefreshAudibleBooks(_allBooks);
+        if (_detailBook is not null)
+        {
+            _detailBook = _allBooks.FirstOrDefault(book => book.Id == _detailBook.Id);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+        }
     }
 
     private static string FormatDownloadBytes(long bytes)
@@ -1387,8 +1403,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private async Task ReloadQueueAsync(CancellationToken cancellationToken)
     {
         var items = await _downloadQueue.GetItemsAsync(cancellationToken);
+        var booksById = _allBooks.ToDictionary(book => book.Id, StringComparer.Ordinal);
         QueueItems.Clear();
-        foreach (var item in items) QueueItems.Add(item);
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.DisplayTitle) &&
+                booksById.TryGetValue(item.AudiobookId, out var book))
+                QueueItems.Add(item with { DisplayTitle = $"{book.Title} — {book.Author}" });
+            else
+                QueueItems.Add(item);
+        }
         OnPropertyChanged(nameof(IsQueueEmpty));
         OnPropertyChanged(nameof(HasPendingDownloadItems));
         OnPropertyChanged(nameof(QueueCountLabel));
