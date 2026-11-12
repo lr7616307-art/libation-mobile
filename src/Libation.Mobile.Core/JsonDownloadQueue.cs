@@ -61,6 +61,46 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         }, cancellationToken);
     }
 
+    public async Task EnqueueAuthorizedAsync(
+        string audiobookId,
+        string sourceUrl,
+        string displayTitle,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(displayTitle);
+        var uri = AuthorizedAudioDownloadUrl.Parse(sourceUrl);
+
+        await MutateAsync(items =>
+        {
+            var existingIndex = items.FindIndex(item =>
+                string.Equals(item.AudiobookId, audiobookId, StringComparison.Ordinal));
+            var now = DateTimeOffset.UtcNow;
+
+            if (existingIndex < 0)
+            {
+                items.Add(new DownloadQueueItem(
+                    audiobookId, DownloadStatus.Queued, now, now,
+                    SourceUrl: uri.AbsoluteUri, DisplayTitle: displayTitle.Trim()));
+                return;
+            }
+
+            var existing = items[existingIndex];
+            if (existing.Status == DownloadStatus.Downloading ||
+                existing.Status == DownloadStatus.Completed)
+                return;
+
+            items[existingIndex] = existing with
+            {
+                Status = DownloadStatus.Queued,
+                UpdatedAtUtc = now,
+                ErrorMessage = null,
+                SourceUrl = uri.AbsoluteUri,
+                DisplayTitle = displayTitle.Trim()
+            };
+        }, cancellationToken);
+    }
+
     public async Task UpdateStatusAsync(
         string audiobookId,
         DownloadStatus status,
