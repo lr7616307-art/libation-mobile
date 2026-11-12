@@ -252,7 +252,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
         StartForeground(NotificationId, BuildNotification());
 
-        var mediaSource = default(AndroidX.Media3.ExoPlayer.Source.IMediaSource);
+        MediaItem mediaItem;
         try
         {
             var streamKeys = new Java.Util.ArrayList();
@@ -276,13 +276,6 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                 .SetDrmConfiguration(drmConfiguration)
                 .Build();
 
-            var offlineStore = new AndroidWidevineDashOfflineStore(this);
-            var cacheDataSourceFactory = offlineStore.CreatePlaybackDataSourceFactory(
-                accountId, asin, manifestUri);
-            // Cache-only source: if any DASH manifest/segment is missing, playback
-            // fails rather than silently falling back to the network.
-            mediaSource = new DashMediaSource.Factory(cacheDataSourceFactory)
-                .CreateMediaSource(mediaItem);
         }
         finally
         {
@@ -291,6 +284,14 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             intent.RemoveExtra(ExtraOfflineKeySetId);
             intent.RemoveExtra(ExtraWidevineStreamKeys);
         }
+
+        var offlineStore = new AndroidWidevineDashOfflineStore(this);
+        var cacheDataSourceFactory = offlineStore.CreatePlaybackDataSourceFactory(
+            accountId, asin, manifestUri);
+        // Cache-only source: if any DASH manifest/segment is missing, playback
+        // fails rather than silently falling back to the network.
+        var mediaSource = new DashMediaSource.Factory(cacheDataSourceFactory)
+            .CreateMediaSource(mediaItem);
 
         _player = new ExoPlayerBuilder(this).Build();
         _player.AddListener(this);
