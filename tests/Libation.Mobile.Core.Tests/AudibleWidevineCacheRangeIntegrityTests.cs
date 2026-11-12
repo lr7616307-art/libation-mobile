@@ -85,7 +85,7 @@ public sealed class AudibleWidevineCacheRangeIntegrityTests
                 "another-title:segment:keep"
             ]);
 
-        Assert.Equal(new[] { scope + ":segment:keep", scope + ":manifest:new" },
+        Assert.Equal(new[] { scope + ":manifest:new", scope + ":segment:keep" },
             result.RetainedKeys.OrderBy(key => key, StringComparer.Ordinal));
         Assert.Equal(new[] { scope + ":manifest:old" }, result.StaleKeys);
         Assert.Equal(new[] { scope + ":manifest:new" }, result.RecoveredOrphanKeys);
