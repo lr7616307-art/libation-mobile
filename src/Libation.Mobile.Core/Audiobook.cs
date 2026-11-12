@@ -53,7 +53,7 @@ public sealed record Audiobook(
     [JsonIgnore]
     public string DownloadActionLabel => IsProviderCatalogueEntry
         ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶  Play"
-            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "▶  Play with Widevine"
+            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "⇩  Download offline / Play"
             : "⇩  Download"
         : "Add to queue";
 
