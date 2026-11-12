@@ -55,6 +55,40 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_ProtectedAudibleDownloadIsSavedWithoutMarkingItPlayable()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("provider:ASIN123456");
+        var staging = Path.Combine(directory.Path, "protected.aaxc");
+        var payload = new byte[] { 9, 8, 7, 6 };
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload)
+        }));
+        var protection = new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm, "AAXC");
+        var source = new ProtectedStubSource(
+            new Uri("https://audible.example/offline-media"),
+            staging,
+            protection);
+        var publisher = new RecordingProtectedCompletionHandler();
+        var worker = new DownloadQueueWorker(
+            queue,
+            new AudioFileDownloader(client),
+            source,
+            publisher);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Protected, item.Status);
+        Assert.Equal(payload, publisher.PublishedProtectedBytes);
+        Assert.Equal(protection, publisher.PublishedProtection);
+        Assert.False(publisher.NormalPublishCalled);
+        Assert.False(File.Exists(staging));
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_EmptyResponseFailsAndDoesNotPublishFile()
     {
         using var directory = new TemporaryDirectory();
@@ -185,6 +219,43 @@ public sealed class DownloadQueueWorkerTests
         Assert.Equal(2, source.CallCount);
         Assert.Equal(1, source.MaximumConcurrentCalls);
         Assert.All(await queue.GetItemsAsync(), item => Assert.Equal(DownloadStatus.Completed, item.Status));
+    }
+
+    private sealed class ProtectedStubSource(
+        Uri uri,
+        string path,
+        AudioProtectionDescriptor protection) : IAuthorizedAudioDownloadSource
+    {
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new AuthorizedAudioDownload(uri, path) { Protection = protection });
+    }
+
+    private sealed class RecordingProtectedCompletionHandler :
+        IAudioDownloadCompletionHandler, IProtectedAudioDownloadCompletionHandler
+    {
+        public byte[] PublishedProtectedBytes { get; private set; } = [];
+        public AudioProtectionDescriptor? PublishedProtection { get; private set; }
+        public bool NormalPublishCalled { get; private set; }
+
+        public Task PublishAsync(
+            DownloadQueueItem item,
+            string stagingFilePath,
+            CancellationToken cancellationToken = default)
+        {
+            NormalPublishCalled = true;
+            return Task.CompletedTask;
+        }
+
+        public async Task PublishProtectedAsync(
+            DownloadQueueItem item,
+            string stagingFilePath,
+            AudioProtectionDescriptor protection,
+            CancellationToken cancellationToken = default)
+        {
+            PublishedProtectedBytes = await File.ReadAllBytesAsync(stagingFilePath, cancellationToken);
+            PublishedProtection = protection;
+        }
     }
 
     private sealed class RecordingCompletionHandler : IAudioDownloadCompletionHandler
