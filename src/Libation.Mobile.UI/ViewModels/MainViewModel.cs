@@ -1426,6 +1426,35 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task MarkWidevineOfflineRemovedAsync(
+        string audiobookId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(audiobookId))
+            return;
+
+        var book = _allBooks.FirstOrDefault(item =>
+            string.Equals(item.Id, audiobookId, StringComparison.Ordinal));
+        if (book is null || !book.IsProviderCatalogueEntry || !book.IsWidevineOfflineAvailable)
+            return;
+
+        await _repository.UpsertAsync(
+            book with { IsWidevineOfflineAvailable = false }, cancellationToken).ConfigureAwait(false);
+        _allBooks = await _repository.GetBooksAsync(cancellationToken).ConfigureAwait(false);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+
+        if (_detailBook is not null &&
+            string.Equals(_detailBook.Id, audiobookId, StringComparison.Ordinal))
+        {
+            _detailBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
+        }
+    }
+
     public async Task RefreshLibraryAfterDownloadAsync(CancellationToken cancellationToken = default)
     {
         _allBooks = await _repository.GetBooksAsync(cancellationToken);
