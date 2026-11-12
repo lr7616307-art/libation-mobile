@@ -47,8 +47,8 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         // WidevineDrmLicense convenience method logs exceptions with the full
         // JSON request body, which can contain the DRM challenge. This path
         // intentionally emits no request/response body in diagnostics.
-        _requestWidevineLicense = (asin, challenge, _) =>
-            RequestWidevineLicenseSafelyAsync(api, locale, asin, challenge, _);
+        _requestWidevineLicense = (asin, challenge, cancellationToken) =>
+            RequestWidevineLicenseSafelyAsync(api, locale, asin, challenge, cancellationToken);
         _widevineLicenseExchangeEnabled = true;
         _downloadDirectory = NormalizeDownloadDirectory(downloadDirectory);
         _quality = apiQuality;
