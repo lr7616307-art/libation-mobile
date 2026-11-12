@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -21,6 +20,7 @@ public sealed class AndroidWidevineDashOfflineStore
 {
     private const string CacheDirectoryName = "vorath-widevine-dash-cache-v1";
     private const string CacheIndexFileName = "vorath-widevine-dash-cache-index-v1.json";
+    private const string CacheRequirementsFileName = "vorath-widevine-dash-cache-ranges-v1.json";
     private const long MaximumCachedBytes = 8L * 1024 * 1024 * 1024;
     private const int MaximumIndexedKeys = 100_000;
     private static readonly object CacheGate = new();
@@ -96,14 +96,119 @@ public sealed class AndroidWidevineDashOfflineStore
         }
     }
 
-    public bool HasCachedResources(string accountId, string asin)
+    /// <summary>
+    /// Audits every indexed DASH resource off the UI thread. Each recorded
+    /// DataSpec byte range must be fully present, not merely represented by a
+    /// cache key or one partial span. Stale index entries are reconciled.
+    /// </summary>
+    public Task<bool> HasCachedResourcesAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
     {
         ValidateIdentity(accountId, asin);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.Run(() => AuditCachedResources(accountId, asin, cancellationToken), cancellationToken);
+    }
+
+    private bool AuditCachedResources(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken)
+    {
         var scope = GetTitleScope(accountId, asin);
+        var cache = GetCache();
+        var liveKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in cache.GetKeys())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!string.IsNullOrWhiteSpace(key))
+                liveKeys.Add(key);
+        }
+
         lock (CacheIndexGate)
         {
             var index = ReadCacheIndex();
-            return index.TryGetValue(scope, out var keys) && keys.Count > 0;
+            var requirements = ReadCacheRequirements();
+            if (!index.TryGetValue(scope, out var keys))
+                keys = new HashSet<string>(StringComparer.Ordinal);
+
+            var changed = false;
+            foreach (var staleKey in keys.Where(key => !liveKeys.Contains(key)).ToArray())
+            {
+                keys.Remove(staleKey);
+                if (requirements.TryGetValue(scope, out var titleRequirements))
+                    titleRequirements.Remove(staleKey);
+                changed = true;
+            }
+
+            // Recover cache resources committed just before an interrupted index
+            // write. Their ranges are unknown until a retry revisits the DataSpec,
+            // so they are retained for deletion but never treated as complete.
+            foreach (var orphanKey in liveKeys.Where(key => key.StartsWith(scope + ":", StringComparison.Ordinal)))
+            {
+                if (keys.Add(orphanKey))
+                    changed = true;
+            }
+
+            if (keys.Count == 0)
+            {
+                index.Remove(scope);
+                requirements.Remove(scope);
+                if (changed)
+                {
+                    WriteCacheIndex(index);
+                    WriteCacheRequirements(requirements);
+                }
+                return false;
+            }
+
+            if (changed)
+            {
+                if (index.ContainsKey(scope))
+                    index[scope] = keys;
+                WriteCacheIndex(index);
+                WriteCacheRequirements(requirements);
+            }
+
+            if (!keys.Any(key => key.StartsWith(scope + ":manifest:", StringComparison.Ordinal)) ||
+                !keys.Any(key => key.StartsWith(scope + ":segment:", StringComparison.Ordinal)))
+                return false;
+
+            if (!requirements.TryGetValue(scope, out var expectedResources))
+                return false;
+
+            foreach (var cacheKey in keys)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!expectedResources.TryGetValue(cacheKey, out var ranges) || ranges.Count == 0)
+                    return false;
+
+                foreach (var range in ranges)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (range.Position < 0)
+                        return false;
+
+                    if (range.Length > 0)
+                    {
+                        if (cache.GetCachedBytes(cacheKey, range.Position, range.Length) != range.Length)
+                            return false;
+                        continue;
+                    }
+
+                    // An unknown-length DataSpec is considered complete only
+                    // when Media3 recorded the resource's final content length
+                    // and every byte from offset zero through EOF is cached.
+                    var metadata = cache.GetContentMetadata(cacheKey);
+                    var contentLength = metadata.Get("exo_len", -1L);
+                    if (contentLength <= 0 ||
+                        cache.GetCachedBytes(cacheKey, 0, contentLength) != contentLength)
+                        return false;
+                }
+            }
+
+            return true;
         }
     }
 
@@ -129,13 +234,24 @@ public sealed class AndroidWidevineDashOfflineStore
         lock (CacheIndexGate)
         {
             var index = ReadCacheIndex();
-            if (index.TryGetValue(scope, out var keys))
+            var requirements = ReadCacheRequirements();
+            var keysToRemove = index.TryGetValue(scope, out var indexedKeys)
+                ? new HashSet<string>(indexedKeys, StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var cacheKey in cache.GetKeys())
             {
-                foreach (var key in keys)
-                    cache.RemoveResource(key);
-                index.Remove(scope);
-                WriteCacheIndex(index);
+                if (cacheKey.StartsWith(scope + ":", StringComparison.Ordinal))
+                    keysToRemove.Add(cacheKey);
             }
+
+            foreach (var key in keysToRemove)
+                cache.RemoveResource(key);
+
+            index.Remove(scope);
+            requirements.Remove(scope);
+            WriteCacheIndex(index);
+            WriteCacheRequirements(requirements);
         }
     }
 
@@ -182,8 +298,11 @@ public sealed class AndroidWidevineDashOfflineStore
         }
     }
 
-    private void RecordCacheKey(string titleScope, string cacheKey)
+    private void RecordCacheKey(string titleScope, string cacheKey, long position, long length)
     {
+        if (position < 0 || length < -1 || (length > 0 && position > long.MaxValue - length))
+            throw new InvalidDataException("Media3 supplied an invalid cache byte range.");
+
         lock (CacheIndexGate)
         {
             var index = ReadCacheIndex();
@@ -199,8 +318,89 @@ public sealed class AndroidWidevineDashOfflineStore
                     throw new IOException("The protected-audio cache index has reached its safety limit.");
                 WriteCacheIndex(index);
             }
+
+            var requirements = ReadCacheRequirements();
+            if (!requirements.TryGetValue(titleScope, out var titleRequirements))
+            {
+                titleRequirements = new Dictionary<string, HashSet<CachedRange>>(StringComparer.Ordinal);
+                requirements.Add(titleScope, titleRequirements);
+            }
+
+            if (!titleRequirements.TryGetValue(cacheKey, out var ranges))
+            {
+                ranges = new HashSet<CachedRange>();
+                titleRequirements.Add(cacheKey, ranges);
+            }
+
+            // Media3 uses -1 for an unknown length. It is checked against the
+            // final content-length metadata during the completion audit.
+            if (ranges.Add(new CachedRange(position, length > 0 ? length : -1)))
+                WriteCacheRequirements(requirements);
         }
     }
+
+    private Dictionary<string, Dictionary<string, HashSet<CachedRange>>> ReadCacheRequirements()
+    {
+        var path = CacheRequirementsPath;
+        if (!File.Exists(path))
+            return new Dictionary<string, Dictionary<string, HashSet<CachedRange>>>(StringComparer.Ordinal);
+
+        var json = File.ReadAllText(path, Encoding.UTF8);
+        if (Encoding.UTF8.GetByteCount(json) > 16 * 1024 * 1024)
+            throw new InvalidDataException("The protected-audio cache range index exceeds its supported size.");
+
+        try
+        {
+            var stored = JsonSerializer.Deserialize<
+                Dictionary<string, Dictionary<string, CachedRange[]>>>(json)
+                ?? throw new InvalidDataException("The protected-audio cache range index is empty.");
+
+            if (stored.Count > 4096 ||
+                stored.Any(title => title.Value is null ||
+                    title.Value.Count > MaximumIndexedKeys ||
+                    title.Value.Any(resource => resource.Value is null ||
+                        resource.Value.Length is 0 or > 4096 ||
+                        resource.Value.Any(range => range.Position < 0 || range.Length < -1))))
+                throw new InvalidDataException("The protected-audio cache range index exceeds its supported limits.");
+
+            return stored.ToDictionary(
+                title => title.Key,
+                title => title.Value.ToDictionary(
+                    resource => resource.Key,
+                    resource => new HashSet<CachedRange>(resource.Value),
+                    StringComparer.Ordinal),
+                StringComparer.Ordinal);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("The protected-audio cache range index is malformed.", exception);
+        }
+    }
+
+    private void WriteCacheRequirements(
+        Dictionary<string, Dictionary<string, HashSet<CachedRange>>> requirements)
+    {
+        var path = CacheRequirementsPath;
+        var temporaryPath = path + ".tmp";
+        var payload = requirements.ToDictionary(
+            title => title.Key,
+            title => title.Value.ToDictionary(
+                resource => resource.Key,
+                resource => resource.Value
+                    .OrderBy(range => range.Position)
+                    .ThenBy(range => range.Length)
+                    .ToArray(),
+                StringComparer.Ordinal),
+            StringComparer.Ordinal);
+        var json = JsonSerializer.Serialize(payload);
+        if (Encoding.UTF8.GetByteCount(json) > 16 * 1024 * 1024)
+            throw new InvalidDataException("The protected-audio cache range index exceeds its supported size.");
+
+        File.WriteAllText(temporaryPath, json, new UTF8Encoding(false));
+        File.Move(temporaryPath, path, overwrite: true);
+    }
+
+    private sealed record CachedRange(long Position, long Length);
 
     private Dictionary<string, HashSet<string>> ReadCacheIndex()
     {
@@ -250,6 +450,9 @@ public sealed class AndroidWidevineDashOfflineStore
     private string CacheIndexPath
         => Path.Combine(applicationContext.FilesDir!.AbsolutePath!, CacheIndexFileName);
 
+    private string CacheRequirementsPath
+        => Path.Combine(applicationContext.FilesDir!.AbsolutePath!, CacheRequirementsFileName);
+
     private static string GetTitleScope(string accountId, string asin)
     {
         var identity = Encoding.UTF8.GetBytes(
@@ -297,12 +500,12 @@ public sealed class AndroidWidevineDashOfflineStore
     {
         private readonly string titleScope;
         private readonly string manifestUri;
-        private readonly Action<string, string> recordCacheKey;
+        private readonly Action<string, string, long, long> recordCacheKey;
 
         public ScopedCacheKeyFactory(
             string titleScope,
             string manifestUri,
-            Action<string, string> recordCacheKey)
+            Action<string, string, long, long> recordCacheKey)
         {
             this.titleScope = titleScope;
             this.manifestUri = manifestUri;
@@ -318,7 +521,9 @@ public sealed class AndroidWidevineDashOfflineStore
                 : "segment";
             var digest = SHA256.HashData(Encoding.UTF8.GetBytes(uri));
             var cacheKey = titleScope + ":" + kind + ":" + Convert.ToHexString(digest).ToLowerInvariant();
-            recordCacheKey(titleScope, cacheKey);
+            var position = dataSpec.Position;
+            var length = dataSpec.Length;
+            recordCacheKey(titleScope, cacheKey, position, length);
             return cacheKey;
         }
     }
