@@ -56,8 +56,15 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         if (reference is null)
             return false;
 
-        return new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
-            .HasCachedResources(accountId, asin);
+        var offlineStore = new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context);
+        var isComplete = await offlineStore.HasCachedResourcesAsync(accountId, asin, cancellationToken)
+            .ConfigureAwait(false);
+        if (!isComplete)
+        {
+            await keySetStore.InvalidateDashDownloadCompleteAsync(accountId, asin, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        return isComplete;
     }
 
     /// <summary>
@@ -143,6 +150,11 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                 .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
+            if (!await offlineStore.HasCachedResourcesAsync(accountId, asin, cancellationToken)
+                    .ConfigureAwait(false))
+                throw new InvalidDataException(
+                    "The Audible DASH download returned without every selected initialization, index and media byte range being cached. Retry the download.");
+
             await keySetStore.MarkDashDownloadCompleteAsync(accountId, asin, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -181,8 +193,8 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
 
             if (!await keySetStore.IsDashDownloadCompleteAsync(accountId, asin, cancellationToken)
                     .ConfigureAwait(false) ||
-                !new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
-                    .HasCachedResources(accountId, asin))
+                !await new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
+                    .HasCachedResourcesAsync(accountId, asin, cancellationToken).ConfigureAwait(false))
                 throw new InvalidOperationException(
                     "The Audible DASH download is incomplete. Connect to the internet and retry the offline download.");
 
