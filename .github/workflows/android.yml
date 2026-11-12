@@ -27,8 +27,10 @@ jobs:
         include:
           - rid: android-arm
             name: ARMv7
+            expected_abi: armeabi-v7a
           - rid: android-arm64
             name: ARM64
+            expected_abi: arm64-v8a
     steps:
       - uses: actions/checkout@v4
       - name: Install .NET
@@ -44,11 +46,46 @@ jobs:
         run: dotnet workload install android
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
-      - name: Build APK
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:AndroidPackageFormat=apk
-      - name: Upload APK
+      - name: Build single-ABI APK
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk
+      - name: Verify signed APK ABI and size
+        shell: bash
+        env:
+          EXPECTED_ABI: ${{ matrix.expected_abi }}
+          RUNTIME_IDENTIFIER: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          root = Path("src/Libation.Mobile.Android/bin/Release/net10.0-android36.0") / os.environ["RUNTIME_IDENTIFIER"] / "publish"
+          apks = sorted(root.glob("*-Signed.apk"))
+          if len(apks) != 1:
+              raise SystemExit(f"Expected exactly one signed APK in {root}; found {[str(p) for p in apks]}")
+
+          apk = apks[0]
+          with ZipFile(apk) as package:
+              abis = {
+                  name.split("/")[1]
+                  for name in package.namelist()
+                  if name.startswith("lib/") and len(name.split("/")) > 2
+              }
+
+          expected = os.environ["EXPECTED_ABI"]
+          size = apk.stat().st_size
+          print(f"Signed APK: {apk}")
+          print(f"Native ABIs: {sorted(abis)}")
+          print(f"APK size: {size:,} bytes ({size / 1048576:.2f} MiB)")
+          if abis != {expected}:
+              raise SystemExit(f"Expected only {expected}; APK contains {sorted(abis)}")
+          if size > 27 * 1024 * 1024:
+              raise SystemExit(f"APK exceeds the 27 MiB guardrail: {size:,} bytes")
+          PY
+      - name: Upload signed APK only
         uses: actions/upload-artifact@v4
         with:
-          name: libation-mobile-${{ matrix.name }}
-          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*.apk
+          name: vorath-${{ matrix.name }}-signed-apk
+          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*-Signed.apk
           if-no-files-found: error
