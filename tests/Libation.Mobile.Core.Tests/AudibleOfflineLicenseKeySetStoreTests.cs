@@ -17,9 +17,14 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
         var actual = await store.LoadAsync("account-123", "B012345678");
 
         Assert.Equal(expected, actual);
-        Assert.Single(secrets.Keys);
-        Assert.DoesNotContain("B012345678", secrets.Keys.Single(), StringComparison.Ordinal);
-        Assert.DoesNotContain("account-123", secrets.Keys.Single(), StringComparison.Ordinal);
+        Assert.Equal(new[] { "B012345678" },
+            await store.ListAccountTitlesAsync("account-123"));
+        Assert.Equal(2, secrets.Keys.Count);
+        Assert.All(secrets.Keys, key =>
+        {
+            Assert.DoesNotContain("B012345678", key, StringComparison.Ordinal);
+            Assert.DoesNotContain("account-123", key, StringComparison.Ordinal);
+        });
     }
 
     [Fact]
@@ -165,6 +170,56 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
 
         Assert.False(await store.IsDashDownloadCompleteAsync("account-a", "B012345678"));
         Assert.True(await store.IsDashDownloadCompleteAsync("account-b", "B012345678"));
+    }
+
+    [Fact]
+    public async Task AccountTitleIndex_IsScopedAndTracksSavedOfflineLicences()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        await store.SaveAsync("account-a", "B012345678", [0x01, 0x02]);
+        await store.SaveAsync("account-a", "B098765432", [0x03, 0x04]);
+        await store.SaveAsync("account-b", "B012345678", [0x05, 0x06]);
+
+        Assert.Equal(
+            new[] { "B012345678", "B098765432" },
+            await store.ListAccountTitlesAsync("account-a"));
+        Assert.Equal(
+            new[] { "B012345678" },
+            await store.ListAccountTitlesAsync("account-b"));
+        Assert.Empty(await store.ListAccountTitlesAsync("account-c"));
+    }
+
+    [Fact]
+    public async Task Remove_DeletesTitleFromAccountIndexAndLeavesOtherTitles()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        await store.SaveAsync("account-a", "B012345678", [0x01]);
+        await store.SaveAsync("account-a", "B098765432", [0x02]);
+
+        await store.RemoveAsync("account-a", "B012345678");
+
+        Assert.Equal(
+            new[] { "B098765432" },
+            await store.ListAccountTitlesAsync("account-a"));
+        Assert.Null(await store.LoadAsync("account-a", "B012345678"));
+        Assert.NotNull(await store.LoadAsync("account-a", "B098765432"));
+    }
+
+    [Fact]
+    public async Task SaveDashManifest_InvalidatePreviousCompletionMarkerBeforeInterruptedRetry()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        var uri = new Uri("https://media.example.invalid/title/manifest.mpd");
+        AudibleWidevineStreamKey[] keys = [new AudibleWidevineStreamKey(0, 0, 0)];
+
+        await store.SaveDashManifestAsync("account-a", "B012345678", uri, keys);
+        await store.MarkDashDownloadCompleteAsync("account-a", "B012345678");
+        Assert.True(await store.IsDashDownloadCompleteAsync("account-a", "B012345678"));
+
+        // Starting a replacement/retry invalidates the previous marker first.
+        await store.SaveDashManifestAsync("account-a", "B012345678", uri, keys);
+
+        Assert.False(await store.IsDashDownloadCompleteAsync("account-a", "B012345678"));
     }
 
     private sealed class MemorySecretStore : ISecretStore
