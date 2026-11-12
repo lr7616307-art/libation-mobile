@@ -52,6 +52,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private string _title = "Audiobook";
     private string? _currentFilePath;
     private bool _isWidevinePlayback;
+    private string? _widevineAsin;
     private string? _coverImagePath;
     private Bitmap? _coverBitmap;
     private float _playbackSpeed = 1f;
@@ -187,6 +188,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
             _title = System.IO.Path.GetFileNameWithoutExtension(path);
+        WidevinePlaybackRecoveryStore.Clear(this);
+        _widevineAsin = null;
         _currentFilePath = path;
         _isWidevinePlayback = false;
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
@@ -245,7 +248,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
             _title = "Audible audiobook";
+        PlaybackRecoveryStore.Clear(this);
         _currentFilePath = null; // Protected media is never represented as a clear local file.
+        _widevineAsin = asin;
         _isWidevinePlayback = true;
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
@@ -309,6 +314,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (intent.GetBooleanExtra(ExtraAutoPlay, true))
             _player.Play();
 
+        SavePlaybackSnapshot();
         UpdateNotification();
         PublishPlaybackState();
     }
@@ -464,11 +470,21 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     }
     private void SavePlaybackSnapshot()
     {
-        if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        if (_player is null) return;
         try
         {
-            PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
-                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying, _coverImagePath));
+            if (_isWidevinePlayback && !string.IsNullOrWhiteSpace(_widevineAsin))
+            {
+                WidevinePlaybackRecoveryStore.Save(this, new WidevinePlaybackRecoverySnapshot(
+                    _widevineAsin, _title, ReadPosition(), _player.IsPlaying));
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_currentFilePath))
+            {
+                PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
+                    _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying, _coverImagePath));
+            }
         }
         catch (Exception) { /* A checkpoint must never interrupt audio playback. */ }
     }
@@ -650,8 +666,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private void StopPlayback(bool clearRecovery = true)
     {
         StopPlayer();
-        if (clearRecovery && !_isWidevinePlayback) PlaybackRecoveryStore.Clear(this);
+        if (clearRecovery)
+        {
+            if (_isWidevinePlayback) WidevinePlaybackRecoveryStore.Clear(this);
+            else PlaybackRecoveryStore.Clear(this);
+        }
         _isWidevinePlayback = false;
+        _widevineAsin = null;
         StopForeground(StopForegroundFlags.Remove);
     }
 
