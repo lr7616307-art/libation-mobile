@@ -75,10 +75,11 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Record the requested `DataSpec` byte ranges for each hashed cache key. The range index contains only title-scoped hashed keys and numeric offsets/lengths; signed provider URLs are not stored.
 - Before setting or trusting the offline-complete marker, audit every recorded range against Media3's cache byte counts. Unknown-length resources are accepted only when Media3 has recorded a final content length and the full resource is cached.
 - Reconcile stale index entries against the actual cache and recover orphan cache keys for safe later deletion. Incomplete/missing ranges invalidate the completion marker and block offline playback until retried.
+- Add automated tests for bounded-range coverage, unknown-length full-resource coverage, invalid range metadata and per-title completion-marker invalidation.
 ## Remaining implementation — not yet verified
 
 1. Add a startup/library-refresh audit so missing or partial offline resources are identified before a title is presented as ready, not only when the user opens or plays it.
-2. Add focused automated tests for cache-range completion, stale-index reconciliation and interrupted-download retry behavior.
+2. Add broader integration coverage for stale-index reconciliation and interrupted-download retry behavior.
 3. Add licence expiry/renewal and provider release/revocation handling, plus cleanup when an Audible account is disconnected or loses access.
 4. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, challenge/response compatibility, persistent key-set validity, DASH segment completion, offline playback with network disabled, cancellation/retry, app restart, removal/release and reinstall behavior.
 
