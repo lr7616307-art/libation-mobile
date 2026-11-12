@@ -4,6 +4,7 @@ using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer;
 using Android.OS;
 using Android.Graphics;
+using Java.Util;
 
 namespace Libation.Mobile.Android;
 
@@ -12,6 +13,7 @@ namespace Libation.Mobile.Android;
 public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 {
     public const string ActionPlay = "org.libationmobile.app.action.PLAY";
+    public const string ActionPlayWidevineDash = "org.libationmobile.app.action.PLAY_WIDEVINE_DASH";
     public const string ActionPause = "org.libationmobile.app.action.PAUSE";
     public const string ActionResume = "org.libationmobile.app.action.RESUME";
     public const string ActionSeek = "org.libationmobile.app.action.SEEK";
@@ -26,6 +28,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionCancelSleepTimer = "org.libationmobile.app.action.CANCEL_SLEEP_TIMER";
     public const string ActionSetArtwork = "org.libationmobile.app.action.SET_ARTWORK";
     public const string ExtraFilePath = "file_path";
+    public const string ExtraManifestUri = "widevine_manifest_uri";
+    public const string ExtraOfflineKeySetId = "widevine_offline_key_set_id";
     public const string ExtraTitle = "title";
     public const string ExtraArtworkPath = "artwork_path";
     public const string ExtraChapterPositions = "chapter_positions";
@@ -37,6 +41,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private const string ChannelId = "libation_audiobook_playback";
     private const int NotificationId = 4102;
+    private static readonly UUID WidevineUuid = UUID.FromString("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed");
     private IExoPlayer? _player;
     private string _title = "Audiobook";
     private string? _currentFilePath;
@@ -93,6 +98,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             {
                 case ActionPlay:
                     StartPlayback(intent);
+                    break;
+                case ActionPlayWidevineDash:
+                    StartWidevineDashPlayback(intent);
                     break;
                 case ActionPause:
                     if (_player?.IsPlaying == true) _player.Pause();
@@ -197,6 +205,61 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (intent.GetBooleanExtra(ExtraAutoPlay, true))
             _player.Play();
         SavePlaybackSnapshot();
+        UpdateNotification();
+        PublishPlaybackState();
+    }
+
+
+    private void StartWidevineDashPlayback(Intent intent)
+    {
+        var manifestValue = intent.GetStringExtra(ExtraManifestUri);
+        if (string.IsNullOrWhiteSpace(manifestValue) ||
+            !Uri.TryCreate(manifestValue, UriKind.Absolute, out var manifestUri) ||
+            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("A valid HTTPS Audible DASH manifest is required.");
+
+        var keySetId = intent.GetByteArrayExtra(ExtraOfflineKeySetId);
+        if (keySetId is null || keySetId.Length is 0 or > 1024)
+            throw new InvalidDataException("A saved Android Widevine offline key-set identifier is required.");
+
+        StopPlayer();
+        _title = intent.GetStringExtra(ExtraTitle);
+        if (string.IsNullOrWhiteSpace(_title))
+            _title = "Audible audiobook";
+        _currentFilePath = null; // Protected remote media is never written as a local clear-audio path.
+        SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
+        _playbackSpeed = 1f;
+
+        StartForeground(NotificationId, BuildNotification());
+
+        var drmConfiguration = new MediaItem.DrmConfiguration.Builder(WidevineUuid)
+            .SetKeySetId(keySetId)
+            .Build();
+        var mediaItem = new MediaItem.Builder()
+            .SetUri(global::Android.Net.Uri.Parse(manifestUri.AbsoluteUri))
+            .SetMimeType("application/dash+xml")
+            .SetDrmConfiguration(drmConfiguration)
+            .Build();
+
+        _player = new ExoPlayerBuilder(this).Build();
+        _player.AddListener(this);
+        _player.SetMediaItem(mediaItem);
+        var position = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
+        if (position > 0) _player.SeekTo(position);
+        _player.Prepare();
+
+        var speed = intent.GetFloatExtra(ExtraSpeed, 1f);
+        if (!float.IsNaN(speed) && !float.IsInfinity(speed))
+        {
+            _playbackSpeed = Math.Clamp(speed, 0.5f, 3f);
+            _player.PlaybackParameters = new PlaybackParameters(_playbackSpeed, 1f);
+        }
+        if (intent.GetBooleanExtra(ExtraAutoPlay, true))
+            _player.Play();
+
+        // Remove the byte array from the service command as soon as Media3's
+        // immutable MediaItem has been built. It is not copied to recovery state.
+        intent.RemoveExtra(ExtraOfflineKeySetId);
         UpdateNotification();
         PublishPlaybackState();
     }
