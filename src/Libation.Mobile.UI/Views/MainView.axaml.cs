@@ -1159,6 +1159,80 @@ public partial class MainView : UserControl
         }
     }
 
+    private async void ProbeAudibleRenewalClicked(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var book = _viewModel.DetailBook;
+        if (book is null || !book.IsWidevineOfflineAvailable ||
+            !book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            return;
+
+        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+        {
+            _viewModel.ReportAudioStatus("Audible renewal diagnostics are unavailable on this platform.");
+            return;
+        }
+
+        if (_protectedAudibleOperationCts is not null)
+        {
+            _viewModel.ReportAudioStatus("Another Audible operation is already running. Cancel it before starting the diagnostic.");
+            return;
+        }
+
+        var operationCts = new CancellationTokenSource();
+        _protectedAudibleOperationCts = operationCts;
+        _viewModel.SetProtectedAudibleOperationInProgress(true);
+
+        try
+        {
+            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(operationCts.Token);
+            if (coordinator is null)
+            {
+                _viewModel.ReportAudioStatus("Sign in to the Audible account that saved this offline title.");
+                return;
+            }
+
+            var asin = book.Id["provider:".Length..];
+            _viewModel.ReportAudioStatus(
+                "Sending an Audible renewal diagnostic challenge. The returned licence will not be installed or used to replace your saved copy.");
+
+            var result = await coordinator.ProbeOfflineLicenseRenewalAsync(
+                asin, operationCts.Token);
+
+            var status = string.IsNullOrWhiteSpace(result.StatusCode)
+                ? "not supplied"
+                : result.StatusCode;
+            var message = $"Audible renewal diagnostic: status {status}; " +
+                $"licence payload {(result.LicensePayloadPresent ? "present" : "missing")}; " +
+                $"licence ID {(result.LicenseIdentifierPresent ? "present" : "missing")}. " +
+                "The response was not applied; your saved offline copy was not replaced.";
+
+            if (!string.IsNullOrWhiteSpace(result.LicenseExpirationDate))
+                message += $" Expiration: {result.LicenseExpirationDate}.";
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                message += $" Audible message: {result.ErrorMessage[..Math.Min(200, result.ErrorMessage.Length)]}";
+
+            _viewModel.ReportAudioStatus(message);
+        }
+        catch (OperationCanceledException) when (operationCts.IsCancellationRequested)
+        {
+            _viewModel.ReportAudioStatus("Audible renewal diagnostic cancelled. The saved offline copy was not replaced.");
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ReportAudioStatus(
+                $"Audible renewal diagnostic failed ({ex.GetType().Name}). The saved offline copy was not replaced.");
+        }
+        finally
+        {
+            if (ReferenceEquals(_protectedAudibleOperationCts, operationCts))
+                _protectedAudibleOperationCts = null;
+            _viewModel.SetProtectedAudibleOperationInProgress(false);
+            operationCts.Dispose();
+        }
+    }
+
     private async void RemoveAudibleOfflineBookClicked(
         object? sender,
         Avalonia.Interactivity.RoutedEventArgs e)
