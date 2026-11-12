@@ -7,7 +7,9 @@ public enum DownloadStatus
     Queued,
     Downloading,
     Completed,
-    Failed
+    Failed,
+    // The provider transfer completed, but the file remains protected and is not playable in VØRATH.
+    Protected
 }
 
 public sealed record DownloadQueueItem(
@@ -35,6 +37,7 @@ public sealed record DownloadQueueItem(
         DownloadStatus.Downloading => "Downloading",
         DownloadStatus.Completed => "Completed",
         DownloadStatus.Failed => "Failed",
+        DownloadStatus.Protected => "Downloaded (protected)",
         _ => "Unknown"
     };
 }
