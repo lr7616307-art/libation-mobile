@@ -103,8 +103,9 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         string asin,
         CancellationToken cancellationToken = default)
     {
-        await RemoveInactiveLicenseBeforeReplacementAsync(asin, cancellationToken)
-            .ConfigureAwait(false);
+        if (await RemoveInactiveLicenseBeforeReplacementAsync(asin, cancellationToken)
+                .ConfigureAwait(false))
+            return;
 
         var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
         var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
@@ -149,25 +150,21 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         }
     }
 
-    private async Task RemoveInactiveLicenseBeforeReplacementAsync(
+    private async Task<bool> RemoveInactiveLicenseBeforeReplacementAsync(
         string asin,
         CancellationToken cancellationToken)
     {
         var existingKeySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
             .ConfigureAwait(false);
         if (existingKeySetId is null)
-            return;
+            return false;
 
-        var canReuseExisting = false;
         try
         {
             using var drmSession = new AndroidWidevineOfflineSession();
             var state = drmSession.GetOfflineLicenseState(existingKeySetId);
             if (state == OfflineLicenseStateUsable)
-            {
-                canReuseExisting = true;
-                return;
-            }
+                return true;
 
             if (state == OfflineLicenseStateUnknown)
                 throw new InvalidOperationException(
@@ -185,13 +182,11 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             CryptographicOperations.ZeroMemory(existingKeySetId);
         }
 
-        if (!canReuseExisting)
-        {
-            new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
-                .RemoveTitle(accountId, asin);
-            await keySetStore.RemoveAsync(accountId, asin, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
+            .RemoveTitle(accountId, asin);
+        await keySetStore.RemoveAsync(accountId, asin, cancellationToken)
+            .ConfigureAwait(false);
+        return false;
     }
 
     /// <summary>
