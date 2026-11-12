@@ -7,22 +7,31 @@
     <Grid Grid.Row="0">
       <ScrollViewer>
         <StackPanel Margin="20,16,20,20" Spacing="16">
-          <Grid ColumnDefinitions="*,Auto">
+          <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsHomeExperienceVisible}">
             <StackPanel Grid.Column="0" Spacing="0">
               <TextBlock Text="VØRATH" FontSize="13" FontWeight="Bold" LetterSpacing="3" Foreground="#B9A5E8"/>
               <TextBlock Text="BEYOND THE SILENCE" FontSize="9" LetterSpacing="2" Foreground="#817494"/>
             </StackPanel>
-            <TextBlock Grid.Column="1" Text="◉" FontSize="30" FontWeight="Bold" Foreground="#A78BFA" VerticalAlignment="Center"/>
+            <Button x:Name="HomeSearchToggleButton" Grid.Column="1" Content="⌕" FontSize="26" Foreground="#A78BFA"
+                    Background="Transparent" BorderThickness="0" Padding="8" VerticalAlignment="Center"
+                    ToolTip.Tip="Search audiobooks" Click="ToggleHomeSearchClicked" IsVisible="{Binding IsHomeTab}"/>
           </Grid>
 
           <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
             <TextBlock Text="Home" FontSize="30" FontWeight="Bold" />
-            <TextBox PlaceholderText="Search your audiobooks" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
             <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
-              <Button Grid.Column="0" Content="{Binding NotStartedTabLabel}" Background="#C17A18" Click="ShowNotStartedClicked"/>
-              <Button Grid.Column="1" Content="{Binding InProgressTabLabel}" Background="#C63E46" Click="ShowInProgressClicked"/>
-              <Button Grid.Column="2" Content="{Binding FinishedTabLabel}" Background="#218B52" Click="ShowFinishedClicked"/>
+              <Button Grid.Column="0" Background="#C17A18" Click="ShowNotStartedClicked">
+                <TextBlock Text="{Binding NotStartedTabLabel}" FontSize="10" LineHeight="12" TextWrapping="NoWrap"/>
+              </Button>
+              <Button Grid.Column="1" Background="#C63E46" Click="ShowInProgressClicked">
+                <TextBlock Text="{Binding InProgressTabLabel}" FontSize="10" LineHeight="12" TextWrapping="NoWrap"/>
+              </Button>
+              <Button Grid.Column="2" Background="#218B52" Click="ShowFinishedClicked">
+                <TextBlock Text="{Binding FinishedTabLabel}" FontSize="10" LineHeight="12" TextWrapping="NoWrap"/>
+              </Button>
             </Grid>
+            <TextBox x:Name="HomeSearchBox" PlaceholderText="Search your audiobooks"
+                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" IsVisible="False"/>
             <Button Content="＋  Import Audiobook" FontSize="17" MinHeight="54" Click="ImportAudiobookClicked" />
             <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" FontSize="12" />
                         <Border CornerRadius="12" Padding="10" Background="#211A2D" IsVisible="{Binding IsSelectionMode}">
@@ -270,12 +279,13 @@
                 <Image Width="320" Height="320" HorizontalAlignment="Center" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
                 <TextBlock Text="{Binding NowPlayingBook.Title}" FontSize="24" FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="16" TextAlignment="Center" Opacity="0.7"/>
-                <TextBlock x:Name="CurrentChapterTitleLabel" Text="Ready when you are" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
+                <TextBlock x:Name="CurrentChapterTitleLabel" Text="Loading chapter information…" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
                 <TextBlock x:Name="ChapterProgressLabel" Text="{Binding NowPlayingChapterCountLabel}" FontSize="12" TextAlignment="Center" Opacity="0.65"/>
                 <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0" IsEnabled="False"/>
-                <Grid ColumnDefinitions="*,*">
+                <Grid ColumnDefinitions="*,*,*">
                   <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="12"/>
-                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="12" HorizontalAlignment="Right"/>
+                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="12" HorizontalAlignment="Center"/>
+                  <TextBlock x:Name="PlaybackRemainingLabel" Grid.Column="2" Text="--:--" FontSize="12" HorizontalAlignment="Right"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="3">
                   <Button Grid.Column="0" Content="⏮" FontSize="22" Click="PreviousChapterClicked"/>
@@ -299,7 +309,9 @@
               <Button Grid.Column="1" Content="Done" Click="CloseChaptersClicked"/>
             </Grid>
             <TextBlock Text="{Binding NowPlayingBook.Title}" FontSize="13" Opacity="0.65" TextWrapping="Wrap"/>
-            <ItemsControl ItemsSource="{Binding NowPlayingBook.Chapters}">
+            <TextBlock Text="{Binding NowPlayingChaptersUnavailableMessage}" FontSize="13" Opacity="0.75"
+                       TextWrapping="Wrap" IsVisible="{Binding HasNoNowPlayingChapters}"/>
+            <ItemsControl ItemsSource="{Binding NowPlayingBook.Chapters}" IsVisible="{Binding HasNowPlayingChapters}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
                   <Button HorizontalContentAlignment="Stretch" Padding="14" Margin="0,0,0,6" Click="ChapterSelectedClicked" Tag="{Binding StartPositionMilliseconds}">

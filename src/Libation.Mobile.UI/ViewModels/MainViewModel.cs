@@ -100,10 +100,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(NowPlayingChapterCountLabel));
             OnPropertyChanged(nameof(HasNowPlayingChapters));
             OnPropertyChanged(nameof(HasNoNowPlayingChapters));
+            OnPropertyChanged(nameof(NowPlayingChaptersUnavailableMessage));
         }
     }
     public bool HasNowPlayingChapters => NowPlayingBook?.Chapters.Count > 0;
     public bool HasNoNowPlayingChapters => !HasNowPlayingChapters;
+    public string NowPlayingChaptersUnavailableMessage => NowPlayingBook is null
+        ? "No audiobook is selected."
+        : "No embedded chapter markers were found. Import an audiobook with chapter metadata or add markers in audiobook details.";
     public string NowPlayingChapterCountLabel => NowPlayingBook is null
         ? "Import an audiobook to begin listening"
         : $"{NowPlayingBook.Chapters.Count} chapters";
@@ -124,6 +128,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             RefreshAudibleBooks(_allBooks);
         }
     }
+    public bool IsHomeExperienceVisible => _selectedTabIndex == 0;
     public bool IsHomeTab => _selectedTabIndex == 0 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsAudibleLibraryTab => _selectedTabIndex == 1 && !IsFullPlayerVisible && !IsChaptersVisible;
     public bool IsAudibleAccountTab => _selectedTabIndex == 2 && !IsFullPlayerVisible && !IsChaptersVisible;
@@ -368,6 +373,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     private void RaiseNavigationState()
     {
+        OnPropertyChanged(nameof(IsHomeExperienceVisible));
         OnPropertyChanged(nameof(IsHomeTab));
         OnPropertyChanged(nameof(IsAudibleLibraryTab));
         OnPropertyChanged(nameof(IsAudibleAccountTab));

@@ -24,29 +24,22 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
     }
 
     private PlaybackRecoverySnapshot? Recovery => PlaybackRecoveryStore.Load(AppContext);
-    // While ExoPlayer is preparing after process recovery, the service may
-    // exist before IsPlaying becomes true. Keep the persisted intent visible
-    // until the player reports its actual state (a user pause writes false).
-    public bool IsPlaying => AndroidLocalAudioPlaybackService.IsPlaying || Recovery?.WasPlaying == true;
+    private static bool HasActivePlayer => AndroidLocalAudioPlaybackService.HasActivePlayer;
+    // Recovery is only a fallback while the native player is not ready.
+    // Once ExoPlayer exists, its real state wins over any stale saved flag.
+    public bool IsPlaying => HasActivePlayer
+        ? AndroidLocalAudioPlaybackService.IsPlaying
+        : Recovery?.WasPlaying == true;
     public string? CurrentFilePath => AndroidLocalAudioPlaybackService.CurrentFilePath ?? Recovery?.FilePath;
-    public long PositionMilliseconds
-    {
-        get
-        {
-            var current = AndroidLocalAudioPlaybackService.PositionMilliseconds;
-            return current > 0 ? current : Recovery?.PositionMilliseconds ?? 0;
-        }
-    }
-    public long DurationMilliseconds
-    {
-        get
-        {
-            var current = AndroidLocalAudioPlaybackService.DurationMilliseconds;
-            return current > 0 ? current : Recovery?.DurationMilliseconds ?? 0;
-        }
-    }
-    public float PlaybackSpeed => AndroidLocalAudioPlaybackService.Current is not null
-        ? AndroidLocalAudioPlaybackService.PlaybackSpeed : Recovery?.PlaybackSpeed ?? 1f;
+    public long PositionMilliseconds => HasActivePlayer
+        ? AndroidLocalAudioPlaybackService.PositionMilliseconds
+        : Recovery?.PositionMilliseconds ?? 0;
+    public long DurationMilliseconds => HasActivePlayer
+        ? AndroidLocalAudioPlaybackService.DurationMilliseconds
+        : Recovery?.DurationMilliseconds ?? 0;
+    public float PlaybackSpeed => HasActivePlayer
+        ? AndroidLocalAudioPlaybackService.PlaybackSpeed
+        : Recovery?.PlaybackSpeed ?? 1f;
 
     public void Play(string filePath, long startPositionMilliseconds = 0, string? title = null)
     {

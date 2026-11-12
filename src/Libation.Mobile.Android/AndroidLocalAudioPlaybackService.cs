@@ -51,6 +51,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private long? _sleepChapterPositionMilliseconds;
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
+    public static bool HasActivePlayer => Current?._player is not null;
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
     public static string? CurrentFilePath => Current?._currentFilePath;
     public static long PositionMilliseconds => Current?.ReadPosition() ?? 0;
@@ -211,7 +212,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         UpdateNotification();
     }
 
-    public void OnIsPlayingChanged(bool isPlaying) => UpdateNotification();
+    public void OnIsPlayingChanged(bool isPlaying)
+    {
+        SavePlaybackSnapshot();
+        UpdateNotification();
+    }
 
     public void OnPlayerError(PlaybackException? error)
     {
@@ -238,7 +243,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnMetadata(Metadata? metadata) { }
     public void OnPlayWhenReadyChanged(bool playWhenReady, int reason) => UpdateNotification();
     public void OnPositionDiscontinuity(PlayerPositionInfo? oldPosition, PlayerPositionInfo? newPosition, int reason) { }
-    public void OnPlaybackParametersChanged(PlaybackParameters? parameters) { }
+    public void OnPlaybackParametersChanged(PlaybackParameters? parameters)
+    {
+        if (parameters is not null && float.IsFinite(parameters.Speed) && parameters.Speed > 0)
+            _playbackSpeed = Math.Clamp(parameters.Speed, 0.5f, 3f);
+        SavePlaybackSnapshot();
+        UpdateNotification();
+    }
     public void OnPlaybackSuppressionReasonChanged(int reason) { }
     public void OnPlayerErrorChanged(PlaybackException? error) { }
     public void OnPlaylistMetadataChanged(MediaMetadata? metadata) { }
