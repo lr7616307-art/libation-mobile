@@ -524,7 +524,7 @@ public sealed class AndroidWidevineDashOfflineStore
             var cacheKey = titleScope + ":" + kind + ":" + Convert.ToHexString(digest).ToLowerInvariant();
             // The URI check above rejects a null DataSpec before this point.
             var position = dataSpec!.Position;
-            var length = dataSpec.Length;
+            var length = dataSpec!.Length;
             recordCacheKey(titleScope, cacheKey, position, length);
             return cacheKey;
         }
