@@ -51,13 +51,28 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Stored the short-lived manifest reference and selected stream indexes in the Keystore-backed secret store, separate from catalogue and ordinary download queue files.
 - Changed the Audible action to use the Widevine DASH route directly rather than queueing a separate generic AAXC/ADRM protected file. The UI marks a title offline only after the protected media download completes.
 
+## Pass 12 — protected playback recovery
+
+- Persist only the ASIN, title, playback position and play/pause state in app-private recovery preferences.
+- On app startup, restore the saved Audible identity through the existing account factory, reload the encrypted offline key-set ID and DASH manifest reference from protected storage, and reopen the cache-only Media3 source.
+- Preserve paused state when restoring a session; do not autoplay a title that was paused before process death.
+- Clear protected recovery metadata when playback completes or a different clear-audio title is started.
+- Recovery metadata intentionally excludes account IDs, signed URLs, stream indexes, DRM challenges, licence responses and key-set IDs.
+
+## Pass 13 — offline title removal
+
+- Add a **Remove offline copy** action to Audible title details, shown only when the catalogue marks a Widevine title as offline.
+- Before cleanup, stop the matching protected player on Android's main looper so its Media3 session is no longer reading the cache or using the offline licence.
+- Restore the device-side MediaDrm key set and request its removal before deleting the encrypted key-set identifier.
+- Remove the title-scoped DASH cache resources and protected manifest metadata, then clear the local catalogue's offline-available flag.
+- Keep the offline copy separate from ordinary imported audio; this action does not touch clear local audiobooks or other Audible titles.
+
 ## Remaining implementation — not yet verified
 
-1. Complete Android ABI builds for the latest Media3 downloader/cache bindings; a previous attempt exposed .NET binding mismatches that have been fixed in the latest commits. The latest CI run is still in progress.
-2. Add a robust offline-cache integrity audit. The current completion marker and cache-key index are written by the download path; a future startup audit should verify all DASH resources and reconcile orphaned or missing cache entries before showing a title as offline.
-3. Add protected-playback recovery across app/process restart by persisting only non-secret title identity and position, then loading the key-set ID and cache-only DASH source.
-4. Add licence expiry/renewal, provider release/revocation, account disconnect and title deletion handling, including safe cleanup when the app loses account access.
-5. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, challenge/response compatibility, persistent key-set validity, DASH segment completion, offline playback with network disabled, app restart, expiry/release and reinstall behavior.
+1. Add an explicit user-facing cancel action and progress state for an in-flight Audible licence/download operation. The underlying downloader already observes cancellation, but the current detail-page flow does not yet expose a cancel control.
+2. Add a startup cache-integrity audit that validates the selected DASH representation's initialization/index/media resources and reconciles stale index entries after interrupted downloads.
+3. Add licence expiry/renewal and provider release/revocation handling, plus cleanup when an Audible account is disconnected or loses access.
+4. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, challenge/response compatibility, persistent key-set validity, DASH segment completion, offline playback with network disabled, app restart, removal/release and reinstall behavior.
 
 ## Android 10 / device constraints
 
