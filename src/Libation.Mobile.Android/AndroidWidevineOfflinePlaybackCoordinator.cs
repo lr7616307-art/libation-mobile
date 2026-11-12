@@ -69,6 +69,67 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     }
 
     /// <summary>
+    /// Performs a diagnostic Audible renewal exchange for an existing offline
+    /// key set. It sends Android's opaque renewal challenge to Audible and
+    /// returns only non-secret response metadata. The returned licence is
+    /// deliberately NOT supplied to MediaDrm or persisted; this probe therefore
+    /// cannot replace or invalidate the currently active key set.
+    /// </summary>
+    public async Task<AndroidWidevineRenewalProbeResult> ProbeOfflineLicenseRenewalAsync(
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        await RecoverPromotableRenewalKeySetAsync(asin, cancellationToken).ConfigureAwait(false);
+
+        var keySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                "There is no saved Audible offline licence to renew.");
+
+        byte[]? challenge = null;
+        try
+        {
+            var reference = await keySetStore.LoadProviderLicenseReferenceAsync(
+                accountId, asin, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    "The saved Audible content reference is missing; a renewal challenge cannot be built.");
+
+            using var drmSession = new AndroidWidevineOfflineSession();
+            var state = drmSession.GetOfflineLicenseState(keySetId);
+            if (state != OfflineLicenseStateUsable)
+                throw new InvalidOperationException(
+                    state == OfflineLicenseStateReleased
+                        ? "The saved Audible offline licence is marked for release and cannot be renewed."
+                        : state == OfflineLicenseStateUnknown
+                            ? "Android could not verify the saved Audible offline licence state."
+                            : "The saved Audible offline licence is not in a usable state.");
+
+            challenge = drmSession.CreateOfflineRenewalRequest(keySetId);
+            var refresh = await source.RefreshWidevineLicenseAsync(
+                asin, reference, challenge, cancellationToken).ConfigureAwait(false);
+
+            // Never expose or store the opaque licence payload in diagnostics.
+            // Status is intentionally reported verbatim: this build does not
+            // assume a success code for Audible's community-documented endpoint.
+            return new AndroidWidevineRenewalProbeResult(
+                asin,
+                refresh.StatusCode,
+                !string.IsNullOrWhiteSpace(refresh.License),
+                !string.IsNullOrWhiteSpace(refresh.LicenseId),
+                refresh.LicenseRefreshDate,
+                refresh.LicenseRemovalDate,
+                refresh.LicenseExpirationDate,
+                refresh.ErrorMessage);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(keySetId);
+            if (challenge is not null)
+                CryptographicOperations.ZeroMemory(challenge);
+        }
+    }
+
+    /// <summary>
     /// Recovers a renewal that was accepted by MediaDrm but whose active
     /// encrypted record was not promoted before process termination. Only a
     /// platform-usable, non-expired staged key set is promoted. Unknown,
@@ -447,3 +508,17 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         }
     }
 }
+
+/// <summary>
+/// Safe diagnostic summary of an Audible Widevine renewal response. The
+/// opaque DRM licence and challenge are intentionally excluded.
+/// </summary>
+public sealed record AndroidWidevineRenewalProbeResult(
+    string Asin,
+    string? StatusCode,
+    bool LicensePayloadPresent,
+    bool LicenseIdentifierPresent,
+    string? LicenseRefreshDate,
+    string? LicenseRemovalDate,
+    string? LicenseExpirationDate,
+    string? ErrorMessage);
