@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -18,33 +21,95 @@ jobs:
       - name: Run core tests
         run: dotnet test tests/Libation.Mobile.Core.Tests/Libation.Mobile.Core.Tests.csproj -c Release
 
+  # Pull-request builds intentionally do not produce installable APKs.
+  # APK publishing is restricted to trusted push/dispatch runs and requires
+  # the repository's persistent release-signing key.
   build:
+    if: github.event_name != 'pull_request'
     needs: test
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_SIGNING_KEYSTORE: ${{ runner.temp }}/vorath-release.keystore
+      AndroidKeyStore: "true"
+      AndroidSigningKeyStore: ${{ runner.temp }}/vorath-release.keystore
+      AndroidSigningKeyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
+      AndroidSigningKeyPass: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      AndroidSigningStorePass: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Require persistent Android signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf '::error::Persistent APK signing is not configured. Add these repository Actions secrets: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
+      - name: Decode and validate persistent signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_SIGNING_KEYSTORE"
+          test -s "$ANDROID_SIGNING_KEYSTORE"
+          keytool -list -keystore "$ANDROID_SIGNING_KEYSTORE" -alias "$ANDROID_KEY_ALIAS" -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" >/dev/null
+          echo "Persistent Android signing key validated."
+
+      - name: Calculate monotonic Android version code
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          if (( version_code > 2100000000 )); then
+            echo "::error::Android versionCode exceeded Google's supported maximum."
+            exit 1
+          fi
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "Android versionCode: $version_code"
+
       - name: Install .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+
       - name: Install Android workload
         run: dotnet workload install android
+
       - name: Restore both Android runtimes
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
+
       - name: Publish ARMv7 APK
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk -p:ApplicationVersion=${{ steps.version.outputs.version_code }}
+
       - name: Publish ARM64 APK
-        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm64 --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk
-      - name: Verify ABI-specific APKs
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm64 --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk -p:ApplicationVersion=${{ steps.version.outputs.version_code }}
+
+      - name: Verify ABI and signing identity
         shell: python
         run: |
           from pathlib import Path
           from zipfile import ZipFile
+          import re
+          import subprocess
 
           root = Path("src/Libation.Mobile.Android/bin/Release/net10.0-android36.0")
           apks = sorted(root.rglob("publish/*-Signed.apk"))
@@ -53,6 +118,15 @@ jobs:
 
           expected = {"armeabi-v7a", "arm64-v8a"}
           found = set()
+          fingerprints = set()
+          build_tools = Path.home() / "Android" / "Sdk" / "build-tools"
+          if not build_tools.exists():
+              build_tools = Path("/usr/local/lib/android/sdk/build-tools")
+          candidates = sorted(build_tools.glob("*/apksigner"))
+          if not candidates:
+              raise SystemExit(f"Could not locate apksigner under {build_tools}")
+          apksigner = str(candidates[-1])
+
           for apk in apks:
               with ZipFile(apk) as package:
                   abis = {
@@ -65,11 +139,35 @@ jobs:
                   raise SystemExit(f"{apk} is not single-ABI: {sorted(abis)}")
               found.update(abis)
 
+              verification = subprocess.run(
+                  [apksigner, "verify", "--print-certs", str(apk)],
+                  check=True, capture_output=True, text=True
+              )
+              match = re.search(
+                  r"certificate SHA-256 digest: ([0-9a-fA-F]+)",
+                  verification.stdout + verification.stderr,
+                  re.IGNORECASE,
+              )
+              if not match:
+                  raise SystemExit(f"Could not read signing certificate fingerprint from {apk}")
+              fingerprints.add(match.group(1).lower())
+              print(f"Signing certificate SHA-256: {match.group(1).lower()}")
+
           if found != expected:
               raise SystemExit(f"Expected APKs for {sorted(expected)}, found {sorted(found)}")
-      - name: Upload signed ABI APKs
+          if len(fingerprints) != 1:
+              raise SystemExit(f"ARMv7 and ARM64 APKs do not share one signing identity: {sorted(fingerprints)}")
+
+          print("Verified: both ABI APKs use the same persistent signing identity.")
+
+      - name: Upload stable-signed ABI APKs
         uses: actions/upload-artifact@v4
         with:
-          name: libation-mobile-ABI-specific
+          name: VORATH-StableSigned-ABI-specific
           path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/**/publish/*-Signed.apk
           if-no-files-found: error
+
+      - name: Remove temporary signing key
+        if: always()
+        shell: bash
+        run: rm -f "$ANDROID_SIGNING_KEYSTORE"
