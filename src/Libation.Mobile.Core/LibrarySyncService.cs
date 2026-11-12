@@ -112,7 +112,8 @@ public sealed class LibrarySyncService
     private static bool IsMissingProviderText(string? value)
         => string.IsNullOrWhiteSpace(value)
             || string.Equals(value.Trim(), "[null]", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(value.Trim(), "null", StringComparison.OrdinalIgnoreCase);
+            || string.Equals(value.Trim(), "null", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value.Trim(), "Unknown author", StringComparison.OrdinalIgnoreCase);
 
     private static string NormalizeCoverUrl(string? value)
     {
