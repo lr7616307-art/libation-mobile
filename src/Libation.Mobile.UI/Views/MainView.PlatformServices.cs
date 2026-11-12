@@ -6,6 +6,7 @@ namespace Libation.Mobile.UI.Views;
 
 public interface IAudibleWidevinePlaybackCoordinator
 {
+    Task<bool> HasOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task AcquireOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task PlayAsync(string asin, string title, long startPositionMilliseconds = 0, CancellationToken cancellationToken = default);
     Task RemoveOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
