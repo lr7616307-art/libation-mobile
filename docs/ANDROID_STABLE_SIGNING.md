@@ -41,6 +41,7 @@ keytool -list -v \
 ```
 
 The first `pkg install` may download a large JDK package. If Termux says `openjdk-21` is unavailable, check the Termux source and architecture before trying random APKs or repositories. Official references: [Termux installation](https://github.com/termux/termux-app#installation), [Termux OpenJDK 21 package](https://github.com/termux/termux-packages/tree/master/packages/openjdk-21).
+
 Use a trusted computer or a local Android terminal with Java's `keytool` installed. Run:
 
 ```sh
