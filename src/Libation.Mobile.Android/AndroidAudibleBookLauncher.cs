@@ -13,7 +13,7 @@ internal static class AndroidAudibleBookLauncher
 
         var host = GetAudibleHost(marketplace);
         var url = $"https://{host}/pd/{System.Uri.EscapeDataString(asin.Trim())}";
-        var uri = Android.Net.Uri.Parse(url);
+        var uri = global::Android.Net.Uri.Parse(url);
         var appIntent = new Intent(Intent.ActionView, uri);
         appIntent.SetPackage("com.audible.application");
         appIntent.AddFlags(ActivityFlags.NewTask);
