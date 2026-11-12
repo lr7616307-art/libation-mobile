@@ -2,6 +2,12 @@ using System.Text.Json;
 
 namespace Libation.Mobile.Core;
 
+public enum AudibleDownloadQuality
+{
+    Normal,
+    High
+}
+
 public enum DownloadFolderOrganization
 {
     Flat,
@@ -12,7 +18,8 @@ public enum DownloadFolderOrganization
 public sealed record DownloadSettings(
     string? DirectoryBookmark = null,
     string? DirectoryName = null,
-    DownloadFolderOrganization FolderOrganization = DownloadFolderOrganization.AuthorBook)
+    DownloadFolderOrganization FolderOrganization = DownloadFolderOrganization.AuthorBook,
+    AudibleDownloadQuality AudibleQuality = AudibleDownloadQuality.High)
 {
     public bool HasSelectedDirectory => !string.IsNullOrWhiteSpace(DirectoryBookmark);
 
@@ -41,6 +48,9 @@ public sealed record DownloadSettings(
         var organization = Enum.IsDefined(FolderOrganization)
             ? FolderOrganization
             : DownloadFolderOrganization.AuthorBook;
+        var audibleQuality = Enum.IsDefined(AudibleQuality)
+            ? AudibleQuality
+            : AudibleDownloadQuality.High;
         var name = string.IsNullOrWhiteSpace(DirectoryName)
             ? null
             : DirectoryName.Trim();
@@ -51,7 +61,8 @@ public sealed record DownloadSettings(
         {
             DirectoryBookmark = bookmark,
             DirectoryName = name,
-            FolderOrganization = organization
+            FolderOrganization = organization,
+            AudibleQuality = audibleQuality
         };
     }
 }
