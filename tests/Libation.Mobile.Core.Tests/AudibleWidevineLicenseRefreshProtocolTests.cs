@@ -68,6 +68,8 @@ public sealed class AudibleWidevineLicenseRefreshProtocolTests
           "license_refresh_responses": [
             {
               "asin": "B012345678",
+              "granted_right": "Ownership",
+              "access_expiry_date": "2027-03-12T12:00:00Z",
               "license": "opaque-refreshed-widevine-license",
               "license_metadata": {
                 "license_id": "license-1",
@@ -94,6 +96,9 @@ public sealed class AudibleWidevineLicenseRefreshProtocolTests
         Assert.Equal("license-1", result.LicenseId);
         Assert.Equal("2027-01-12T12:00:00Z", result.LicenseRemovalDate);
         Assert.Equal("2027-02-12T12:00:00Z", result.LicenseExpirationDate);
+        Assert.Equal("Ownership", result.GrantedRight);
+        Assert.Equal("2027-03-12T12:00:00Z", result.AccessExpiryDate);
+        Assert.Empty(result.LicenseDenialReasons);
     }
 
     [Fact]
@@ -106,7 +111,11 @@ public sealed class AudibleWidevineLicenseRefreshProtocolTests
               "asin": "B012345678",
               "status": {
                 "status_code": "Denied",
-                "error_message": "entitlement no longer active"
+                "error_message": "entitlement no longer active",
+                "license_denial_reasons": [
+                  "membership expired",
+                  "title not available in this marketplace"
+                ]
               }
             }
           ]
@@ -118,6 +127,9 @@ public sealed class AudibleWidevineLicenseRefreshProtocolTests
 
         Assert.Equal("Denied", result.StatusCode);
         Assert.Equal("entitlement no longer active", result.ErrorMessage);
+        Assert.Equal(
+            new[] { "membership expired", "title not available in this marketplace" },
+            result.LicenseDenialReasons);
         Assert.Null(result.License);
     }
 
