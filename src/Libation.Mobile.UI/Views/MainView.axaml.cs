@@ -1284,6 +1284,8 @@ public partial class MainView : UserControl
             if (PlatformSignInViewModelFactory is null) return;
             var vm = PlatformSignInViewModelFactory();
             await vm.DisconnectAsync();
+            if (!vm.HasConnectedAccount)
+                await _viewModel.ClearAllWidevineOfflineFlagsAsync();
             await vm.LoadStatusAsync();
             UpdateAudibleAccountSummary();
             _viewModel.ReportAudioStatus(vm.Status);
