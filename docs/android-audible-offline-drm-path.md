@@ -21,7 +21,7 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 
 - Added `AudibleAudioDownloadSource.ResolveWidevineAsync`, which explicitly requests Widevine, rejects a response that AudibleApi downgraded to ADRM, and returns the provider's HTTPS DASH manifest URL as a manifest reference (not as an ordinary audio-file download target).
 - Preserved the existing ADRM download request path separately, so the new Widevine experiment does not silently change existing queue behavior.
-- Added `RequestWidevineLicenseAsync`, which forwards the exact challenge string through a new safe adapter using `Api.AdHocAuthenticatedRequestAsync` and the same restored identity authentication. The implementation intentionally omits request/response bodies from errors. The exact byte/string encoding contract still needs to be verified against Android `MediaDrm` before calling this from a DRM session.
+- Added `RequestWidevineLicenseAsync` using `Api.AdHocAuthenticatedRequestAsync` and the restored identity authentication. The implementation intentionally omits request/response bodies from errors. `RequestWidevineLicenseBytesAsync` adds Base64 transport serialization for opaque Android challenge bytes and returns opaque licence bytes; no DRM message is parsed. End-to-end provider/device compatibility remains unverified.
 - Added validation for the 10-character ASIN, non-empty challenge, cancellation before the provider request, and non-empty provider response.
 - Added unit tests for challenge forwarding and safe validation behavior.
 
