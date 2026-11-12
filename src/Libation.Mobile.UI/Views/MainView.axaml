@@ -8,18 +8,17 @@
       <ScrollViewer>
         <StackPanel Margin="20,16,20,20" Spacing="16">
           <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Grid.Column="0" Spacing="0">
+            <StackPanel Grid.Column="0" Spacing="0" IsVisible="{Binding IsHomeNavigationSelected}">
               <TextBlock Text="VØRATH" FontSize="13" FontWeight="Bold" LetterSpacing="3" Foreground="#B9A5E8"/>
               <TextBlock Text="BEYOND THE SILENCE" FontSize="9" LetterSpacing="2" Foreground="#817494"/>
             </StackPanel>
-            <TextBlock Grid.Column="1" Text="◉" FontSize="30" FontWeight="Bold" Foreground="#A78BFA" VerticalAlignment="Center" IsVisible="{Binding IsHomeTab}"/>
+            <Button Grid.Column="1" Content="⌕" FontSize="28" Foreground="#B9A5E8"
+                    Background="Transparent" BorderThickness="0" Padding="4" Width="48" Height="44"
+                    ToolTip.Tip="Search audiobooks" IsVisible="{Binding IsHomeTab}"
+                    Click="OpenHomeSearchClicked"/>
           </Grid>
 
           <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
-            <Button Content="⌕" FontSize="28" Foreground="#B9A5E8" Background="Transparent"
-                    BorderThickness="0" Padding="4" Width="48" Height="44"
-                    HorizontalAlignment="Right" ToolTip.Tip="Search audiobooks"
-                    Click="OpenHomeSearchClicked"/>
             <Border CornerRadius="8" BorderBrush="#51416F" BorderThickness="1"
                     Background="Transparent" Padding="0">
               <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="0">
@@ -27,28 +26,28 @@
                         Background="Transparent" BorderThickness="0" Click="ShowAllClicked">
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
                     <TextBlock Grid.Column="0" Text="All" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding AllCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="{Binding AllCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
                   </Grid>
                 </Button>
                 <Button Grid.Column="1" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowNotStartedClicked">
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="Not started" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding NotStartedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="0" Text="Not started" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding NotStartedCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
                   </Grid>
                 </Button>
                 <Button Grid.Column="2" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowInProgressClicked">
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="In progress" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding InProgressCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="0" Text="In progress" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding InProgressCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
                   </Grid>
                 </Button>
                 <Button Grid.Column="3" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowFinishedClicked">
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="Finished" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding FinishedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="0" Text="Finished" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding FinishedCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
                   </Grid>
                 </Button>
                 <Border Grid.Column="0" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
