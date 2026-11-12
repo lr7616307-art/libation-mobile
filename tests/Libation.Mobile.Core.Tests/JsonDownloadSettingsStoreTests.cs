@@ -59,6 +59,7 @@ public sealed class JsonDownloadSettingsStoreTests
     {
         using var directory = new TemporaryDirectory();
         var path = Path.Combine(directory.Path, "download-settings.json");
+        Directory.CreateDirectory(directory.Path);
         await File.WriteAllTextAsync(path, "{ invalid json");
         var store = new JsonDownloadSettingsStore(path);
 
