@@ -267,6 +267,25 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
         await Assert.ThrowsAsync<ArgumentException>(() =>
             store.SaveProviderLicenseReferenceAsync(
                 "account-a", "B012345678", null, 1));
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            store.SaveProviderLicenseReferenceAsync(
+                "account-a", "B012345678", "CR!reference", -1));
+    }
+
+    [Fact]
+    public async Task RemoveDashManifest_AlsoDeletesProviderRenewalReference()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        await store.SaveProviderLicenseReferenceAsync(
+            "account-a", "B012345678", "CR!reference", 1);
+        await store.SaveDashManifestAsync(
+            "account-a", "B012345678",
+            new Uri("https://media.example.invalid/title/manifest.mpd"),
+            [new AudibleWidevineStreamKey(0, 0, 0)]);
+
+        await store.RemoveDashManifestAsync("account-a", "B012345678");
+
+        Assert.Null(await store.LoadProviderLicenseReferenceAsync("account-a", "B012345678"));
     }
 
     [Fact]
