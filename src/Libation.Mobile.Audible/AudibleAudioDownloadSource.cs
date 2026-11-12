@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using System.Net;
+using Newtonsoft.Json.Linq;
 using AudibleApi;
 using AudibleApi.Authorization;
 using AudibleApi.Common;
@@ -30,22 +32,24 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 
     public AudibleAudioDownloadSource(
         Api api,
+        Locale locale,
         string downloadDirectory,
         AudibleDownloadQuality quality = AudibleDownloadQuality.High)
     {
         ArgumentNullException.ThrowIfNull(api);
+        ArgumentNullException.ThrowIfNull(locale);
         var apiQuality = quality == AudibleDownloadQuality.Normal
             ? DownloadQuality.Normal
             : DownloadQuality.High;
         _requestLicense = (asin, requestedQuality, drmType, _) =>
             api.GetDownloadLicenseAsync(asin, requestedQuality, ChapterTitlesType.Tree, drmType);
-        // AudibleApi 14.1.2 logs the request exception with its JSON body, which
-        // can contain the platform DRM challenge. Keep the production exchange
-        // disabled until that upstream logging path is safely redacted.
-        _requestWidevineLicense = (_, _, _) => Task.FromException<string>(
-            new NotSupportedException(
-                "Audible Widevine licence exchange is temporarily disabled: the pinned AudibleApi transport can log the DRM challenge on failure."));
-        _widevineLicenseExchangeEnabled = false;
+        // Use AudibleApi's public authenticated transport directly. Its
+        // WidevineDrmLicense convenience method logs exceptions with the full
+        // JSON request body, which can contain the DRM challenge. This path
+        // intentionally emits no request/response body in diagnostics.
+        _requestWidevineLicense = (asin, challenge, _) =>
+            RequestWidevineLicenseSafelyAsync(api, locale, asin, challenge, _);
+        _widevineLicenseExchangeEnabled = true;
         _downloadDirectory = NormalizeDownloadDirectory(downloadDirectory);
         _quality = apiQuality;
     }
@@ -87,10 +91,13 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
     {
         ArgumentNullException.ThrowIfNull(snapshotStore);
         ArgumentException.ThrowIfNullOrWhiteSpace(downloadDirectory);
-        var api = await new AudibleApiSessionFactory(snapshotStore)
-            .CreateFromSavedIdentityAsync(cancellationToken)
+        var session = await new AudibleApiSessionFactory(snapshotStore)
+            .CreateSessionFromSavedIdentityAsync(cancellationToken)
             .ConfigureAwait(false);
-        return api is null ? null : new AudibleAudioDownloadSource(api, downloadDirectory, quality);
+        return session is null
+            ? null
+            : new AudibleAudioDownloadSource(
+                session.Value.Api, session.Value.Locale, downloadDirectory, quality);
     }
 
     public Task<AuthorizedAudioDownload> ResolveAsync(
@@ -216,6 +223,57 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             throw new InvalidDataException("Audible returned an empty Widevine licence response.");
 
         return response;
+    }
+
+    private static async Task<string> RequestWidevineLicenseSafelyAsync(
+        Api api,
+        Locale locale,
+        string asin,
+        string challenge,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var requestBody = new JObject
+        {
+            { "consumption_type", "Download" },
+            { "drm_type", "Widevine" },
+            { "tenant_id", "Audible" },
+            { "licenseChallenge", challenge }
+        };
+
+        // This mirrors the pinned AudibleApi endpoint contract but deliberately
+        // avoids its WidevineDrmLicense wrapper, whose error logs include the
+        // request JObject. AdHocAuthenticatedRequestAsync applies the same ADP
+        // and bearer authentication using the restored identity.
+        using var response = await api.AdHocAuthenticatedRequestAsync(
+            $"/1.0/content/{asin}/drmlicense",
+            HttpMethod.Post,
+            api.Sharer.GetSharedHttpClient(locale.AudibleApiUri()),
+            requestBody).ConfigureAwait(false);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (response.StatusCode != HttpStatusCode.OK)
+            throw new HttpRequestException(
+                $"Audible Widevine licence request failed with HTTP status {(int)response.StatusCode}.");
+
+        var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        JObject parsed;
+        try
+        {
+            parsed = JObject.Parse(responseJson);
+        }
+        catch (Newtonsoft.Json.JsonException)
+        {
+            throw new InvalidDataException("Audible returned an invalid Widevine licence response.");
+        }
+
+        var license = parsed["license"]?.Value<string>();
+        if (string.IsNullOrWhiteSpace(license))
+            throw new InvalidDataException("Audible returned no Widevine licence value.");
+
+        return license;
     }
 
     private static void ValidateAsin(string audiobookId)
