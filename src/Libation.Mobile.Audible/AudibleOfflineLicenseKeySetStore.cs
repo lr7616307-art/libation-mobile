@@ -203,7 +203,7 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
 
         var hasAcr = !string.IsNullOrWhiteSpace(acr);
         var hasFileVersion = fileVersion.HasValue && fileVersion.Value >= 0;
-        if (fileVersion < 0 || hasAcr != hasFileVersion)
+        if ((fileVersion.HasValue && fileVersion.Value < 0) || hasAcr != hasFileVersion)
             throw new ArgumentException(
                 "Audible renewal metadata must include both ACR and file version, or neither.");
 
