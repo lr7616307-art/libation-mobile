@@ -313,7 +313,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         : string.Empty;
     public string DetailProtectedDownloadLabel => string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
         ? string.Empty
-        : $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved; this protected file is not playable in VØRATH yet.";
+        : $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved. Tap Play again to request Widevine playback; internet is required until encrypted DASH segments can be cached offline.";
     public bool HasPlayableDetailAudio => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.AudioFilePath);
     public bool HasProtectedDetailDownload => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName);
     public string DetailBookDescription
