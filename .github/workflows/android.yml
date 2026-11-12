@@ -6,6 +6,7 @@ on:
       - main
       - fix/pass-5-current-librisync-iphone-profile
       - feat/pass-7-audible-download-quality
+      - feat/pass-8-widevine-license-bridge
   pull_request:
   workflow_dispatch:
 
@@ -70,7 +71,7 @@ jobs:
   # cached CI test key so successive test builds can update in place. This is not
   # the production/release signing identity.
   build_test_apk:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/fix/pass-5-current-librisync-iphone-profile' || github.ref == 'refs/heads/feat/pass-7-audible-download-quality')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/fix/pass-5-current-librisync-iphone-profile' || github.ref == 'refs/heads/feat/pass-7-audible-download-quality' || github.ref == 'refs/heads/feat/pass-8-widevine-license-bridge')
     needs: test
     runs-on: ubuntu-latest
     env:
