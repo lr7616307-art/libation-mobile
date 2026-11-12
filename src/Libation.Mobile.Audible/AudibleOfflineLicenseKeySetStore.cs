@@ -195,15 +195,15 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         string accountId,
         string asin,
         string? acr,
-        string? fileVersion,
+        long? fileVersion,
         CancellationToken cancellationToken = default)
     {
         ValidateIdentity(accountId, asin);
         cancellationToken.ThrowIfCancellationRequested();
 
         var hasAcr = !string.IsNullOrWhiteSpace(acr);
-        var hasFileVersion = !string.IsNullOrWhiteSpace(fileVersion);
-        if (hasAcr != hasFileVersion)
+        var hasFileVersion = fileVersion.HasValue && fileVersion.Value >= 0;
+        if (fileVersion < 0 || hasAcr != hasFileVersion)
             throw new ArgumentException(
                 "Audible renewal metadata must include both ACR and file version, or neither.");
 
@@ -214,11 +214,11 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
             return;
         }
 
-        if (acr!.Length > 8192 || fileVersion!.Length > 256)
+        if (acr!.Length > 8192)
             throw new ArgumentOutOfRangeException(
                 nameof(acr), "The Audible content-reference metadata exceeds its supported size.");
 
-        var json = JsonSerializer.Serialize(new StoredProviderLicenseReference(acr, fileVersion));
+        var json = JsonSerializer.Serialize(new StoredProviderLicenseReference(acr, fileVersion!.Value));
         if (Encoding.UTF8.GetByteCount(json) > 12 * 1024)
             throw new InvalidDataException("The Audible content-reference metadata exceeds the secure storage limit.");
 
@@ -254,7 +254,7 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
             string.IsNullOrWhiteSpace(value.Acr) ||
             string.IsNullOrWhiteSpace(value.FileVersion) ||
             value.Acr.Length > 8192 ||
-            value.FileVersion.Length > 256)
+            value.FileVersion < 0)
             throw new InvalidDataException("The stored Audible content-reference metadata is invalid.");
 
         return new AudibleWidevineProviderLicenseReference(value.Acr, value.FileVersion);
@@ -462,10 +462,10 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
 
     private sealed record StoredDashManifest(string ManifestUri, StoredStreamKey[] StreamKeys);
     private sealed record StoredStreamKey(int PeriodIndex, int GroupIndex, int TrackIndex);
-    private sealed record StoredProviderLicenseReference(string Acr, string FileVersion);
+    private sealed record StoredProviderLicenseReference(string Acr, long FileVersion);
 }
 
-public sealed record AudibleWidevineProviderLicenseReference(string Acr, string FileVersion);
+public sealed record AudibleWidevineProviderLicenseReference(string Acr, long FileVersion);
 
 public sealed record AudibleWidevineOfflineMediaReference(
     Uri ManifestUri,
