@@ -19,9 +19,9 @@ The upstream Libation desktop implementation uses a separate CDM library to pars
 
 ## Pass 8 implementation
 
-- Added `AudibleAudioDownloadSource.ResolveWidevineAsync`, which explicitly requests Widevine and rejects a response that AudibleApi downgraded to ADRM or that Audible did not grant.
+- Added `AudibleAudioDownloadSource.ResolveWidevineAsync`, which explicitly requests Widevine, rejects a response that AudibleApi downgraded to ADRM, and returns the provider's HTTPS DASH manifest URL as a manifest reference (not as an ordinary audio-file download target).
 - Preserved the existing ADRM download request path separately, so the new Widevine experiment does not silently change existing queue behavior.
-- Added `RequestWidevineLicenseAsync`, which forwards the exact platform-generated challenge to AudibleApi's authenticated `WidevineDrmLicense` operation.
+- Added `RequestWidevineLicenseAsync`, which forwards the exact platform-generated challenge to AudibleApi's authenticated `WidevineDrmLicense` operation. The challenge/response encoding contract still needs verification on Android `MediaDrm`.
 - Added validation for the 10-character ASIN, non-empty challenge, cancellation before the provider request, and non-empty provider response.
 - Added unit tests for challenge forwarding and safe validation behavior.
 
