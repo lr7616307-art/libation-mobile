@@ -67,6 +67,14 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Remove the title-scoped DASH cache resources and protected manifest metadata, then clear the local catalogue's offline-available flag.
 - Keep the offline copy separate from ordinary imported audio; this action does not touch clear local audiobooks or other Audible titles.
 
+## Pass 14 — cancellation and cache integrity audit
+
+- Expose a **Cancel Audible operation** control in both the Audible Library and audiobook details while an Audible licence/download operation is running.
+- Carry one cancellation token through identity restoration, offline-licence acquisition, manifest lookup, encrypted DASH download, catalogue update and playback startup.
+- When cancelled, ask Media3's `DashDownloader` to stop; incomplete encrypted segments remain available for a later retry and are never marked complete.
+- Record the requested `DataSpec` byte ranges for each hashed cache key. The range index contains only title-scoped hashed keys and numeric offsets/lengths; signed provider URLs are not stored.
+- Before setting or trusting the offline-complete marker, audit every recorded range against Media3's cache byte counts. Unknown-length resources are accepted only when Media3 has recorded a final content length and the full resource is cached.
+- Reconcile stale index entries against the actual cache and recover orphan cache keys for safe later deletion. Incomplete/missing ranges invalidate the completion marker and block offline playback until retried.
 ## Remaining implementation — not yet verified
 
 1. Add an explicit user-facing cancel action and progress state for an in-flight Audible licence/download operation. The underlying downloader already observes cancellation, but the current detail-page flow does not yet expose a cancel control.
