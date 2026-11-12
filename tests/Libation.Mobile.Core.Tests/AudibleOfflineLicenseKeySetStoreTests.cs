@@ -350,6 +350,47 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
     }
 
     [Fact]
+    public async Task PromotePendingRenewal_WhenActiveWriteFails_PreservesOldAndStagedKeySets()
+    {
+        var secrets = new MemorySecretStore();
+        var store = new AudibleOfflineLicenseKeySetStore(secrets);
+        byte[] active = [0x01, 0x02];
+        byte[] renewed = [0x03, 0x04];
+        await store.SaveAsync("account-a", "B012345678", active);
+        await store.StageRenewalKeySetAsync("account-a", "B012345678", renewed);
+        secrets.FailNextSet = true;
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            store.PromotePendingRenewalKeySetAsync("account-a", "B012345678"));
+
+        Assert.Equal(active, await store.LoadAsync("account-a", "B012345678"));
+        Assert.Equal(renewed, await store.LoadPendingRenewalKeySetAsync("account-a", "B012345678"));
+    }
+
+    [Fact]
+    public async Task PromotePendingRenewal_WhenStageCleanupFails_CanBeRetriedSafely()
+    {
+        var secrets = new MemorySecretStore();
+        var store = new AudibleOfflineLicenseKeySetStore(secrets);
+        byte[] renewed = [0x03, 0x04];
+        await store.SaveAsync("account-a", "B012345678", [0x01, 0x02]);
+        await store.StageRenewalKeySetAsync("account-a", "B012345678", renewed);
+        secrets.FailNextRemove = true;
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            store.PromotePendingRenewalKeySetAsync("account-a", "B012345678"));
+
+        // Active replacement succeeded, but the staged recovery record remains.
+        Assert.Equal(renewed, await store.LoadAsync("account-a", "B012345678"));
+        Assert.Equal(renewed, await store.LoadPendingRenewalKeySetAsync("account-a", "B012345678"));
+
+        await store.PromotePendingRenewalKeySetAsync("account-a", "B012345678");
+
+        Assert.Equal(renewed, await store.LoadAsync("account-a", "B012345678"));
+        Assert.Null(await store.LoadPendingRenewalKeySetAsync("account-a", "B012345678"));
+    }
+
+    [Fact]
     public async Task DiscardPendingRenewal_LeavesActiveKeySetUntouched()
     {
         var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
@@ -381,10 +422,17 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
         private readonly Dictionary<string, string> values = new();
         public IReadOnlyCollection<string> Keys => values.Keys.ToArray();
         public IReadOnlyCollection<string> Values => values.Values.ToArray();
+        public bool FailNextSet { get; set; }
+        public bool FailNextRemove { get; set; }
 
         public Task SetAsync(string key, string value, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (FailNextSet)
+            {
+                FailNextSet = false;
+                throw new IOException("Injected secret-store write failure.");
+            }
             values[key] = value;
             return Task.CompletedTask;
         }
@@ -399,6 +447,11 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
         public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (FailNextRemove)
+            {
+                FailNextRemove = false;
+                throw new IOException("Injected secret-store removal failure.");
+            }
             values.Remove(key);
             return Task.CompletedTask;
         }
