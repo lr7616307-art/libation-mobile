@@ -21,6 +21,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
     private readonly ISyncStateStore? _syncStateStore;
+    private readonly IDownloadSettingsStore? _downloadSettingsStore;
+    private DownloadSettings _downloadSettings = new();
+    private string _downloadSettingsStatus = string.Empty;
     private readonly Func<string>? _widevineDiagnosticFactory;
     private string _widevineDiagnostic = "Widevine check is available only in the Android app.";
     private bool _isSyncing;
@@ -82,6 +85,78 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasNoLocalAudioBooks => !HasLocalAudioBooks;
     public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "Your library is empty. Import an audiobook file to get started.";
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
+
+    public DownloadSettings CurrentDownloadSettings => _downloadSettings;
+    public string DownloadDirectoryLabel => _downloadSettings.DirectoryLabel;
+    public string DownloadFolderOrganizationLabel => _downloadSettings.FolderOrganizationLabel;
+    public string DownloadFolderOrganizationExample => _downloadSettings.FolderOrganizationExample;
+    public bool HasSelectedDownloadDirectory => _downloadSettings.HasSelectedDirectory;
+    public string DownloadSettingsStatus
+    {
+        get => _downloadSettingsStatus;
+        private set
+        {
+            if (_downloadSettingsStatus == value) return;
+            _downloadSettingsStatus = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public async Task SetDownloadDirectoryAsync(string bookmark, string directoryName, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bookmark);
+        _downloadSettings = (_downloadSettings with
+        {
+            DirectoryBookmark = bookmark,
+            DirectoryName = directoryName
+        }).Normalize();
+        if (_downloadSettingsStore is not null)
+            await _downloadSettingsStore.SaveAsync(_downloadSettings, cancellationToken);
+        RaiseDownloadSettingsChanged();
+        DownloadSettingsStatus = "Download folder saved. Android storage access will be reused for future downloads.";
+    }
+
+    public async Task CycleDownloadFolderOrganizationAsync(CancellationToken cancellationToken = default)
+    {
+        var next = _downloadSettings.FolderOrganization switch
+        {
+            DownloadFolderOrganization.Flat => DownloadFolderOrganization.AuthorBook,
+            DownloadFolderOrganization.AuthorBook => DownloadFolderOrganization.AuthorSeriesBook,
+            _ => DownloadFolderOrganization.Flat
+        };
+        _downloadSettings = (_downloadSettings with { FolderOrganization = next }).Normalize();
+        if (_downloadSettingsStore is not null)
+            await _downloadSettingsStore.SaveAsync(_downloadSettings, cancellationToken);
+        RaiseDownloadSettingsChanged();
+        DownloadSettingsStatus = "File organization preference saved.";
+    }
+
+    public void ReportDownloadSettingsStatus(string message) => DownloadSettingsStatus = message;
+
+    private async Task LoadDownloadSettingsAsync(CancellationToken cancellationToken)
+    {
+        if (_downloadSettingsStore is null) return;
+        try
+        {
+            _downloadSettings = (await _downloadSettingsStore.GetAsync(cancellationToken)).Normalize();
+            RaiseDownloadSettingsChanged();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            DownloadSettingsStatus = "Download settings could not be loaded. The library is still available.";
+        }
+    }
+
+    private void RaiseDownloadSettingsChanged()
+    {
+        OnPropertyChanged(nameof(CurrentDownloadSettings));
+        OnPropertyChanged(nameof(DownloadDirectoryLabel));
+        OnPropertyChanged(nameof(DownloadFolderOrganizationLabel));
+        OnPropertyChanged(nameof(DownloadFolderOrganizationExample));
+        OnPropertyChanged(nameof(HasSelectedDownloadDirectory));
+    }
+
     public Audiobook? SelectedBook
     {
         get => _selectedBook;
@@ -681,7 +756,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SelectedBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
     }
 
-    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, CoverArtImportService? coverArtImportService = null, ISyncStateStore? syncStateStore = null, Func<string>? widevineDiagnosticFactory = null, AudiobookFileImportService? audiobookFileImportService = null, IAudiobookDetailsProvider? audiobookDetailsProvider = null)
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, CoverArtImportService? coverArtImportService = null, ISyncStateStore? syncStateStore = null, Func<string>? widevineDiagnosticFactory = null, AudiobookFileImportService? audiobookFileImportService = null, IAudiobookDetailsProvider? audiobookDetailsProvider = null, IDownloadSettingsStore? downloadSettingsStore = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
@@ -691,6 +766,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _audiobookFileImportService = audiobookFileImportService;
         _audiobookDetailsProvider = audiobookDetailsProvider;
         _syncStateStore = syncStateStore;
+        _downloadSettingsStore = downloadSettingsStore;
         _widevineDiagnosticFactory = widevineDiagnosticFactory;
     }
 
@@ -830,6 +906,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             IsLoading = true;
             ErrorMessage = string.Empty;
             await _repository.EnsureInitializedAsync(InitialSamples, cancellationToken);
+            await LoadDownloadSettingsAsync(cancellationToken);
             if (_syncStateStore is not null)
                 LastSuccessfulSync = await _syncStateStore.GetLastSuccessfulSyncAsync(cancellationToken);
             var stored = await _repository.GetBooksAsync(cancellationToken);
