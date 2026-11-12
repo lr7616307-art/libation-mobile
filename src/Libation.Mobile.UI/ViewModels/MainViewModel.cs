@@ -311,11 +311,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string DetailAudibleAvailabilityLabel => IsDetailProviderBook
         ? _detailBook!.AudibleAvailabilityLabel
         : string.Empty;
-    public string DetailProtectedDownloadLabel => string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
-        ? string.Empty
-        : $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved. Tap Download offline / Play to cache encrypted DASH audio with a Widevine licence for offline listening.";
+    public string DetailProtectedDownloadLabel => _detailBook?.IsWidevineOfflineAvailable == true
+        ? "Encrypted Audible DASH audio is stored in VØRATH's private offline cache and ready to play."
+        : !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
+            ? $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved. Tap Download offline to cache encrypted DASH audio with a Widevine licence."
+            : string.Empty;
     public bool HasPlayableDetailAudio => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.AudioFilePath);
-    public bool HasProtectedDetailDownload => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName);
+    public bool HasProtectedDetailDownload => IsDetailProviderBook &&
+        (_detailBook?.IsWidevineOfflineAvailable == true || !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName));
     public string DetailBookDescription
     {
         get
@@ -1393,6 +1396,35 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task RefreshDownloadQueueAsync(CancellationToken cancellationToken = default)
         => await ReloadQueueAsync(cancellationToken);
+
+    public async Task MarkWidevineOfflineAvailableAsync(
+        string audiobookId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(audiobookId))
+            return;
+
+        var book = _allBooks.FirstOrDefault(item =>
+            string.Equals(item.Id, audiobookId, StringComparison.Ordinal));
+        if (book is null || !book.IsProviderCatalogueEntry || book.IsWidevineOfflineAvailable)
+            return;
+
+        await _repository.UpsertAsync(
+            book with { IsWidevineOfflineAvailable = true }, cancellationToken).ConfigureAwait(false);
+        _allBooks = await _repository.GetBooksAsync(cancellationToken).ConfigureAwait(false);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+
+        if (_detailBook is not null &&
+            string.Equals(_detailBook.Id, audiobookId, StringComparison.Ordinal))
+        {
+            _detailBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
+        }
+    }
 
     public async Task RefreshLibraryAfterDownloadAsync(CancellationToken cancellationToken = default)
     {
