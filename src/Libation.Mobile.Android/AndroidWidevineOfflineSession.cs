@@ -17,6 +17,7 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
         UUID.FromString("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed");
 
     private const int OfflineKeyRequestType = (int)MediaDrmKeyType.Offline;
+    private const int ReleaseKeyRequestType = 3; // Android MediaDrm.KEY_TYPE_RELEASE
     private const int MaximumInitializationDataBytes = 1024 * 1024;
     private const int MaximumLicenseResponseBytes = 1024 * 1024;
 
@@ -90,6 +91,95 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
 
         hasPendingOfflineRequest = true;
         return challenge.ToArray();
+    }
+
+    /// <summary>
+    /// Creates an offline renewal challenge for a previously saved key set.
+    /// Existing keys are restored into this session first; Android permits a
+    /// null init/MIME type for a renewal request. The returned bytes remain
+    /// opaque and must be sent only through the authenticated provider transport.
+    /// </summary>
+    public byte[] CreateOfflineRenewalRequest(byte[] keySetId)
+    {
+        EnsureNotDisposed();
+        ArgumentNullException.ThrowIfNull(keySetId);
+        if (keySetId.Length is 0 or > 1024)
+            throw new ArgumentOutOfRangeException(nameof(keySetId));
+        if (hasPendingOfflineRequest)
+            throw new InvalidOperationException(
+                "This DRM session already has an outstanding offline key request.");
+
+        mediaDrm.RestoreKeys(sessionId, keySetId);
+        var keyRequest = mediaDrm.GetKeyRequest(
+            sessionId,
+            init: null,
+            mimeType: null,
+            OfflineKeyRequestType,
+            optionalParameters: null);
+        var challenge = keyRequest.GetData();
+        if (challenge is null || challenge.Length == 0)
+            throw new InvalidDataException(
+                "Android MediaDrm returned an empty Widevine renewal challenge.");
+
+        hasPendingOfflineRequest = true;
+        return challenge.ToArray();
+    }
+
+    /// <summary>
+    /// Creates a provider release challenge for one saved offline key set.
+    /// Android marks that key set RELEASED when this request is created, making
+    /// it unusable until the provider's release response is supplied. Do not
+    /// call until the authenticated provider release exchange is ready to run.
+    /// </summary>
+    public byte[] CreateOfflineReleaseRequest(byte[] keySetId)
+    {
+        EnsureNotDisposed();
+        ArgumentNullException.ThrowIfNull(keySetId);
+        if (keySetId.Length is 0 or > 1024)
+            throw new ArgumentOutOfRangeException(nameof(keySetId));
+
+        var keyRequest = mediaDrm.GetKeyRequest(
+            keySetId,
+            init: null,
+            mimeType: null,
+            ReleaseKeyRequestType,
+            optionalParameters: null);
+        var challenge = keyRequest.GetData();
+        if (challenge is null || challenge.Length == 0)
+            throw new InvalidDataException(
+                "Android MediaDrm returned an empty Widevine release challenge.");
+
+        return challenge.ToArray();
+    }
+
+    /// <summary>
+    /// Completes a release exchange with the exact key-set scope used to create
+    /// the challenge. Callers must delete the encrypted identifier/cache only
+    /// after this method accepts the provider response. A rejected response
+    /// leaves local state for recovery; it is never converted to local removal.
+    /// </summary>
+    public void ProvideOfflineReleaseResponse(byte[] keySetId, byte[] releaseResponse)
+    {
+        EnsureNotDisposed();
+        ArgumentNullException.ThrowIfNull(keySetId);
+        ArgumentNullException.ThrowIfNull(releaseResponse);
+        if (keySetId.Length is 0 or > 1024)
+            throw new ArgumentOutOfRangeException(nameof(keySetId));
+        if (releaseResponse.Length is 0 or > MaximumLicenseResponseBytes)
+            throw new ArgumentOutOfRangeException(nameof(releaseResponse));
+
+        var responseScope = mediaDrm.ProvideKeyResponse(keySetId, releaseResponse);
+        try
+        {
+            if (responseScope is { Length: > 0 })
+                throw new InvalidDataException(
+                    "Android MediaDrm returned an unexpected key-set identifier for a release response.");
+        }
+        finally
+        {
+            if (responseScope is not null)
+                CryptographicOperations.ZeroMemory(responseScope);
+        }
     }
 
     /// <summary>
