@@ -144,6 +144,7 @@ jobs:
           test -n "$apksigner"
           "$apksigner" verify --print-certs "${apks[0]}"
           python3 - "${apks[0]}" <<'PY'
+          import os
           import sys
           from pathlib import Path
           from zipfile import ZipFile
@@ -167,6 +168,16 @@ jobs:
           print("Largest compressed APK entries:")
           for info in largest:
               print(f"  {info.compress_size:>10,} bytes  {info.filename}")
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with Path(summary_path).open("a", encoding="utf-8") as summary:
+                  summary.write("## VØRATH ARMv7 test APK\n\n")
+                  summary.write(f"- Size: **{size:,} bytes ({size / 1048576:.2f} MiB)**\n")
+                  summary.write(f"- Native ABI: **{', '.join(sorted(abis))}**\n")
+                  summary.write("- Size budget: **24,000,000 bytes**\n\n")
+                  summary.write("Largest compressed APK entries:\n\n")
+                  for info in largest:
+                      summary.write(f"- {info.compress_size:,} bytes — `{info.filename}`\n")
           if abis != {"armeabi-v7a"}:
               raise SystemExit(f"Expected only armeabi-v7a, got {sorted(abis)}")
           if size > 24_000_000:
