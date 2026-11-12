@@ -65,6 +65,98 @@ jobs:
           fi
           find "$output" -maxdepth 1 -name '*.apk' -printf '%f %s bytes\n'
 
+  # A test APK is published for the user's ARMv7 handset. It uses a branch-scoped,
+  # cached CI test key so successive test builds can update in place. This is not
+  # the production/release signing identity.
+  build_test_apk:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/pass-5-current-librisync-iphone-profile'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      TEST_KEYSTORE: ${{ runner.temp }}/vorath-ci-test.jks
+      TEST_STORE_PASSWORD: vorath-ci-test-store
+      TEST_KEY_PASSWORD: vorath-ci-test-key
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Restore cached CI test signing key
+        id: test-key-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/vorath-ci-test.jks
+          key: vorath-ci-test-key-v1-${{ github.ref_name }}
+      - name: Create CI test signing key when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$TEST_KEYSTORE")"
+          if [[ ! -s "$TEST_KEYSTORE" ]]; then
+            keytool -genkeypair -v \\
+              -keystore "$TEST_KEYSTORE" \\
+              -storetype JKS \\
+              -alias vorath-test \\
+              -keyalg RSA \\
+              -keysize 3072 \\
+              -validity 10000 \\
+              -dname "CN=VORATH CI Test,O=VORATH,C=IN" \\
+              -storepass "$TEST_STORE_PASSWORD" \\
+              -keypass "$TEST_KEY_PASSWORD"
+          fi
+          keytool -list -storetype JKS -keystore "$TEST_KEYSTORE" \\
+            -alias vorath-test -storepass "$TEST_STORE_PASSWORD" \\
+            -keypass "$TEST_KEY_PASSWORD" >/dev/null
+      - name: Install Android workload
+        run: dotnet workload install android
+      - name: Restore Android project
+        run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
+      - name: Build installable ARMv7 test APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj \\
+            -c Release -r android-arm --no-restore \\
+            -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false \\
+            -p:AndroidPackageFormat=apk -p:ApplicationVersion="$version_code" \\
+            -p:AndroidKeyStore=true \\
+            -p:AndroidSigningKeyStore="$TEST_KEYSTORE" \\
+            -p:AndroidSigningStorePass="$TEST_STORE_PASSWORD" \\
+            -p:AndroidSigningKeyAlias=vorath-test \\
+            -p:AndroidSigningKeyPass="$TEST_KEY_PASSWORD"
+          output="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish"
+          mapfile -t apks < <(find "$output" -maxdepth 1 -type f -name '*-Signed.apk')
+          if (( ${#apks[@]} != 1 )); then
+            echo "::error::Expected one signed ARMv7 APK; found ${#apks[@]}."
+            find "$output" -maxdepth 1 -type f -name '*.apk' -printf '%f %s bytes\\n' || true
+            exit 1
+          fi
+          echo "APK=${apks[0]}" >> "$GITHUB_ENV"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+          apksigner="$(find "$sdk/build-tools" -type f -name apksigner | sort | tail -n 1)"
+          test -n "$apksigner"
+          "$apksigner" verify --print-certs "${apks[0]}"
+      - name: Save CI test signing key for future updates
+        if: steps.test-key-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/vorath-ci-test.jks
+          key: vorath-ci-test-key-v1-${{ github.ref_name }}
+      - name: Upload installable ARMv7 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VORATH-ARMv7-Test-APK
+          path: ${{ env.APK }}
+          if-no-files-found: error
+          retention-days: 30
+
   # Only trusted release pushes or a manual dispatch publish installable APKs.
   build_release:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/pass-5-current-librisync-iphone-profile'))

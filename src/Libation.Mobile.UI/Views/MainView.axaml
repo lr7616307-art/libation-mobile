@@ -266,7 +266,7 @@
             </ItemsControl>
           </StackPanel>
 
-          <StackPanel IsVisible="{Binding IsAudibleAccountTab}" Spacing="16">
+          <StackPanel x:Name="AccountContentPanel" IsVisible="{Binding IsAudibleAccountTab}" Spacing="16">
             <TextBlock Text="Accounts" FontSize="30" FontWeight="Bold"/>
           </StackPanel>
 

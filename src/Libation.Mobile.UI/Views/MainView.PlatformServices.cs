@@ -26,24 +26,17 @@ public partial class MainView
         var view = new MainView();
         var signInViewModel = PlatformSignInViewModelFactory?.Invoke();
         if (signInViewModel is not null
-            && view.Content is TabControl tabs)
+            && view.FindControl<StackPanel>("AccountContentPanel") is { } accountStack)
         {
-            var accountTab = tabs.Items
-                .OfType<TabItem>()
-                .FirstOrDefault(tab => string.Equals(
-                    tab.Header?.ToString(), "Account", StringComparison.Ordinal));
-
-            if (accountTab?.Content is ScrollViewer { Content: StackPanel accountStack })
-            {
-                // Keep the native sign-in panel inside the visible Account tab,
-                // rather than trying to insert it into the TabControl's root.
-                accountStack.Children.Insert(
-                    Math.Min(2, accountStack.Children.Count),
-                    AudibleSignInPanel.Create(
-                        signInViewModel,
-                        () => view._viewModel.OpenAddAccountSheet(),
-                        () => view.SyncLibraryAndUpdateAccountAsync()));
-            }
+            // Navigation uses visibility-switched page panels, not a TabControl.
+            // Attach the account tile directly beneath the Accounts heading so
+            // it is present even on a fresh, logged-out installation.
+            accountStack.Children.Insert(
+                Math.Min(1, accountStack.Children.Count),
+                AudibleSignInPanel.Create(
+                    signInViewModel,
+                    () => view._viewModel.OpenAddAccountSheet(),
+                    () => view.SyncLibraryAndUpdateAccountAsync()));
         }
 
         return view;
