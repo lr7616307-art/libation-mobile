@@ -17,7 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install .NET
-        if: steps.signing.outputs.enabled == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -50,7 +49,6 @@ jobs:
           distribution: temurin
           java-version: 17
       - name: Install Android workload
-        if: steps.signing.outputs.enabled == 'true'
         run: dotnet workload install android
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
@@ -139,10 +137,12 @@ jobs:
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "Android versionCode: $version_code"
       - name: Install .NET
+        if: steps.signing.outputs.enabled == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
       - name: Install Android workload
+        if: steps.signing.outputs.enabled == 'true'
         run: dotnet workload install android
       - name: Restore both Android runtimes
         if: steps.signing.outputs.enabled == 'true'
