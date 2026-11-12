@@ -61,10 +61,16 @@ public partial class MainView : UserControl
         var downloadPublisher = new StorageFolderAudioDownloadPublisher(
             () => TopLevel.GetTopLevel(this)?.StorageProvider,
             downloadSettingsStore, repository, audioImport);
+        var ordinaryDownloadSource = new QueuedHttpsAudioDownloadSource(Path.Combine(dataDirectory, "download-staging"));
+        var routedDownloadSource = new RoutedAudioDownloadSource(
+            ordinaryDownloadSource,
+            cancellationToken => PlatformAudibleDownloadSourceFactory is null
+                ? Task.FromResult<IAuthorizedAudioDownloadSource?>(null)
+                : PlatformAudibleDownloadSourceFactory(cancellationToken));
         _downloadWorker = new DownloadQueueWorker(
             queue,
             new AudioFileDownloader(new HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
-            new QueuedHttpsAudioDownloadSource(Path.Combine(dataDirectory, "download-staging")),
+            routedDownloadSource,
             downloadPublisher);
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
@@ -958,36 +964,36 @@ public partial class MainView : UserControl
     private async void DownloadAudibleBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
-            await OpenAudibleTitleAsync(book.Id);
+            await DownloadOrPlayAudibleBookAsync(book);
     }
 
     private async void DownloadAudibleBookFromDetailClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (_viewModel.DetailBook is { } book)
-            await OpenAudibleTitleAsync(book.Id);
+            await DownloadOrPlayAudibleBookAsync(book);
     }
 
-    private async Task OpenAudibleTitleAsync(string audiobookId)
+    private async Task DownloadOrPlayAudibleBookAsync(Audiobook book)
     {
-        if (!audiobookId.StartsWith("provider:", StringComparison.Ordinal))
+        if (!book.Id.StartsWith("provider:", StringComparison.Ordinal))
             return;
-        var asin = audiobookId["provider:".Length..];
-        var openTitle = PlatformOpenAudibleTitleFactory;
-        if (openTitle is null)
+
+        if (!string.IsNullOrWhiteSpace(book.AudioFilePath))
         {
-            _viewModel.ReportAudioStatus("Opening Audible titles is unavailable in this build.");
+            await PlayAudiobookAsync(book);
             return;
         }
 
-        try
+        if (!string.IsNullOrWhiteSpace(book.ProtectedAudioFileName))
         {
-            await openTitle(asin);
-            _viewModel.ReportAudioStatus("Opened the title in Audible. Complete the download in the Audible app.");
+            _viewModel.ReportAudioStatus(
+                "This Audible file is saved in VØRATH, but remains DRM-protected and cannot be played by the current player.");
+            return;
         }
-        catch (Exception ex)
-        {
-            _viewModel.ReportAudioStatus($"Could not open Audible ({ex.GetType().Name}).");
-        }
+
+        await _viewModel.EnqueueAsync(book.Id);
+        if (string.IsNullOrWhiteSpace(_viewModel.ErrorMessage))
+            await StartPendingDownloadsAsync();
     }
 
     private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
