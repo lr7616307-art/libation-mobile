@@ -1,6 +1,7 @@
 using AudibleApi;
 using AudibleApi.Common;
 using Libation.Mobile.Audible;
+using Xunit;
 
 namespace Libation.Mobile.Core.Tests;
 
