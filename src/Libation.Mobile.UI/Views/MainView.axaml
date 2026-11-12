@@ -234,6 +234,13 @@
                             IsVisible="{Binding IsProtectedAudibleOperationInProgress}"
                             HorizontalAlignment="Stretch"
                             Click="CancelProtectedAudibleOperationClicked"/>
+                    <TextBlock Text="Diagnostic only: sends a renewal challenge to Audible and reports response metadata. It does not install the returned licence or replace this offline copy."
+                               IsVisible="{Binding DetailBook.IsWidevineOfflineAvailable}"
+                               FontSize="10" Opacity="0.68" TextWrapping="Wrap"/>
+                    <Button Content="Check Audible renewal support"
+                            IsVisible="{Binding DetailBook.IsWidevineOfflineAvailable}"
+                            HorizontalAlignment="Stretch"
+                            Click="ProbeAudibleRenewalClicked"/>
                     <Button Content="Remove offline copy"
                             IsVisible="{Binding DetailBook.IsWidevineOfflineAvailable}"
                             HorizontalAlignment="Stretch"
