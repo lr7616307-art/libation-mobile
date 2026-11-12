@@ -150,7 +150,7 @@ public sealed class StorageFolderAudioDownloadPublisher : IAudioDownloadCompleti
             throw new InvalidDataException("The protected Audible file is missing or empty.");
 
         var extension = staging.Extension.ToLowerInvariant();
-        if (extension is not (".aaxc" or ".protected"))
+        if (extension is not (".aax" or ".aaxc" or ".protected"))
             throw new InvalidDataException("Audible returned an unexpected protected media container.");
 
         var settings = (await _settingsStore.GetAsync(cancellationToken)).Normalize();
