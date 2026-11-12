@@ -60,6 +60,36 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         StartService(intent, foreground: true);
     }
 
+    /// <summary>
+    /// Starts protected Audible DASH playback through Media3 using a persisted
+    /// Android Widevine offline key-set identifier. The identifier is passed
+    /// only in an explicit in-app service intent and is never written to recovery
+    /// preferences or the audiobook catalogue.
+    /// </summary>
+    public static void StartWidevineDash(
+        Uri manifestUri,
+        byte[] offlineKeySetId,
+        string title,
+        long startPositionMilliseconds = 0)
+    {
+        ArgumentNullException.ThrowIfNull(manifestUri);
+        ArgumentNullException.ThrowIfNull(offlineKeySetId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+
+        if (!manifestUri.IsAbsoluteUri ||
+            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Protected Audible playback requires an HTTPS DASH manifest.", nameof(manifestUri));
+        if (offlineKeySetId.Length is 0 or > 1024)
+            throw new ArgumentOutOfRangeException(nameof(offlineKeySetId));
+
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionPlayWidevineDash);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraManifestUri, manifestUri.AbsoluteUri);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraOfflineKeySetId, offlineKeySetId);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraTitle, title);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
+        StartService(intent, foreground: true);
+    }
+
     public void Pause() { ObjectDisposedException.ThrowIf(_disposed, this); AppContext.StartService(CreateIntent(AndroidLocalAudioPlaybackService.ActionPause)); }
     public void Resume() { ObjectDisposedException.ThrowIf(_disposed, this); AppContext.StartService(CreateIntent(AndroidLocalAudioPlaybackService.ActionResume)); }
 
