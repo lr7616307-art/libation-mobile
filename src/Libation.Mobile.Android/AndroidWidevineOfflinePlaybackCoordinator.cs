@@ -75,7 +75,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     /// deliberately NOT supplied to MediaDrm or persisted; this probe therefore
     /// cannot replace or invalidate the currently active key set.
     /// </summary>
-    public async Task<AndroidWidevineRenewalProbeResult> ProbeOfflineLicenseRenewalAsync(
+    public async Task<AudibleWidevineRenewalProbeResult> ProbeOfflineLicenseRenewalAsync(
         string asin,
         CancellationToken cancellationToken = default)
     {
@@ -111,7 +111,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             // Never expose or store the opaque licence payload in diagnostics.
             // Status is intentionally reported verbatim: this build does not
             // assume a success code for Audible's community-documented endpoint.
-            return new AndroidWidevineRenewalProbeResult(
+            return new AudibleWidevineRenewalProbeResult(
                 asin,
                 refresh.StatusCode,
                 !string.IsNullOrWhiteSpace(refresh.License),
@@ -508,17 +508,3 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         }
     }
 }
-
-/// <summary>
-/// Safe diagnostic summary of an Audible Widevine renewal response. The
-/// opaque DRM licence and challenge are intentionally excluded.
-/// </summary>
-public sealed record AndroidWidevineRenewalProbeResult(
-    string Asin,
-    string? StatusCode,
-    bool LicensePayloadPresent,
-    bool LicenseIdentifierPresent,
-    string? LicenseRefreshDate,
-    string? LicenseRemovalDate,
-    string? LicenseExpirationDate,
-    string? ErrorMessage);
