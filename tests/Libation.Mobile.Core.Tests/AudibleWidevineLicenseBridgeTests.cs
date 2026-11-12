@@ -89,6 +89,59 @@ public sealed class AudibleWidevineLicenseBridgeTests
         Assert.False(called);
     }
 
+    [Fact]
+    public async Task ResolveWidevineAsync_ReturnsAudibleDashManifestOnlyWhenWidevineWasGranted()
+    {
+        const string manifest = "https://media.example.invalid/book/manifest.mpd";
+        var source = new AudibleAudioDownloadSource(
+            (_, _, _, _) => Task.FromResult(new ContentLicense
+            {
+                StatusCode = "Granted",
+                DrmType = DrmType.Widevine,
+                LicenseResponse = manifest
+            }),
+            (_, _, _) => Task.FromResult("license-response"),
+            Path.Combine(Path.GetTempPath(), "vorath-widevine-tests"));
+
+        var result = await source.ResolveWidevineAsync("B012345678");
+
+        Assert.Equal(new Uri(manifest), result.ManifestUri);
+    }
+
+    [Fact]
+    public async Task ResolveWidevineAsync_RejectsAudibleAdrmFallback()
+    {
+        var source = new AudibleAudioDownloadSource(
+            (_, _, _, _) => Task.FromResult(new ContentLicense
+            {
+                StatusCode = "Granted",
+                DrmType = DrmType.Adrm,
+                LicenseResponse = "https://media.example.invalid/book/manifest.mpd"
+            }),
+            (_, _, _) => Task.FromResult("license-response"),
+            Path.Combine(Path.GetTempPath(), "vorath-widevine-tests"));
+
+        await Assert.ThrowsAsync<NotSupportedException>(() =>
+            source.ResolveWidevineAsync("B012345678"));
+    }
+
+    [Fact]
+    public async Task ResolveWidevineAsync_RejectsNonHttpsManifest()
+    {
+        var source = new AudibleAudioDownloadSource(
+            (_, _, _, _) => Task.FromResult(new ContentLicense
+            {
+                StatusCode = "Granted",
+                DrmType = DrmType.Widevine,
+                LicenseResponse = "http://media.example.invalid/book/manifest.mpd"
+            }),
+            (_, _, _) => Task.FromResult("license-response"),
+            Path.Combine(Path.GetTempPath(), "vorath-widevine-tests"));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            source.ResolveWidevineAsync("B012345678"));
+    }
+
     private static AudibleAudioDownloadSource CreateSource(
         Func<string, string, CancellationToken, Task<string>> widevineRequest)
         => new(
