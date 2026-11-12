@@ -1208,8 +1208,21 @@ public partial class MainView : UserControl
                 $"licence ID {(result.LicenseIdentifierPresent ? "present" : "missing")}. " +
                 "The response was not applied; your saved offline copy was not replaced.";
 
+            if (!string.IsNullOrWhiteSpace(result.GrantedRight))
+                message += $" Granted right: {result.GrantedRight}.";
+            if (!string.IsNullOrWhiteSpace(result.AccessExpiryDate))
+                message += $" Access expiry: {result.AccessExpiryDate}.";
             if (!string.IsNullOrWhiteSpace(result.LicenseExpirationDate))
-                message += $" Expiration: {result.LicenseExpirationDate}.";
+                message += $" Licence expiration: {result.LicenseExpirationDate}.";
+
+            var denialReasons = result.LicenseDenialReasons
+                .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                .Take(3)
+                .Select(reason => reason.Trim()[..Math.Min(140, reason.Trim().Length)])
+                .ToArray();
+            if (denialReasons.Length > 0)
+                message += $" Denial reasons: {string.Join("; ", denialReasons)}.";
+
             if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
                 message += $" Audible message: {result.ErrorMessage[..Math.Min(200, result.ErrorMessage.Length)]}";
 
