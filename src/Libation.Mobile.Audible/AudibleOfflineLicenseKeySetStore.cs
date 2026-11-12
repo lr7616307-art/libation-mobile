@@ -166,6 +166,17 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         return string.Equals(value, "1", StringComparison.Ordinal);
     }
 
+    public async Task InvalidateDashDownloadCompleteAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        cancellationToken.ThrowIfCancellationRequested();
+        await secrets.RemoveAsync(
+            GetManifestCompleteStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task RemoveDashManifestAsync(
         string accountId,
         string asin,
