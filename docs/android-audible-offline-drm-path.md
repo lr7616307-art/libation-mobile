@@ -39,7 +39,8 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Added cleanup for a just-issued offline key set when secure persistence fails, plus a device-side offline-key release operation before deleting the encrypted identifier.
 - Registered a platform factory that creates the coordinator from the already-saved Audible identity and its account identifier; it does not initiate login or silently change device registration.
 - Added a dedicated `AndroidLocalAudioPlayer.StartWidevineDash` entry point and service action. It passes the HTTPS MPD and offline key-set ID to Media3, sets the Widevine UUID and offline key-set ID on the media item's DRM configuration, and uses the Media3 DASH module.
-- Protected remote playback does not set a clear local file path and the key-set ID is not written into playback recovery preferences or the audiobook catalogue.
+- Protected playback uses a dedicated Media3 cache-only DASH source. The selected encrypted audio representation, MPD and referenced segments are cached under app-private storage; cache keys are title-scoped hashes, not signed provider URLs. The player refuses network fallback on cache misses.
+- Protected playback recovery stores only ASIN, title, position and play/pause state in app-private preferences. It never stores account IDs, manifest URLs, stream keys, DRM challenges, licence responses or key-set IDs. On app restart, the saved Audible identity is restored through the existing account factory and Media3 is reopened against the existing encrypted cache and offline key-set ID.
 
 ## Pass 11 implementation — encrypted DASH offline media groundwork
 
