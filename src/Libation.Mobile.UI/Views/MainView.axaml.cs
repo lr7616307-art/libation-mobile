@@ -46,12 +46,13 @@ public partial class MainView : UserControl
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
+        var downloadSettingsStore = new JsonDownloadSettingsStore(Path.Combine(dataDirectory, "download-settings.json"));
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
         var coverDirectory = Path.Combine(dataDirectory, "covers");
         var audioImport = new LocalAudioImportService(audioDirectory);
         _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
             syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory),
-            PlatformAudiobookDetailsProviderFactory?.Invoke());
+            PlatformAudiobookDetailsProviderFactory?.Invoke(), downloadSettingsStore);
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
@@ -111,6 +112,7 @@ public partial class MainView : UserControl
         _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
         AttachPlaybackStateNotifications();
         await _viewModel.InitializeAsync();
+        await ValidateSavedDownloadFolderBookmarkAsync();
         if (PlatformSignInViewModelFactory?.Invoke() is { } accountViewModel)
             await accountViewModel.LoadStatusAsync();
         UpdateAudibleAccountSummary();
@@ -1068,6 +1070,95 @@ public partial class MainView : UserControl
             ResumeAudioClicked(sender, e);
         else
             _viewModel.ReportAudioStatus("Choose an audiobook in Library and tap Play first.");
+    }
+
+    private async Task ValidateSavedDownloadFolderBookmarkAsync()
+    {
+        var bookmark = _viewModel.CurrentDownloadSettings.DirectoryBookmark;
+        if (string.IsNullOrWhiteSpace(bookmark))
+            return;
+
+        var storageProvider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storageProvider is null)
+        {
+            _viewModel.ReportDownloadSettingsStatus("Folder access is unavailable in this environment. Choose a folder again on Android.");
+            return;
+        }
+
+        try
+        {
+            using var folder = await storageProvider.OpenFolderBookmarkAsync(bookmark);
+            _viewModel.ReportDownloadSettingsStatus(folder is null
+                ? "The saved folder permission is no longer available. Choose the download folder again."
+                : $"Download folder ready: {folder.Name}");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportDownloadSettingsStatus("The saved folder permission could not be restored. Choose the download folder again.");
+        }
+    }
+
+    private async void ChooseDownloadFolderClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var storageProvider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storageProvider is null || !storageProvider.CanPickFolder)
+        {
+            _viewModel.ReportDownloadSettingsStatus("Folder selection is not supported on this device.");
+            return;
+        }
+
+        try
+        {
+            var folders = await storageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "Choose VØRATH download folder",
+                AllowMultiple = false
+            });
+            if (folders.Count == 0)
+                return;
+
+            var folder = folders[0];
+            try
+            {
+                var bookmark = await folder.SaveBookmarkAsync();
+                if (string.IsNullOrWhiteSpace(bookmark))
+                {
+                    _viewModel.ReportDownloadSettingsStatus("Android did not grant persistent access to that folder. Please choose another folder.");
+                    return;
+                }
+
+                await _viewModel.SetDownloadDirectoryAsync(bookmark, folder.Name);
+                _viewModel.ReportDownloadSettingsStatus($"Download folder saved: {folder.Name}");
+            }
+            finally
+            {
+                folder.Dispose();
+            }
+
+            await ValidateSavedDownloadFolderBookmarkAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // User cancelled the picker; keep the previously selected folder.
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Download folder selection failed: {ex}");
+            _viewModel.ReportDownloadSettingsStatus("Could not save that folder. Please choose it again.");
+        }
+    }
+
+    private async void CycleDownloadFolderOrganizationClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            await _viewModel.CycleDownloadFolderOrganizationAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Download organization preference save failed: {ex}");
+            _viewModel.ReportDownloadSettingsStatus("Could not save the file organization preference.");
+        }
     }
 
     private async void ImportAudiobookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
