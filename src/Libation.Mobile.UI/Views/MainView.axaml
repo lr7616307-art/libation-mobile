@@ -566,7 +566,7 @@
           <StackPanel HorizontalAlignment="Center" Spacing="3">
             <TextBlock Text="⌂" FontSize="20" HorizontalAlignment="Center"/>
             <TextBlock Text="Home" FontSize="10" HorizontalAlignment="Center"/>
-            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsHomeTab}"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsHomeNavigationSelected}"/>
           </StackPanel>
         </Button>
         <Button Grid.Column="1" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"

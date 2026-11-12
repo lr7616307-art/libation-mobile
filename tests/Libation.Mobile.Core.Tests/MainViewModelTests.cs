@@ -233,6 +233,7 @@ public sealed class MainViewModelTests
         vm.OpenHomeSearch();
         Assert.True(vm.IsHomeSearchVisible);
         Assert.False(vm.IsHomeTab);
+        Assert.True(vm.IsHomeNavigationSelected);
 
         vm.SearchText = "Atomic";
         var result = Assert.Single(vm.Books);
@@ -865,7 +866,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task TryNavigateBack_ClearsSearchBeforeLeavingHome()
+    public async Task TryNavigateBack_ClosesSearchPageAndPreservesItsQuery()
     {
         using var directory = new TemporaryDirectory();
         var vm = CreateViewModel(directory.Path);
@@ -873,13 +874,19 @@ public sealed class MainViewModelTests
         vm.NewTitle = "Searchable title";
         vm.NewAuthor = "Author";
         await vm.AddBookAsync();
+        vm.OpenHomeSearch();
         vm.SearchText = "Searchable";
         Assert.Single(vm.Books);
+        Assert.True(vm.IsHomeSearchVisible);
+        Assert.True(vm.IsHomeNavigationSelected);
 
         Assert.True(vm.TryNavigateBack());
 
-        Assert.Equal(string.Empty, vm.SearchText);
+        Assert.False(vm.IsHomeSearchVisible);
+        Assert.True(vm.IsHomeTab);
+        Assert.Equal("Searchable", vm.SearchText);
         Assert.Single(vm.Books);
+        Assert.False(vm.TryNavigateBack());
     }
 
     [Fact]
