@@ -76,12 +76,21 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Before setting or trusting the offline-complete marker, audit every recorded range against Media3's cache byte counts. Unknown-length resources are accepted only when Media3 has recorded a final content length and the full resource is cached.
 - Reconcile stale index entries against the actual cache and recover orphan cache keys for safe later deletion. Incomplete/missing ranges invalidate the completion marker and block offline playback until retried.
 - Add automated tests for bounded-range coverage, unknown-length full-resource coverage, invalid range metadata and per-title completion-marker invalidation.
+## Pass 15 — startup and library-refresh offline-state audit
+
+- Preserve `IsWidevineOfflineAvailable` when provider metadata is merged into an existing local Audible catalogue entry. A catalogue refresh must not erase the app's locally verified offline state.
+- After the saved Audible account status is restored at startup, inspect provider titles currently marked offline-available.
+- For each title, verify that its opaque offline key-set identifier remains in the encrypted secret store and that the protected DASH completion marker, manifest reference and title-scoped cached byte ranges are still present.
+- Run the same audit after a successful or attempted manual library refresh so a stale offline label is corrected before the user opens the title.
+- Clear only the local offline-available flag when the account identity is available and the audit definitively finds a missing key-set identifier or incomplete cache. The next title action can request the provider-authorized licence/media again.
+- If the account identity is unavailable or an audit fails transiently, keep the existing catalogue state; an inconclusive check must not label an offline title as missing.
+- Add a regression test proving library metadata sync preserves the local Widevine offline flag.
+
 ## Remaining implementation — not yet verified
 
-1. Add a startup/library-refresh audit so missing or partial offline resources are identified before a title is presented as ready, not only when the user opens or plays it.
-2. Add broader integration coverage for stale-index reconciliation and interrupted-download retry behavior.
-3. Add licence expiry/renewal and provider release/revocation handling, plus cleanup when an Audible account is disconnected or loses access.
-4. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, challenge/response compatibility, persistent key-set validity, DASH segment completion, offline playback with network disabled, cancellation/retry, app restart, removal/release and reinstall behavior.
+1. Add broader integration coverage for stale-index reconciliation and interrupted-download retry behavior.
+2. Add licence expiry/renewal and provider release/revocation handling, plus cleanup when an Audible account is disconnected or loses access.
+3. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, challenge/response compatibility, persistent key-set validity, DASH segment completion, offline playback with network disabled, cancellation/retry, app restart, removal/release and reinstall behavior.
 
 ## Android 10 / device constraints
 
