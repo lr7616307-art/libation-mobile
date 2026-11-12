@@ -236,6 +236,8 @@
                              PlaceholderText="Paste direct HTTPS audio URL (.mp3, .m4b, etc.)"/>
                     <TextBlock Text="Use a direct public HTTPS audio link you are authorized to download. Links with login credentials, query tokens or fragments are not accepted. Audible-protected titles must be downloaded in the official Audible app."
                                FontSize="11" Opacity="0.72" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11"
+                               Foreground="#B9A5E8" TextWrapping="Wrap"/>
                     <Button Content="⇩  Download to selected folder"
                             HorizontalAlignment="Stretch" Click="QueueAuthorizedDownloadClicked"/>
                   </StackPanel>
