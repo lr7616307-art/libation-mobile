@@ -193,7 +193,10 @@ public sealed class AndroidWidevineDashOfflineStore
 
                     if (range.Length > 0)
                     {
-                        if (cache.GetCachedBytes(cacheKey, range.Position, range.Length) != range.Length)
+                        var cachedBytes = cache.GetCachedBytes(
+                            cacheKey, range.Position, range.Length);
+                        if (!AudibleWidevineCacheRangeIntegrity.IsComplete(
+                                range.Position, range.Length, cachedBytes, -1))
                             return false;
                         continue;
                     }
@@ -203,8 +206,11 @@ public sealed class AndroidWidevineDashOfflineStore
                     // and every byte from offset zero through EOF is cached.
                     var metadata = cache.GetContentMetadata(cacheKey);
                     var contentLength = metadata.Get("exo_len", -1L);
-                    if (contentLength <= 0 ||
-                        cache.GetCachedBytes(cacheKey, 0, contentLength) != contentLength)
+                    var totalCachedBytes = contentLength > 0
+                        ? cache.GetCachedBytes(cacheKey, 0, contentLength)
+                        : 0;
+                    if (!AudibleWidevineCacheRangeIntegrity.IsComplete(
+                            range.Position, range.Length, totalCachedBytes, contentLength))
                         return false;
                 }
             }
