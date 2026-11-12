@@ -25,13 +25,29 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Added validation for the 10-character ASIN, non-empty challenge, cancellation before the provider request, and non-empty provider response.
 - Added unit tests for challenge forwarding and safe validation behavior.
 
-## Pass 9 implementation\n\n- Refactored `AudibleApiSessionFactory` to return the validated account marketplace together with the authenticated API client, ensuring the DRM request uses the corresponding regional Audible API host from the same saved identity snapshot.\n- Replaced the unsafe `Api.WidevineDrmLicense` wrapper in the production constructor with the public authenticated request primitive. It preserves ADP/bearer authentication while preventing challenge-bearing JSON from being written to Serilog or exception details. HTTP failures report only their numeric status code.\n- Added `AudibleOfflineLicenseKeySetStore`, which persists only the opaque Android `MediaDrm` key-set identifier through `ISecretStore` (the Android implementation encrypts it with Keystore-backed AES-GCM). Storage keys are derived from an account/title hash so preference names do not expose the Audible account or ASIN. Unit tests cover account/title isolation, malformed values, size limits and removal.\n- Kept the challenge/response as transient strings at this adapter boundary; no encoding conversion is attempted here.\n\n## Remaining implementation — not yet complete
+## Pass 9 implementation
 
-1. Implement an Android `MediaDrm` session adapter. It must call `GetKeyRequest` with `KEY_TYPE_OFFLINE`, pass the exact challenge to `RequestWidevineLicenseAsync`, and pass the returned licence bytes to `ProvideKeyResponse`. The exact encoding contract must be verified against Audible's response and Android's API; do not guess or transform the challenge/response.
-2. Store only the resulting offline key-set identifier in app-private, encrypted storage backed by Android Keystore. Do not store the challenge, licence response, content keys, or DRM session secrets in queue JSON, backups, logs, or analytics.
-3. Implement a DRM-aware Media3 playback path that opens the protected media using the offline licence held by `MediaDrm`. Do not route protected files to the existing unprotected local-file player.
-4. Add licence renewal, expiry, release/revocation, title deletion and account disconnect handling. Ensure deletion releases provider/device licence state where supported.
-5. Verify on a physical Android 10 device with an authorized title: provider grant, downloaded media, online playback, app restart, offline playback, expired/revoked licence handling, and uninstall/reinstall behavior.
+- Refactored `AudibleApiSessionFactory` to return the validated account marketplace together with the authenticated API client.
+- Replaced the unsafe `Api.WidevineDrmLicense` wrapper in the production constructor with the public authenticated request primitive. It preserves ADP/bearer authentication without placing challenge-bearing request bodies in diagnostics.
+- Added Base64 transport encoding for Android's opaque challenge/response byte arrays, with bounded sizes and strict Base64 validation.
+- Added `AudibleWidevineManifestClient` and `AudibleWidevineManifestParser` to fetch the provider MPD over HTTPS, enforce response-size limits, disable XML DTD/entity processing, and validate the Widevine PSSH and audio MIME type.
+- Added `AudibleOfflineLicenseKeySetStore`, which persists only the opaque Android key-set identifier through the Keystore-backed `ISecretStore`.
+
+## Pass 10 implementation — integration groundwork
+
+- Added `AndroidWidevineOfflinePlaybackCoordinator` to join the provider content grant, MPD/PSSH parsing, Android `MediaDrm` offline challenge, Audible licence exchange, `ProvideKeyResponse`, and secure key-set persistence.
+- Added cleanup for a just-issued offline key set when secure persistence fails, plus a device-side offline-key release operation before deleting the encrypted identifier.
+- Registered a platform factory that creates the coordinator from the already-saved Audible identity and its account identifier; it does not initiate login or silently change device registration.
+- Added a dedicated `AndroidLocalAudioPlayer.StartWidevineDash` entry point and service action. It passes the HTTPS MPD and offline key-set ID to Media3, sets the Widevine UUID and offline key-set ID on the media item's DRM configuration, and uses the Media3 DASH module.
+- Protected remote playback does not set a clear local file path and the key-set ID is not written into playback recovery preferences or the audiobook catalogue.
+
+## Remaining implementation — not yet complete
+
+1. Connect the new coordinator to the Audible audiobook details/download UI. The platform factory is registered, but no user-visible action invokes it yet.
+2. Implement a Media3 DASH offline download/cache flow for the encrypted representations and segments. The current Media3 path opens the provider MPD for DRM playback; it is not a local offline media download.
+3. Add protected-playback recovery across app/process restart by storing only non-secret title identity and position, then reacquiring a fresh provider MPD and loading the key-set ID from encrypted storage.
+4. Add licence expiry/renewal, provider release/revocation, account disconnect and title deletion handling, including safe cleanup when the app loses account access.
+5. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, exact challenge/response compatibility, key-set persistence, protected DASH playback, app restart, actual offline segment playback, expiry/release and reinstall behavior.
 
 ## Android 10 / device constraints
 
