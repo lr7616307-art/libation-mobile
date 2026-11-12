@@ -141,7 +141,7 @@ public sealed class AudibleIdentityMaintainerTests
     }
 
     [Fact]
-    public async Task DisconnectPersistenceFailure_DoesNotMarkSessionDisconnected()
+    public async Task DisconnectPersistenceFailure_PreservesSnapshotButInvalidatesOldMaintainer()
     {
         using var rsa = RSA.Create(2048);
         var now = new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc);
@@ -154,10 +154,23 @@ public sealed class AudibleIdentityMaintainerTests
 
         await Assert.ThrowsAsync<IOException>(() => maintainer.DisconnectAsync());
 
-        var token = await maintainer.GetAccessTokenAsync();
-        Assert.Equal("Atna|test-access", token!.Reveal());
+        await Assert.ThrowsAsync<OperationCanceledException>(() => maintainer.GetAccessTokenAsync());
+        Assert.NotNull(secrets.LastValue);
+        Assert.Equal("Atna|test-access", AudibleIdentitySnapshotSerializer.Deserialize(secrets.LastValue!).AccessToken);
         Assert.Equal(1, secrets.RemoveCalls);
         Assert.Equal(0, authorize.RefreshCalls);
+
+        // A fresh API session can still restore the identity that the failed clear left persisted.
+        var restoredSnapshot = AudibleIdentitySnapshotSerializer.Deserialize(secrets.LastValue!);
+        var restoredIdentity = AudibleIdentitySnapshotMapper.Restore(restoredSnapshot);
+        var restoredMaintainer = new AudibleIdentityMaintainer(
+            restoredIdentity,
+            new FakeRefresher(_ => Task.FromException<AudibleTokenRefreshResult>(
+                new Xunit.Sdk.XunitException("The saved token is still valid."))),
+            new FixedClock(now),
+            new AudibleIdentitySnapshotStore(secrets));
+        var restoredToken = await restoredMaintainer.GetAccessTokenAsync();
+        Assert.Equal("Atna|test-access", restoredToken!.Reveal());
     }
 
     [Fact]
@@ -207,12 +220,25 @@ public sealed class AudibleIdentityMaintainerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => disconnect);
         allowRefresh.TrySetResult();
         await Assert.ThrowsAsync<OperationCanceledException>(() => refresh);
+        await Assert.ThrowsAsync<OperationCanceledException>(() => maintainer.GetAccessTokenAsync());
 
-        var token = await maintainer.GetAccessTokenAsync();
-        Assert.Equal("Atna|refreshed", token!.Reveal());
         Assert.Equal(0, secrets.RemoveCalls);
+        Assert.Equal(0, secrets.SetCalls);
+        Assert.Equal(1, authorize.RefreshCalls);
+
+        // Cancellation leaves the encrypted snapshot intact, but the old in-memory
+        // maintainer is invalidated. A newly restored API session can retry safely.
+        var restoredSnapshot = AudibleIdentitySnapshotSerializer.Deserialize(secrets.LastValue!);
+        var restoredIdentity = AudibleIdentitySnapshotMapper.Restore(restoredSnapshot);
+        var retryRefresher = new FakeRefresher(_ => Task.FromResult(new AudibleTokenRefreshResult(
+            new AccessToken(new SecretString("Atna|refreshed"), now.AddHours(2)), null)));
+        var retryMaintainer = new AudibleIdentityMaintainer(
+            restoredIdentity, retryRefresher, new FixedClock(now), new AudibleIdentitySnapshotStore(secrets));
+        var token = await retryMaintainer.GetAccessTokenAsync();
+
+        Assert.Equal("Atna|refreshed", token!.Reveal());
         Assert.Equal(1, secrets.SetCalls);
-        Assert.Equal(2, authorize.RefreshCalls);
+        Assert.Equal(1, retryRefresher.RefreshCalls);
     }
 
     [Fact]
