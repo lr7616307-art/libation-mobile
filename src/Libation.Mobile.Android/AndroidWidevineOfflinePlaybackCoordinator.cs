@@ -64,7 +64,6 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     /// Obtains an Audible-issued Widevine manifest, creates a platform offline
     /// challenge, supplies Audible's opaque response to MediaDrm, and persists
     /// only the resulting key-set ID through the Keystore-backed secret store.
-    /// This does not download DASH media segments.
     /// </summary>
     public async Task AcquireOfflineLicenseAsync(
         string asin,
@@ -156,9 +155,9 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     }
 
     /// <summary>
-    /// Starts DRM-aware DASH playback using a fresh provider manifest and a
-    /// previously persisted offline key-set ID. DASH media itself is still
-    /// fetched by Media3; this is not yet a local/offline segment cache.
+    /// Starts DRM-aware DASH playback from the app-private encrypted Media3
+    /// cache using the persisted Android Widevine offline key-set identifier.
+    /// The cache-only source fails closed if any resource is missing.
     /// </summary>
     public async Task PlayAsync(
         string asin,
