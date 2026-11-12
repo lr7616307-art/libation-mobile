@@ -27,6 +27,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _syncStatus = "Provider not connected. Audible library sync is not available yet.";
     private DateTimeOffset? _lastSuccessfulSync;
     private string _searchText = string.Empty;
+    private bool _isHomeSearchVisible;
     private string _newTitle = string.Empty;
     private string _newAuthor = string.Empty;
     private string _newNarrator = string.Empty;
@@ -185,7 +186,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             RefreshAudibleBooks(_allBooks);
         }
     }
-    public bool IsHomeTab => _selectedTabIndex == 0 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
+    public bool IsHomeTab => _selectedTabIndex == 0 && !_isHomeSearchVisible && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
+    public bool IsHomeSearchVisible => _selectedTabIndex == 0 && _isHomeSearchVisible && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsAudibleLibraryTab => _selectedTabIndex == 1 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsAudibleAccountTab => _selectedTabIndex == 2 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsSettingsTab => _selectedTabIndex == 3 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
@@ -595,19 +597,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (_isEditVisible) { CancelDetailBookEdit(); return true; }
         if (_isBookDetailsVisible) { CloseBookDetails(); return true; }
         if (_isInfoVisible) { CloseBookInfo(); return true; }
+        if (_isHomeSearchVisible) { CloseHomeSearch(); return true; }
         if (_selectedTabIndex == 1 && !string.IsNullOrWhiteSpace(AudibleSearchText))
         {
             AudibleSearchText = string.Empty;
             return true;
         }
-        if (!string.IsNullOrWhiteSpace(SearchText)) { SearchText = string.Empty; return true; }
         if (_selectedTabIndex != 0) { SelectTab(0); return true; }
         return false;
+    }
+
+    public void OpenHomeSearch()
+    {
+        if (_selectedTabIndex != 0 || _isHomeSearchVisible) return;
+        _isHomeSearchVisible = true;
+        RaiseNavigationState();
+    }
+
+    public void CloseHomeSearch()
+    {
+        if (!_isHomeSearchVisible) return;
+        _isHomeSearchVisible = false;
+        RaiseNavigationState();
     }
 
     public void SelectTab(int index)
     {
         _selectedTabIndex = Math.Clamp(index, 0, 3);
+        _isHomeSearchVisible = false;
         _isFullPlayerVisible = false;
         _isChaptersVisible = false;
         RaiseNavigationState();
@@ -640,6 +657,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void RaiseNavigationState()
     {
         OnPropertyChanged(nameof(IsHomeTab));
+        OnPropertyChanged(nameof(IsHomeSearchVisible));
         OnPropertyChanged(nameof(IsAudibleLibraryTab));
         OnPropertyChanged(nameof(IsAudibleAccountTab));
         OnPropertyChanged(nameof(IsSettingsTab));

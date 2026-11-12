@@ -1008,10 +1008,17 @@ public partial class MainView : UserControl
         }
     }
 
-    private void OpenBookDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OpenHomeSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.OpenHomeSearch();
+
+    private void CloseHomeSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CloseHomeSearch();
+
+    private async void OpenBookDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: string audiobookId })
-            _viewModel.OpenBookDetails(audiobookId);
+        if (sender is not Button { Tag: string audiobookId }) return;
+        _viewModel.OpenBookDetails(audiobookId);
+        await _viewModel.LoadProviderBookDetailsAsync(audiobookId);
     }
     private void CloseBookDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.CloseBookDetails();

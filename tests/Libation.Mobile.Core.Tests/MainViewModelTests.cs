@@ -217,6 +217,63 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task HomeSearchPage_FiltersCatalogueAndOpensSharedAudiobookDetails()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+
+        vm.NewTitle = "Atomic Habits";
+        vm.NewAuthor = "James Clear";
+        await vm.AddBookAsync();
+        vm.NewTitle = "The Psychology of Money";
+        vm.NewAuthor = "Morgan Housel";
+        await vm.AddBookAsync();
+
+        vm.OpenHomeSearch();
+        Assert.True(vm.IsHomeSearchVisible);
+        Assert.False(vm.IsHomeTab);
+
+        vm.SearchText = "Atomic";
+        var result = Assert.Single(vm.Books);
+        Assert.Equal("Atomic Habits", result.Title);
+
+        vm.OpenBookDetails(result.Id);
+        Assert.True(vm.IsBookDetailsVisible);
+        Assert.False(vm.IsHomeSearchVisible);
+        Assert.Equal("Atomic Habits", vm.DetailBook?.Title);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsBookDetailsVisible);
+        Assert.True(vm.IsHomeSearchVisible);
+        Assert.Single(vm.Books);
+        Assert.Equal("Atomic", vm.SearchText);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsHomeSearchVisible);
+        Assert.True(vm.IsHomeTab);
+        Assert.Equal("Atomic", vm.SearchText);
+        Assert.False(vm.TryNavigateBack());
+    }
+
+    [Fact]
+    public void HomeIndicator_IsVisibleOnlyOnTheHomeTab()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+
+        Assert.True(vm.IsHomeTab);
+        vm.SelectTab(1);
+        Assert.False(vm.IsHomeTab);
+        vm.SelectTab(2);
+        Assert.False(vm.IsHomeTab);
+        vm.SelectTab(3);
+        Assert.False(vm.IsHomeTab);
+        vm.SelectTab(0);
+        Assert.True(vm.IsHomeTab);
+    }
+
+    [Fact]
     public async Task SyncLibraryAsync_EmptyRemoteLibraryRemainsEmptyInsteadOfReseedingDemoBooks()
     {
         using var directory = new TemporaryDirectory();

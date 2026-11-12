@@ -12,39 +12,50 @@
               <TextBlock Text="VØRATH" FontSize="13" FontWeight="Bold" LetterSpacing="3" Foreground="#B9A5E8"/>
               <TextBlock Text="BEYOND THE SILENCE" FontSize="9" LetterSpacing="2" Foreground="#817494"/>
             </StackPanel>
-            <TextBlock Grid.Column="1" Text="◉" FontSize="30" FontWeight="Bold" Foreground="#A78BFA" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="1" Text="◉" FontSize="30" FontWeight="Bold" Foreground="#A78BFA" VerticalAlignment="Center" IsVisible="{Binding IsHomeTab}"/>
           </Grid>
 
           <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
-            <TextBlock Text="Home" FontSize="30" FontWeight="Bold" />
-            <TextBox PlaceholderText="Search your audiobooks" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
-              <Button Grid.Column="0" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowAllClicked">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                  <TextBlock Grid.Column="0" Text="All" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Column="1" Text="{Binding AllCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                </Grid>
-              </Button>
-              <Button Grid.Column="1" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowNotStartedClicked">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                  <TextBlock Grid.Column="0" Text="Not started" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Column="1" Text="{Binding NotStartedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                </Grid>
-              </Button>
-              <Button Grid.Column="2" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowInProgressClicked">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                  <TextBlock Grid.Column="0" Text="In progress" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Column="1" Text="{Binding InProgressCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                </Grid>
-              </Button>
-              <Button Grid.Column="3" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowFinishedClicked">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                  <TextBlock Grid.Column="0" Text="Finished" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Column="1" Text="{Binding FinishedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                </Grid>
-              </Button>
-            </Grid>
-
+            <Button Content="⌕" FontSize="28" Foreground="#B9A5E8" Background="Transparent"
+                    BorderThickness="0" Padding="4" Width="48" Height="44"
+                    HorizontalAlignment="Right" ToolTip.Tip="Search audiobooks"
+                    Click="OpenHomeSearchClicked"/>
+            <Border CornerRadius="8" BorderBrush="#51416F" BorderThickness="1"
+                    Background="Transparent" Padding="0">
+              <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="0">
+                <Button Grid.Column="0" MinWidth="0" MinHeight="40" Padding="5,4"
+                        Background="Transparent" BorderThickness="0" Click="ShowAllClicked">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                    <TextBlock Grid.Column="0" Text="All" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding AllCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                  </Grid>
+                </Button>
+                <Button Grid.Column="1" MinWidth="0" MinHeight="40" Padding="5,4"
+                        Background="Transparent" BorderThickness="0" Click="ShowNotStartedClicked">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                    <TextBlock Grid.Column="0" Text="Not started" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding NotStartedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                  </Grid>
+                </Button>
+                <Button Grid.Column="2" MinWidth="0" MinHeight="40" Padding="5,4"
+                        Background="Transparent" BorderThickness="0" Click="ShowInProgressClicked">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                    <TextBlock Grid.Column="0" Text="In progress" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding InProgressCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                  </Grid>
+                </Button>
+                <Button Grid.Column="3" MinWidth="0" MinHeight="40" Padding="5,4"
+                        Background="Transparent" BorderThickness="0" Click="ShowFinishedClicked">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                    <TextBlock Grid.Column="0" Text="Finished" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding FinishedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                  </Grid>
+                </Button>
+                <Border Grid.Column="0" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
+                <Border Grid.Column="1" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
+                <Border Grid.Column="2" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
+              </Grid>
+            </Border>
             <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" FontSize="12" />
                         <Border CornerRadius="12" Padding="10" Background="#211A2D" IsVisible="{Binding IsSelectionMode}">
               <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
@@ -118,6 +129,51 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
             </StackPanel>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsHomeSearchVisible}" Spacing="14">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+              <Button Grid.Column="0" Content="‹" FontSize="28" Padding="6,0"
+                      Background="Transparent" BorderThickness="0" Click="CloseHomeSearchClicked"/>
+              <TextBox Grid.Column="1" PlaceholderText="Search your audiobooks"
+                       Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                       VerticalContentAlignment="Center"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="SEARCH RESULTS" FontSize="11" LetterSpacing="2"
+                         Foreground="#B9A5E8" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="1" Text="{Binding CatalogueSummaryLabel}"
+                         FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
+            </Grid>
+            <TextBlock Text="{Binding EmptyMessage}" FontSize="13" Opacity="0.7"
+                       TextWrapping="Wrap"/>
+            <ItemsControl ItemsSource="{Binding Books}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Tag="{Binding Id}" Click="OpenBookDetailsClicked"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                          Padding="0" Margin="0,0,0,8" Background="Transparent" BorderThickness="0">
+                    <Border CornerRadius="16" Padding="12" Background="#171321"
+                            BorderBrush="#51416F" BorderThickness="1">
+                      <Grid ColumnDefinitions="72,*,Auto" ColumnSpacing="10">
+                        <Image Grid.Column="0" Width="64" Height="84"
+                               Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}"
+                               Stretch="UniformToFill"/>
+                        <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold"
+                                     TextWrapping="Wrap"/>
+                          <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.75"/>
+                          <TextBlock Text="{Binding Narrator}" FontSize="11" Opacity="0.65"/>
+                          <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Text="›" FontSize="24" Foreground="#B9A5E8"
+                                   VerticalAlignment="Center"/>
+                      </Grid>
+                    </Border>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
           </StackPanel>
 
           <StackPanel IsVisible="{Binding IsBookDetailsVisible}" Spacing="14">
