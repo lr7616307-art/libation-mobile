@@ -13,13 +13,17 @@ public sealed class AudibleApiSessionFactory
 {
     private readonly AudibleIdentitySnapshotStore snapshotStore;
     private readonly ISystemDateTime systemDateTime;
+    private readonly IAudibleTokenRefresher tokenRefresher;
 
     public AudibleApiSessionFactory(
         AudibleIdentitySnapshotStore snapshotStore,
-        ISystemDateTime? systemDateTime = null)
+        ISystemDateTime? systemDateTime = null,
+        IAudibleTokenRefresher? tokenRefresher = null)
     {
         this.snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
         this.systemDateTime = systemDateTime ?? new SystemDateTime();
+        this.tokenRefresher = tokenRefresher
+            ?? new AudibleTokenRefreshClient(new HttpClient(), this.systemDateTime);
     }
 
     /// <summary>
@@ -32,6 +36,9 @@ public sealed class AudibleApiSessionFactory
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Capture before reading the snapshot. A login or disconnect racing with
+        // restore makes this API session stale instead of binding it to a new account.
+        var identityGeneration = snapshotStore.LifecycleCoordinator.CurrentGeneration;
         var snapshot = await snapshotStore.LoadAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
             return null;
@@ -39,12 +46,12 @@ public sealed class AudibleApiSessionFactory
         cancellationToken.ThrowIfCancellationRequested();
 
         var identity = AudibleIdentitySnapshotMapper.Restore(snapshot);
-        var authorize = new Authorize(identity.Locale);
         var maintainer = new AudibleIdentityMaintainer(
             identity,
-            authorize,
+            tokenRefresher,
             systemDateTime,
-            snapshotStore);
+            snapshotStore,
+            identityGeneration: identityGeneration);
 
         return new Api(maintainer);
     }

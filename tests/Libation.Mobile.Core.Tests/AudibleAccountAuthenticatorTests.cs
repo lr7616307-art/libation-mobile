@@ -18,14 +18,15 @@ public sealed class AudibleAccountAuthenticatorTests
         Assert.Equal(Uri.UriSchemeHttps, challenge.AuthorizationUri.Scheme);
         var returnTo = HttpUtility.ParseQueryString(challenge.AuthorizationUri.Query)["openid.return_to"];
         Assert.True(Uri.TryCreate(returnTo, UriKind.Absolute, out var callback));
-        Assert.Equal("www.audible.in", callback!.Host);
+        Assert.Equal("www.amazon.in", callback!.Host);
         Assert.Equal("/ap/maplanding", callback.AbsolutePath);
+        Assert.Equal("https://www.amazon.in/ap/maplanding", callback.AbsoluteUri);
         var fixedNow = new DateTimeOffset(2026, 11, 10, 12, 0, 0, TimeSpan.Zero);
         Assert.Equal(fixedNow.AddMinutes(10), challenge.ExpiresAtUtc);
     }
 
     [Theory]
-    [InlineData("http://www.audible.com/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("http://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("not-a-url")]
     [InlineData("/relative/callback")]
     public async Task CompleteSignIn_RejectsNonAbsoluteHttpsResponseWithoutPersistingIdentity(string responseUrl)
@@ -44,9 +45,9 @@ public sealed class AudibleAccountAuthenticatorTests
 
     [Theory]
     [InlineData("https://evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.audible.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.audible.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.amazon.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.amazon.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.com/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("https://www.amazon.com/not-maplanding?openid.oa2.authorization_code=fake")]
     public async Task CompleteSignIn_RejectsResponseOutsideExactMarketplaceCallback(string responseUrl)
     {
@@ -71,7 +72,7 @@ public sealed class AudibleAccountAuthenticatorTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => authenticator.CompleteSignInAsync(
-                challenge.ChallengeId, "https://www.audible.com/ap/maplanding"));
+                challenge.ChallengeId, "https://www.amazon.com/ap/maplanding"));
 
         Assert.Contains("authorization code", error.Message);
         Assert.Equal(0, secrets.SetCalls);
@@ -89,7 +90,8 @@ public sealed class AudibleAccountAuthenticatorTests
             () => authenticator.CompleteSignInAsync(challenge.ChallengeId, "http://example.com/callback"));
 
         var replayError = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => authenticator.CompleteSignInAsync(challenge.ChallengeId, "https://www.audible.com/ap/maplanding?openid.oa2.authorization_code=fake"));
+            () => authenticator.CompleteSignInAsync(challenge.ChallengeId,
+                "https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake"));
 
         Assert.Contains("missing, expired, or already used", replayError.Message);
         Assert.Equal(0, secrets.SetCalls);
@@ -98,12 +100,10 @@ public sealed class AudibleAccountAuthenticatorTests
     private static AudibleAccountAuthenticator CreateAuthenticator(InMemorySecretStore secrets)
     {
         var clock = new FixedClock(new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc));
-        var profile = new AudibleAndroidDeviceProfile(
-            "Test Android Device", "10", "1.0.0", "1.0.0", "Test Android Device");
         return new AudibleAccountAuthenticator(
             new AudibleIdentitySnapshotStore(secrets),
             new AudiblePkceRegistrationClient(new HttpClient()),
-            profile,
+            new AudibleTokenRefreshClient(new HttpClient(), clock),
             clock);
     }
 

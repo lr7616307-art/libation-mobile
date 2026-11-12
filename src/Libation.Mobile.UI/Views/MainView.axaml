@@ -8,43 +8,53 @@
       <ScrollViewer>
         <StackPanel Margin="20,16,20,20" Spacing="16">
           <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Grid.Column="0" Spacing="0">
+            <StackPanel Grid.Column="0" Spacing="0" IsVisible="{Binding IsHomeNavigationSelected}">
               <TextBlock Text="VØRATH" FontSize="13" FontWeight="Bold" LetterSpacing="3" Foreground="#B9A5E8"/>
               <TextBlock Text="BEYOND THE SILENCE" FontSize="9" LetterSpacing="2" Foreground="#817494"/>
             </StackPanel>
-            <TextBlock Grid.Column="1" Text="◉" FontSize="30" FontWeight="Bold" Foreground="#A78BFA" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Content="⌕" FontSize="28" Foreground="#B9A5E8"
+                    Background="Transparent" BorderThickness="0" Padding="4" Width="48" Height="44"
+                    ToolTip.Tip="Search audiobooks" IsVisible="{Binding IsHomeTab}"
+                    Click="OpenHomeSearchClicked"/>
           </Grid>
 
           <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
-            <TextBlock Text="Home" FontSize="30" FontWeight="Bold" />
-            <TextBox PlaceholderText="Search your audiobooks" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="4">
-              <Button Grid.Column="0" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowAllClicked">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                  <TextBlock Grid.Column="0" Text="All" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Column="1" Text="{Binding AllCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                </Grid>
-              </Button>
-              <Button Grid.Column="1" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowNotStartedClicked">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                  <TextBlock Grid.Column="0" Text="Not started" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Column="1" Text="{Binding NotStartedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                </Grid>
-              </Button>
-              <Button Grid.Column="2" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowInProgressClicked">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                  <TextBlock Grid.Column="0" Text="In progress" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Column="1" Text="{Binding InProgressCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                </Grid>
-              </Button>
-              <Button Grid.Column="3" MinWidth="0" MinHeight="40" Padding="5,4" Background="Transparent" BorderBrush="#51416F" BorderThickness="1" CornerRadius="5" Click="ShowFinishedClicked">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                  <TextBlock Grid.Column="0" Text="Finished" FontSize="9" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Grid.Column="1" Text="{Binding FinishedCount}" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                </Grid>
-              </Button>
-            </Grid>
-
+            <Border CornerRadius="8" BorderBrush="#51416F" BorderThickness="1"
+                    Background="Transparent" Padding="0">
+              <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="0">
+                <Button Grid.Column="0" MinWidth="0" MinHeight="40" Padding="5,4"
+                        Background="Transparent" BorderThickness="0" Click="ShowAllClicked">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                    <TextBlock Grid.Column="0" Text="All" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding AllCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </Grid>
+                </Button>
+                <Button Grid.Column="1" MinWidth="0" MinHeight="40" Padding="5,4"
+                        Background="Transparent" BorderThickness="0" Click="ShowNotStartedClicked">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                    <TextBlock Grid.Column="0" Text="Not started" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding NotStartedCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </Grid>
+                </Button>
+                <Button Grid.Column="2" MinWidth="0" MinHeight="40" Padding="5,4"
+                        Background="Transparent" BorderThickness="0" Click="ShowInProgressClicked">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                    <TextBlock Grid.Column="0" Text="In progress" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding InProgressCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </Grid>
+                </Button>
+                <Button Grid.Column="3" MinWidth="0" MinHeight="40" Padding="5,4"
+                        Background="Transparent" BorderThickness="0" Click="ShowFinishedClicked">
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
+                    <TextBlock Grid.Column="0" Text="Finished" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding FinishedCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </Grid>
+                </Button>
+                <Border Grid.Column="0" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
+                <Border Grid.Column="1" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
+                <Border Grid.Column="2" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
+              </Grid>
+            </Border>
             <TextBlock Text="{Binding AudioImportStatus}" TextWrapping="Wrap" FontSize="12" />
                         <Border CornerRadius="12" Padding="10" Background="#211A2D" IsVisible="{Binding IsSelectionMode}">
               <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
@@ -120,6 +130,51 @@
             </StackPanel>
           </StackPanel>
 
+          <StackPanel IsVisible="{Binding IsHomeSearchVisible}" Spacing="14">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+              <Button Grid.Column="0" Content="‹" FontSize="28" Padding="6,0"
+                      Background="Transparent" BorderThickness="0" Click="CloseHomeSearchClicked"/>
+              <TextBox Grid.Column="1" PlaceholderText="Search your audiobooks"
+                       Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                       VerticalContentAlignment="Center"/>
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="SEARCH RESULTS" FontSize="11" LetterSpacing="2"
+                         Foreground="#B9A5E8" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="1" Text="{Binding CatalogueSummaryLabel}"
+                         FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
+            </Grid>
+            <TextBlock Text="{Binding EmptyMessage}" FontSize="13" Opacity="0.7"
+                       TextWrapping="Wrap"/>
+            <ItemsControl ItemsSource="{Binding Books}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Tag="{Binding Id}" Click="OpenBookDetailsClicked"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                          Padding="0" Margin="0,0,0,8" Background="Transparent" BorderThickness="0">
+                    <Border CornerRadius="16" Padding="12" Background="#171321"
+                            BorderBrush="#51416F" BorderThickness="1">
+                      <Grid ColumnDefinitions="72,*,Auto" ColumnSpacing="10">
+                        <Image Grid.Column="0" Width="64" Height="84"
+                               Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}"
+                               Stretch="UniformToFill"/>
+                        <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold"
+                                     TextWrapping="Wrap"/>
+                          <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.75"/>
+                          <TextBlock Text="{Binding Narrator}" FontSize="11" Opacity="0.65"/>
+                          <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Text="›" FontSize="24" Foreground="#B9A5E8"
+                                   VerticalAlignment="Center"/>
+                      </Grid>
+                    </Border>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+
           <StackPanel IsVisible="{Binding IsBookDetailsVisible}" Spacing="14">
             <Grid ColumnDefinitions="*,Auto">
               <TextBlock Text="AUDIOBOOK DETAILS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8" VerticalAlignment="Center"/>
@@ -152,13 +207,46 @@
                   </Border>
                 </Grid>
                 <Border CornerRadius="8" Padding="8,5" HorizontalAlignment="Center"
-                        Background="{Binding DetailBook.ListeningStatus, Converter={x:Static local:ListeningStatusBackgroundConverter.Instance}}">
+                        Background="{Binding DetailBook.ListeningStatus, Converter={x:Static local:ListeningStatusBackgroundConverter.Instance}}"
+                        IsVisible="{Binding IsDetailLocalBook}">
                   <TextBlock Text="{Binding DetailBook.ListeningStatus}" FontWeight="SemiBold" FontSize="12"/>
                 </Border>
-                <Grid ColumnDefinitions="*,Auto">
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsDetailLocalBook}">
                   <Button Grid.Column="0" Content="▶  Play audiobook" FontSize="16" Click="PlayDetailBookClicked"/>
                   <Button Grid.Column="1" Content="⋮" FontSize="22" Click="DetailBookMenuClicked"/>
                 </Grid>
+                <Border CornerRadius="12" Padding="12" Background="#211A2D"
+                        IsVisible="{Binding IsDetailProviderBook}">
+                  <StackPanel Spacing="7">
+                    <TextBlock Text="{Binding DetailAudibleAvailabilityLabel}" FontSize="15"
+                               FontWeight="SemiBold" Foreground="#C4B5FD"/>
+                    <Button Content="{Binding DetailBook.DownloadActionLabel}" HorizontalAlignment="Stretch"
+                            FontSize="17" Padding="14,12"
+                            Click="DownloadAudibleBookFromDetailClicked"/>
+                    <TextBlock Text="{Binding DownloadSettingsStatus}"
+                               FontSize="11" Opacity="0.78" TextWrapping="Wrap"/>
+                    <Button Content="▶  Play audiobook in VØRATH" HorizontalAlignment="Stretch"
+                            IsVisible="{Binding HasPlayableDetailAudio}" Click="PlayDetailBookClicked"/>
+                    <TextBlock Text="{Binding DetailProtectedDownloadLabel}"
+                               IsVisible="{Binding HasProtectedDetailDownload}"
+                               FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </Border>
+                <Border CornerRadius="12" Padding="12" Background="#211A2D"
+                        IsVisible="{Binding IsDetailLocalBook}">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="DOWNLOAD AUTHORIZED AUDIO" FontSize="11" LetterSpacing="1.5"
+                               Foreground="#B9A5E8" FontWeight="SemiBold"/>
+                    <TextBox x:Name="AuthorizedDownloadUrlBox"
+                             PlaceholderText="Paste direct HTTPS audio URL (.mp3, .m4b, etc.)"/>
+                    <TextBlock Text="Use a direct public HTTPS audio link you are authorized to download. Links with login credentials, query tokens or fragments are not accepted. For Audible titles, use the Download button in the Audible Library."
+                               FontSize="11" Opacity="0.72" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11"
+                               Foreground="#B9A5E8" TextWrapping="Wrap"/>
+                    <Button Content="⇩  Download to selected folder"
+                            HorizontalAlignment="Stretch" Click="QueueAuthorizedDownloadClicked"/>
+                  </StackPanel>
+                </Border>
               </StackPanel>
             </Border>
             <Border CornerRadius="18" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
@@ -167,19 +255,13 @@
                 <TextBlock Text="{Binding DetailBookDescription}" TextWrapping="Wrap" LineHeight="22"/>
               </StackPanel>
             </Border>
-            <Border CornerRadius="18" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="8">
-                <TextBlock Text="REVIEWS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
-                <TextBlock Text="No review or rating information was embedded in this audiobook file." FontSize="13" Opacity="0.7" TextWrapping="Wrap"/>
-              </StackPanel>
-            </Border>
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsVisible="{Binding CanEditDetailBook}">
               <Button Grid.Column="0" Content="Edit information" Click="EditDetailBookClicked"/>
               <Button Grid.Column="1" Content="Change cover" Click="ChooseCoverFromDetailClicked"/>
             </Grid>
             <StackPanel Spacing="8">
-              <TextBlock Text="CHAPTERS IN THIS FILE" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
-              <TextBlock Text="No chapter markers were found in this audiobook." FontSize="12" Opacity="0.65" IsVisible="{Binding HasNoDetailBookChapters}"/>
+              <TextBlock Text="CHAPTERS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
+              <TextBlock Text="{Binding DetailChapterEmptyMessage}" FontSize="12" Opacity="0.65" IsVisible="{Binding HasNoDetailBookChapters}"/>
               <ItemsControl ItemsSource="{Binding DetailBook.Chapters}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -226,13 +308,32 @@
                 <DataTemplate>
                   <Border CornerRadius="16" Padding="12" Margin="0,0,0,8" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
                     <Grid ColumnDefinitions="78,*,Auto">
-                      <Image Grid.Column="0" Width="68" Height="92" Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
-                      <StackPanel Grid.Column="1" Margin="12,0" Spacing="3">
-                        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.7"/>
-                        <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
+                      <Button Grid.Column="0" Grid.ColumnSpan="2" Background="Transparent" BorderThickness="0"
+                              Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                              Click="AudibleBookClicked">
+                        <Grid ColumnDefinitions="78,*">
+                          <Border Grid.Column="0" Width="68" Height="92" CornerRadius="8" ClipToBounds="True" Background="#292238">
+                            <Grid>
+                              <Image Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                              <TextBlock Text="◉" FontSize="28" Foreground="#B9A5E8"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                                         IsVisible="{Binding HasNoCoverArt}"/>
+                            </Grid>
+                          </Border>
+                          <StackPanel Grid.Column="1" Margin="12,0" Spacing="3" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.78"/>
+                            <TextBlock Text="{Binding Narrator}" FontSize="11" Opacity="0.68"/>
+                            <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
+                          </StackPanel>
+                        </Grid>
+                      </Button>
+                      <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <Button Content="{Binding DownloadActionLabel}" FontSize="10" Padding="7,8"
+                                Click="DownloadAudibleBookClicked"/>
+                        <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" FontSize="8" LetterSpacing="0.3"
+                                   Foreground="#B9A5E8" TextAlignment="Center" TextWrapping="Wrap"/>
                       </StackPanel>
-                      <TextBlock Grid.Column="2" Text="AUDIBLE" FontSize="9" LetterSpacing="1" Foreground="#B9A5E8" VerticalAlignment="Center"/>
                     </Grid>
                   </Border>
                 </DataTemplate>
@@ -240,24 +341,81 @@
             </ItemsControl>
           </StackPanel>
 
-          <StackPanel IsVisible="{Binding IsAudibleAccountTab}" Spacing="16">
+          <StackPanel x:Name="AccountContentPanel" IsVisible="{Binding IsAudibleAccountTab}" Spacing="16">
             <TextBlock Text="Accounts" FontSize="30" FontWeight="Bold"/>
-            <Border CornerRadius="18" Padding="20" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="14" HorizontalAlignment="Stretch">
-                <TextBlock Text="♙" FontSize="54" Foreground="#9CA3AF" HorizontalAlignment="Center" Margin="0,28,0,8"/>
-                <TextBlock Text="No accounts yet" FontSize="21" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                <TextBlock Text="Connect an audiobook source to sync and download your library." FontSize="13" Opacity="0.7" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                <Button Content="Add Account" Click="AddAccountClicked" MinHeight="56" FontSize="17" Background="#174B55" HorizontalAlignment="Stretch"/>
-                <TextBlock Text="{Binding SyncStatus}" TextWrapping="Wrap" FontSize="12" Opacity="0.7" Margin="0,10,0,0"/>
-                <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="11" Opacity="0.55"/>
-                <Button Content="Disconnect this session" Click="AudibleDisconnectClicked"/>
-                <Button Content="Sync Audible library" Click="SyncLibraryClicked" IsEnabled="{Binding CanSync}"/>
-              </StackPanel>
-            </Border>
           </StackPanel>
 
           <StackPanel IsVisible="{Binding IsSettingsTab}" Spacing="16">
             <TextBlock Text="Settings" FontSize="30" FontWeight="Bold"/>
+            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="11">
+                <TextBlock Text="Download storage" FontSize="19" FontWeight="Bold"/>
+                <TextBlock Text="Choose where VØRATH should save audio files from sources that provide an authorized, downloadable audio file." FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="Download directory" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadDirectoryLabel}" FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Choose folder" Padding="12,9"
+                          VerticalAlignment="Center" Click="ChooseDownloadFolderClicked"/>
+                </Grid>
+                <TextBlock Text="Android will remember the folder permission. You can change it at any time." FontSize="11" Opacity="0.62" TextWrapping="Wrap"/>
+                <Border Height="1" Background="#40324F" Margin="0,2"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="File organization" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadFolderOrganizationLabel}" FontSize="12" Foreground="#C4B5FD"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Change" Padding="16,9"
+                          VerticalAlignment="Center" Click="CycleDownloadFolderOrganizationClicked"/>
+                </Grid>
+                <TextBlock Text="{Binding DownloadFolderOrganizationExample}" FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
+                <TextBlock Text="VØRATH requests Audible-issued offline licences. Unprotected audio is added to your playable library; DRM-protected files are saved encrypted in this folder and are not sent to the normal player." FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="{Binding QueueCountLabel}" FontSize="19" FontWeight="Bold"/>
+                  <Button Grid.Column="1" Content="{Binding DownloadQueueActionLabel}"
+                          Padding="12,8" Click="DownloadQueueActionClicked"/>
+                </Grid>
+                <TextBlock Text="{Binding QueueSummaryLabel}" FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
+                <StackPanel Spacing="4" IsVisible="{Binding HasActiveDownloadProgress}">
+                  <TextBlock Text="{Binding ActiveDownloadProgressTitle}" FontSize="13" FontWeight="SemiBold"/>
+                  <ProgressBar Minimum="0" Maximum="100" Value="{Binding ActiveDownloadProgressPercent}"/>
+                  <TextBlock Text="{Binding ActiveDownloadProgressLabel}" FontSize="11" Opacity="0.7"/>
+                </StackPanel>
+                <TextBlock Text="No downloads in the queue." FontSize="12" Opacity="0.65"
+                           IsVisible="{Binding IsQueueEmpty}"/>
+                <ItemsControl ItemsSource="{Binding QueueItems}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border CornerRadius="10" Padding="10" Margin="0,4"
+                              Background="#211A2D" BorderBrush="#40324F" BorderThickness="1">
+                        <StackPanel Spacing="6">
+                          <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Text="{Binding DisplayTitle}" FontSize="13"
+                                       FontWeight="SemiBold" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Column="1" Text="{Binding StatusLabel}" FontSize="10"
+                                       Foreground="#C4B5FD" Margin="8,0,0,0"/>
+                          </Grid>
+                          <TextBlock Text="{Binding ErrorMessage}" FontSize="11" Foreground="#E89A9A"
+                                     TextWrapping="Wrap" IsVisible="{Binding HasErrorMessage}"/>
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Retry" Padding="12,5" IsVisible="{Binding CanRetry}"
+                                    Click="RetryQueueClicked"/>
+                            <Button Content="Remove" Padding="12,5" IsVisible="{Binding CanRemove}"
+                                    Click="RemoveQueueClicked"/>
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
             <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="10">
                 <TextBlock Text="Backup and restore" FontSize="19" FontWeight="Bold"/>
@@ -425,8 +583,8 @@
       </Border>
     </Border>
 
-    <Grid x:Name="AddAccountSheetOverlay" Grid.RowSpan="3" IsVisible="False"
-          Background="#99000000" ZIndex="29">
+    <Border Grid.Row="0" IsVisible="{Binding IsAddAccountSheetVisible}"
+            Background="#99000000" ZIndex="31">
       <Border VerticalAlignment="Bottom" Background="#242A35" CornerRadius="26,26,0,0"
               Padding="24,28,24,30" BorderBrush="#343B49" BorderThickness="1,1,0,0">
         <StackPanel Spacing="14">
@@ -486,7 +644,7 @@
           </Border>
         </StackPanel>
       </Border>
-    </Grid>
+    </Border>
 
     <Border Grid.Row="2" HorizontalAlignment="Stretch" Background="#0B0911"
             BorderBrush="#51416F" BorderThickness="0,1,0,0" Padding="4,2">
@@ -497,7 +655,7 @@
           <StackPanel HorizontalAlignment="Center" Spacing="3">
             <TextBlock Text="⌂" FontSize="20" HorizontalAlignment="Center"/>
             <TextBlock Text="Home" FontSize="10" HorizontalAlignment="Center"/>
-            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsHomeTab}"/>
+            <Border Height="2" Background="#8A8790" IsVisible="{Binding IsHomeNavigationSelected}"/>
           </StackPanel>
         </Button>
         <Button Grid.Column="1" Classes="quiet-nav" MinWidth="0" HorizontalAlignment="Stretch"

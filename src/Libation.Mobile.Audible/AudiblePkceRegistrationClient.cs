@@ -1,71 +1,105 @@
 using AudibleApi;
-using System.Globalization;
-using System.IO.Compression;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
-using System.Text;
+using System.Globalization;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Libation.Mobile.Audible;
 
 /// <summary>
-/// Performs the PKCE device-registration exchange after the in-app Audible
-/// marketplace callback. Device details are supplied by the Android host so the request
-/// does not claim that an Android handset is an iPhone.
+/// Exchanges the PKCE authorization code for the complete Audible device identity.
+/// The request follows LibriSync's current iPhone registration profile, including
+/// its current serial length and app/OS/software version tuple.
 /// </summary>
 public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 {
-    
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
     };
 
+    private const string DeviceType = AudibleOAuthFlow.IPhoneDeviceType;
+    private const string AppVersion = "4.60";
+    private const string OsVersion = "26.2";
+    private const string SoftwareVersion = "46000856";
+    private const string RegistrationDeviceName =
+        "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for iPhone";
+
     public async Task<AudibleIdentitySnapshot> RegisterAsync(
         AudibleOAuthChallenge challenge,
         string authorizationCode,
-        AudibleAndroidDeviceProfile profile,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(challenge);
         ArgumentException.ThrowIfNullOrWhiteSpace(authorizationCode);
-        ArgumentNullException.ThrowIfNull(profile);
-        profile.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!string.Equals(challenge.Marketplace, challenge.Marketplace.Trim().ToLowerInvariant(), StringComparison.Ordinal))
             throw new InvalidOperationException("The OAuth marketplace is invalid.");
-        if (!string.Equals(challenge.AuthorizationUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(challenge.CallbackUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("The OAuth challenge must use HTTPS.");
+        if (!challenge.AuthorizationUri.IsAbsoluteUri
+            || !challenge.CallbackUri.IsAbsoluteUri
+            || !string.Equals(challenge.AuthorizationUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(challenge.CallbackUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !challenge.AuthorizationUri.IsDefaultPort
+            || !challenge.CallbackUri.IsDefaultPort
+            || !string.IsNullOrEmpty(challenge.AuthorizationUri.UserInfo)
+            || !string.IsNullOrEmpty(challenge.CallbackUri.UserInfo)
+            || !string.Equals(challenge.AuthorizationUri.AbsolutePath, "/ap/signin", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The OAuth challenge must use the expected absolute HTTPS Amazon sign-in and callback URLs.");
 
         var amazonDomain = challenge.AuthorizationUri.Host;
         if (amazonDomain.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
             amazonDomain = amazonDomain[4..];
-        if (!amazonDomain.StartsWith("amazon.", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("The OAuth authorization host is not an Amazon marketplace.");
-        if (!AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
-            throw new InvalidOperationException("The OAuth callback is not the selected Audible marketplace.");
-        if (challenge.DeviceSerial.Length != 20 || challenge.DeviceSerial.Any(c => !Uri.IsHexDigit(c)))
-            throw new InvalidOperationException("The Android device serial must be 20 hexadecimal characters.");
+        if (!amazonDomain.StartsWith("amazon.", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(challenge.AuthorizationUri.Host, "www." + amazonDomain, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(challenge.AuthorizationUri.Host, challenge.CallbackUri.Host, StringComparison.OrdinalIgnoreCase)
+            || !AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
+            throw new InvalidOperationException("The OAuth challenge does not match the selected Amazon marketplace.");
 
-        var serialAndType = $"{challenge.DeviceSerial}#{AudibleOAuthFlow.AndroidDeviceType}";
+        if (challenge.DeviceSerial.Length != 40
+            || challenge.DeviceSerial.Any(character => !char.IsAsciiLetterOrDigit(character)))
+            throw new InvalidOperationException("The Audible iPhone-profile serial must be 40 alphanumeric characters.");
+
+        if (challenge.CodeVerifier.Length != 43
+            || challenge.CodeVerifier.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_')))
+            throw new InvalidOperationException("The Audible PKCE verifier is malformed.");
+
+        var expectedCodeChallenge = Base64Url(SHA256.HashData(
+            System.Text.Encoding.ASCII.GetBytes(challenge.CodeVerifier)));
+        if (!string.Equals(challenge.CodeChallenge, expectedCodeChallenge, StringComparison.Ordinal))
+            throw new InvalidOperationException("The Audible PKCE verifier does not match its challenge.");
+
+        var serialAndType = $"{challenge.DeviceSerial}#{DeviceType}";
         var clientIdHex = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
+
+        var authorizationParameters = System.Web.HttpUtility.ParseQueryString(challenge.AuthorizationUri.Query);
+        if (!string.Equals(authorizationParameters["openid.oa2.response_type"], "code", StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["openid.oa2.code_challenge_method"], "S256", StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["openid.oa2.code_challenge"], expectedCodeChallenge, StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["openid.oa2.client_id"], "device:" + clientIdHex, StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["openid.return_to"], challenge.CallbackUri.AbsoluteUri, StringComparison.Ordinal))
+            throw new InvalidOperationException("The Audible authorization URL does not match the PKCE verifier, device registration or marketplace callback.");
+
         var request = new RegistrationRequest
         {
-            RequestedTokenType = ["bearer", "mac_dms", "store_authentication_cookie", "website_cookies"],
-            Cookies = new RegistrationCookies { WebsiteCookies = [], Domain = "www." + amazonDomain },
+            RequestedTokenType = ["bearer", "mac_dms", "website_cookies", "store_authentication_cookie"],
+            Cookies = new RegistrationCookies
+            {
+                WebsiteCookies = [],
+                Domain = "." + amazonDomain
+            },
             RegistrationData = new RegistrationData
             {
-                Domain = "DeviceLegacy",
-                AppVersion = profile.AppVersion,
+                Domain = "Device",
+                AppVersion = AppVersion,
                 DeviceSerial = challenge.DeviceSerial,
-                DeviceType = AudibleOAuthFlow.AndroidDeviceType,
-                DeviceName = profile.RegistrationDeviceName,
-                OsVersion = profile.OsVersion,
-                SoftwareVersion = profile.SoftwareVersion,
-                DeviceModel = profile.Model,
-                AppName = profile.AppName
+                DeviceType = DeviceType,
+                DeviceName = RegistrationDeviceName,
+                OsVersion = OsVersion,
+                SoftwareVersion = SoftwareVersion,
+                DeviceModel = "iPhone",
+                AppName = "Audible"
             },
             AuthData = new RegistrationAuthData
             {
@@ -73,38 +107,20 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 AuthorizationCode = authorizationCode,
                 CodeVerifier = challenge.CodeVerifier,
                 CodeAlgorithm = "SHA-256",
-                ClientDomain = "DeviceLegacy",
-                UseGlobalAuthentication = "true"
+                ClientDomain = "DeviceLegacy"
             },
-            RequestedExtensions = ["device_info", "customer_info"],
-            DeviceMetadata = new AndroidDeviceMetadata
-            {
-                DeviceOsFamily = "android",
-                DeviceType = AudibleOAuthFlow.AndroidDeviceType,
-                DeviceSerial = challenge.DeviceSerial,
-                Manufacturer = profile.Manufacturer,
-                Model = profile.Model,
-                OsVersion = profile.OsVersionNumber,
-                Product = profile.Product
-            },
-            UserContextMap = new Dictionary<string, string>
-            {
-                ["frc"] = CreateAndroidFrc(challenge.DeviceSerial, profile)
-            }
+            RequestedExtensions = ["device_info", "customer_info"]
         };
 
-        using var message = new HttpRequestMessage(HttpMethod.Post, "https://api." + amazonDomain + "/auth/register")
+        using var message = new HttpRequestMessage(
+            HttpMethod.Post,
+            "https://api." + amazonDomain + "/auth/register")
         {
             Content = JsonContent.Create(request, options: JsonOptions)
         };
         message.Headers.TryAddWithoutValidation("Accept", "application/json");
-        message.Headers.TryAddWithoutValidation("x-amzn-identity-auth-domain", "api." + amazonDomain);
-        message.Headers.TryAddWithoutValidation("User-Agent",
-            "Mozilla/5.0 (Linux; Android " + profile.AndroidRelease + "; " + profile.Model
-            + " Build/" + profile.BuildId + "; wv) AppleWebKit/537.36 (KHTML, like Gecko) "
-            + "Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36");
-        using var response = await httpClient.SendAsync(message, cancellationToken).ConfigureAwait(false);
 
+        using var response = await httpClient.SendAsync(message, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException(
                 $"Audible device registration failed with HTTP {(int)response.StatusCode}.",
@@ -140,21 +156,22 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
             Provider = AudibleIdentitySnapshot.ProviderName,
             AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+            RegistrationProfileId = AudibleOAuthFlow.RegistrationProfileId,
             LocaleName = Localization.Get(challenge.Marketplace).Name,
             AccessToken = bearer.AccessToken ?? string.Empty,
             AccessTokenExpiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(expiresIn),
             RefreshToken = bearer.RefreshToken ?? string.Empty,
             PrivateKey = macDms.DevicePrivateKey ?? string.Empty,
             AdpToken = macDms.AdpToken ?? string.Empty,
-            Cookies = cookies.Select(c => new AudibleCookieSnapshot
+            Cookies = cookies.Select(cookie => new AudibleCookieSnapshot
             {
-                Name = c.Name ?? string.Empty,
-                Value = c.Value ?? string.Empty
+                Name = cookie.Name ?? string.Empty,
+                Value = cookie.Value ?? string.Empty
             }).ToArray(),
             DeviceSerialNumber = device.DeviceSerialNumber ?? challenge.DeviceSerial,
-            DeviceType = device.DeviceType ?? AudibleOAuthFlow.AndroidDeviceType,
+            DeviceType = device.DeviceType ?? DeviceType,
             AmazonAccountId = customer.UserId,
-            DeviceName = device.DeviceName ?? profile.DeviceName,
+            DeviceName = device.DeviceName ?? "Audible for iPhone",
             StoreAuthenticationCookie = tokens.StoreAuthenticationCookie?.Cookie ?? string.Empty
         };
 
@@ -170,19 +187,6 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         [JsonPropertyName("registration_data")] public required RegistrationData RegistrationData { get; init; }
         [JsonPropertyName("auth_data")] public required RegistrationAuthData AuthData { get; init; }
         [JsonPropertyName("requested_extensions")] public required string[] RequestedExtensions { get; init; }
-        [JsonPropertyName("device_metadata")] public required AndroidDeviceMetadata DeviceMetadata { get; init; }
-        [JsonPropertyName("user_context_map")] public required Dictionary<string, string> UserContextMap { get; init; }
-    }
-
-    private sealed class AndroidDeviceMetadata
-    {
-        [JsonPropertyName("device_os_family")] public required string DeviceOsFamily { get; init; }
-        [JsonPropertyName("device_type")] public required string DeviceType { get; init; }
-        [JsonPropertyName("device_serial")] public required string DeviceSerial { get; init; }
-        [JsonPropertyName("manufacturer")] public required string Manufacturer { get; init; }
-        [JsonPropertyName("model")] public required string Model { get; init; }
-        [JsonPropertyName("os_version")] public required string OsVersion { get; init; }
-        [JsonPropertyName("product")] public required string Product { get; init; }
     }
 
     private sealed class RegistrationCookies
@@ -211,7 +215,6 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         [JsonPropertyName("code_verifier")] public required string CodeVerifier { get; init; }
         [JsonPropertyName("code_algorithm")] public required string CodeAlgorithm { get; init; }
         [JsonPropertyName("client_domain")] public required string ClientDomain { get; init; }
-        [JsonPropertyName("use_global_authentication")] public required string UseGlobalAuthentication { get; init; }
     }
 
     private sealed class RegistrationEnvelope
@@ -250,77 +253,6 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         [JsonPropertyName("Name")] public string? Name { get; init; }
         [JsonPropertyName("Value")] public string? Value { get; init; }
     }
-    private static bool TryReadExpiresIn(JsonElement value, out long seconds)
-    {
-        if (value.ValueKind == JsonValueKind.Number)
-            return value.TryGetInt64(out seconds) && seconds > 0;
-        if (value.ValueKind == JsonValueKind.String)
-            return long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds)
-                && seconds > 0;
-        seconds = 0;
-        return false;
-    }
-
-    private static string CreateAndroidFrc(string serial, AudibleAndroidDeviceProfile profile)
-    {
-        var offset = TimeZoneInfo.Local.GetUtcOffset(DateTimeOffset.Now);
-        var sign = offset < TimeSpan.Zero ? "-" : "+";
-        offset = offset.Duration();
-        var context = new Dictionary<string, string>
-        {
-            ["ApplicationName"] = profile.AppName,
-            ["ApplicationVersion"] = profile.AppVersion,
-            ["DeviceOSVersion"] = profile.OsVersion,
-            ["DeviceName"] = profile.Product + "/" + profile.Manufacturer + "/" + profile.Model,
-            ["ScreenWidthPixels"] = "1080",
-            ["ScreenHeightPixels"] = "2400",
-            ["ThirdPartyDeviceId"] = serial,
-            ["FirstPartyDeviceId"] = serial,
-            ["DeviceLanguage"] = CultureInfo.CurrentUICulture.Name.Replace('-', '_'),
-            ["TimeZone"] = $"{sign}{(int)offset.TotalHours:00}:{offset.Minutes:00}",
-            ["Carrier"] = "T-Mobile"
-        };
-
-        using var compressed = new MemoryStream();
-        using (var gzip = new GZipStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
-        {
-            var json = JsonSerializer.SerializeToUtf8Bytes(context);
-            gzip.Write(json);
-        }
-
-        var plaintext = compressed.ToArray();
-        var password = Encoding.UTF8.GetBytes(serial);
-        var key = Rfc2898DeriveBytes.Pbkdf2(password, Encoding.UTF8.GetBytes("AES/CBC/PKCS7Padding"),
-            1000, HashAlgorithmName.SHA1, 16);
-        var macKey = Rfc2898DeriveBytes.Pbkdf2(password, Encoding.UTF8.GetBytes("HmacSHA256"),
-            1000, HashAlgorithmName.SHA1, 16);
-        var iv = RandomNumberGenerator.GetBytes(16);
-        byte[] ciphertext;
-        using (var aes = Aes.Create())
-        {
-            aes.Key = key;
-            aes.IV = iv;
-            aes.Mode = CipherMode.CBC;
-            aes.Padding = PaddingMode.PKCS7;
-            using var encryptor = aes.CreateEncryptor();
-            ciphertext = encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
-        }
-
-        using var hmac = new HMACSHA256(macKey);
-        var signed = new byte[iv.Length + ciphertext.Length];
-        Buffer.BlockCopy(iv, 0, signed, 0, iv.Length);
-        Buffer.BlockCopy(ciphertext, 0, signed, iv.Length, ciphertext.Length);
-        var digest = hmac.ComputeHash(signed);
-        var result = new byte[9 + signed.Length];
-        result[0] = 0;
-        Buffer.BlockCopy(digest, 0, result, 1, 8);
-        Buffer.BlockCopy(signed, 0, result, 9, signed.Length);
-        CryptographicOperations.ZeroMemory(key);
-        CryptographicOperations.ZeroMemory(macKey);
-        CryptographicOperations.ZeroMemory(password);
-        return Convert.ToBase64String(result);
-    }
-
     private sealed class StoreCookie
     {
         [JsonPropertyName("cookie")] public string? Cookie { get; init; }
@@ -340,41 +272,18 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
     {
         [JsonPropertyName("user_id")] public string? UserId { get; init; }
     }
-}
 
-/// <summary>Actual Android device/build values used for truthful registration metadata.</summary>
-public sealed record AudibleAndroidDeviceProfile(
-    string Model,
-    string OsVersion,
-    string AppVersion,
-    string SoftwareVersion,
-    string DeviceName,
-    string Manufacturer = "unknown",
-    string Product = "unknown",
-    string OsVersionNumber = "0",
-    string AndroidRelease = "unknown",
-    string BuildId = "unknown",
-    string AppName = "com.audible.application")
-{
-    public const string AudibleAndroidAppVersion = "2090263407";
-    public const string AudibleAndroidSoftwareVersion = "130050002";
-    public const string AndroidRegistrationDeviceName =
-        "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android";
+    private static string Base64Url(byte[] bytes)
+        => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    public string RegistrationDeviceName => AndroidRegistrationDeviceName;
-
-    public void Validate()
+    private static bool TryReadExpiresIn(JsonElement value, out long seconds)
     {
-        foreach (var (value, field) in new[]
-        {
-            (Model, nameof(Model)), (OsVersion, nameof(OsVersion)),
-            (AppVersion, nameof(AppVersion)), (SoftwareVersion, nameof(SoftwareVersion)),
-            (DeviceName, nameof(DeviceName)), (Manufacturer, nameof(Manufacturer)),
-            (Product, nameof(Product)), (OsVersionNumber, nameof(OsVersionNumber)),
-            (AndroidRelease, nameof(AndroidRelease)), (BuildId, nameof(BuildId)),
-            (AppName, nameof(AppName))
-        })
-            if (string.IsNullOrWhiteSpace(value) || value.Length > 512)
-                throw new ArgumentException($"Android device profile field {field} is invalid.");
+        if (value.ValueKind == JsonValueKind.Number)
+            return value.TryGetInt64(out seconds) && seconds > 0;
+        if (value.ValueKind == JsonValueKind.String)
+            return long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds)
+                && seconds > 0;
+        seconds = 0;
+        return false;
     }
 }

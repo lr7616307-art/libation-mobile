@@ -13,24 +13,27 @@ namespace Libation.Mobile.Audible;
 public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
 {
     private readonly Identity identity;
-    private readonly IAuthorize authorize;
+    private readonly IAudibleTokenRefresher tokenRefresher;
     private readonly ISystemDateTime systemDateTime;
     private readonly AudibleIdentitySnapshotStore snapshotStore;
     private readonly AudibleIdentityLifecycleCoordinator lifecycleCoordinator;
+    private readonly long identityGeneration;
     private bool disconnected;
 
     public AudibleIdentityMaintainer(
         Identity identity,
-        IAuthorize authorize,
+        IAudibleTokenRefresher tokenRefresher,
         ISystemDateTime systemDateTime,
         AudibleIdentitySnapshotStore snapshotStore,
-        AudibleIdentityLifecycleCoordinator? lifecycleCoordinator = null)
+        AudibleIdentityLifecycleCoordinator? lifecycleCoordinator = null,
+        long? identityGeneration = null)
     {
         this.identity = identity ?? throw new ArgumentNullException(nameof(identity));
-        this.authorize = authorize ?? throw new ArgumentNullException(nameof(authorize));
+        this.tokenRefresher = tokenRefresher ?? throw new ArgumentNullException(nameof(tokenRefresher));
         this.systemDateTime = systemDateTime ?? throw new ArgumentNullException(nameof(systemDateTime));
         this.snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
         this.lifecycleCoordinator = lifecycleCoordinator ?? snapshotStore.LifecycleCoordinator;
+        this.identityGeneration = identityGeneration ?? this.lifecycleCoordinator.CurrentGeneration;
 
         if (!identity.IsValid || identity.PrivateKey is null || identity.AdpToken is null || identity.RefreshToken is null)
             throw new ArgumentException("A complete restored Audible identity is required.", nameof(identity));
@@ -78,46 +81,101 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
 
     private async Task EnsureFreshAsync()
     {
-        // Even an unexpired token must pass through the lifecycle gate. Otherwise a
-        // cached-token fast path could race with sign-out and return credentials after
-        // the disconnect transition has acquired the lifecycle boundary.
+        // The generation is bound to this restored identity, not read afresh for each
+        // request. A logout or new login therefore permanently invalidates every API
+        // session created from the previous identity.
         await lifecycleCoordinator.ExecuteCurrentAsync(
-            async _ =>
+            identityGeneration,
+            async cancellationToken =>
             {
                 if (disconnected)
                     throw new InvalidOperationException("The Audible session has been disconnected.");
 
-                if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow)
-                    return (Token: identity.ExistingAccessToken, Refreshed: false);
+                // Several API objects can be restored from the same snapshot. Reload
+                // while holding the shared lifecycle gate so a later maintainer sees
+                // tokens rotated by an earlier one instead of reusing an old refresh token.
+                var latestSnapshot = await snapshotStore.LoadAsync(cancellationToken).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException("The Audible identity has been disconnected or replaced.");
+                var latestIdentity = AudibleIdentitySnapshotMapper.Restore(latestSnapshot);
+                if (!RepresentsSameIdentity(identity, latestIdentity))
+                    throw new InvalidOperationException("This Audible API session belongs to an identity that has been replaced.");
+
+                ApplyIdentity(identity, latestIdentity);
+                if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow.AddMinutes(30))
+                    return (RefreshResult: (AudibleTokenRefreshResult?)null, Refreshed: false,
+                        RegistrationProfileId: latestSnapshot.RegistrationProfileId);
 
                 var refreshToken = identity.RefreshToken
                     ?? throw new InvalidOperationException("The Audible refresh credential is unavailable.");
-                var refreshedToken = await authorize.RefreshAccessTokenAsync(refreshToken).ConfigureAwait(false);
-                return (Token: refreshedToken, Refreshed: true);
+                var refreshed = await tokenRefresher.RefreshAsync(
+                    identity.Locale, refreshToken, cancellationToken).ConfigureAwait(false);
+                return (RefreshResult: (AudibleTokenRefreshResult?)refreshed, Refreshed: true,
+                    RegistrationProfileId: latestSnapshot.RegistrationProfileId);
             },
-            async (result, _) =>
+            async (result, cancellationToken) =>
             {
                 if (disconnected)
                     throw new InvalidOperationException("The Audible session has been disconnected.");
                 if (!result.Refreshed)
                     return;
 
-                var previousToken = identity.ExistingAccessToken;
-                identity.Update(result.Token);
+                var refreshResult = result.RefreshResult
+                    ?? throw new InvalidOperationException("Audible token refresh returned no result.");
+                var previousAccessToken = identity.ExistingAccessToken;
+                var previousRefreshToken = identity.RefreshToken
+                    ?? throw new InvalidOperationException("The Audible refresh credential is unavailable.");
+
+                ApplyTokens(identity, refreshResult.AccessToken,
+                    refreshResult.RefreshToken ?? previousRefreshToken);
                 try
                 {
-                    await snapshotStore.SaveAsync(Capture(identity)).ConfigureAwait(false);
+                    await snapshotStore.SaveAsync(Capture(identity, result.RegistrationProfileId), cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception persistenceException)
                 {
-                    identity.Update(previousToken);
+                    ApplyTokens(identity, previousAccessToken, previousRefreshToken);
                     throw new InvalidOperationException(
                         "The refreshed Audible session could not be securely saved.", persistenceException);
                 }
-            }).ConfigureAwait(false);
+            },
+            CancellationToken.None).ConfigureAwait(false);
     }
 
-    private static AudibleIdentitySnapshot Capture(Identity source)
+    private static bool RepresentsSameIdentity(Identity expected, Identity actual)
+        => !string.IsNullOrWhiteSpace(expected.DeviceSerialNumber)
+            && !string.IsNullOrWhiteSpace(expected.DeviceType)
+            && string.Equals(expected.DeviceSerialNumber, actual.DeviceSerialNumber, StringComparison.Ordinal)
+            && string.Equals(expected.DeviceType, actual.DeviceType, StringComparison.Ordinal)
+            && string.Equals(expected.AmazonAccountId, actual.AmazonAccountId, StringComparison.Ordinal)
+            && string.Equals(expected.Locale.Name, actual.Locale.Name, StringComparison.OrdinalIgnoreCase);
+
+    private static void ApplyIdentity(Identity target, Identity source)
+        => target.Update(
+            source.PrivateKey ?? throw new InvalidOperationException("The Audible private key is unavailable."),
+            source.AdpToken ?? throw new InvalidOperationException("The Audible ADP token is unavailable."),
+            source.ExistingAccessToken,
+            source.RefreshToken ?? throw new InvalidOperationException("The Audible refresh token is unavailable."),
+            source.Cookies,
+            source.DeviceSerialNumber,
+            source.DeviceType,
+            source.AmazonAccountId,
+            source.DeviceName,
+            source.StoreAuthenticationCookie);
+
+    private static void ApplyTokens(Identity target, AccessToken accessToken, RefreshToken refreshToken)
+        => target.Update(
+            target.PrivateKey ?? throw new InvalidOperationException("The Audible private key is unavailable."),
+            target.AdpToken ?? throw new InvalidOperationException("The Audible ADP token is unavailable."),
+            accessToken,
+            refreshToken,
+            target.Cookies,
+            target.DeviceSerialNumber,
+            target.DeviceType,
+            target.AmazonAccountId,
+            target.DeviceName,
+            target.StoreAuthenticationCookie);
+
+    private static AudibleIdentitySnapshot Capture(Identity source, string registrationProfileId)
     {
         var privateKey = source.PrivateKey
             ?? throw new InvalidOperationException("The Audible private key is unavailable.");
@@ -135,6 +193,7 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
             SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
             Provider = AudibleIdentitySnapshot.ProviderName,
             AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+            RegistrationProfileId = registrationProfileId,
             LocaleName = source.Locale.Name,
             AccessToken = source.ExistingAccessToken.Reveal(),
             AccessTokenExpiresAtUtc = new DateTimeOffset(expiry),

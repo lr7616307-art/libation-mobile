@@ -16,8 +16,13 @@ namespace Libation.Mobile.Android;
 public sealed class AudibleMarketplaceActivity : Activity
 {
     internal const string DefaultMarketplaceExtra = "audible.default_marketplace";
+    internal const string RequestIdExtra = "audible.marketplace_request_id";
+    private static readonly object ActiveGate = new();
+    private static readonly Dictionary<string, WeakReference<AudibleMarketplaceActivity>> ActiveActivities =
+        new(StringComparer.Ordinal);
     private bool _finished;
     private string _defaultMarketplace = "in";
+    private string _requestId = string.Empty;
 
     protected override void OnCreate(Bundle? savedInstanceState)
     {
@@ -25,6 +30,15 @@ public sealed class AudibleMarketplaceActivity : Activity
         Window?.SetStatusBarColor(Color.Rgb(35, 40, 52));
         Window?.SetNavigationBarColor(Color.Black);
         _defaultMarketplace = Intent?.GetStringExtra(DefaultMarketplaceExtra) ?? "in";
+        _requestId = Intent?.GetStringExtra(RequestIdExtra) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_requestId))
+        {
+            FinishSelection(null);
+            return;
+        }
+
+        lock (ActiveGate)
+            ActiveActivities[_requestId] = new WeakReference<AudibleMarketplaceActivity>(this);
 
         var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
         root.SetPadding(24, 32, 24, 24);
@@ -108,8 +122,26 @@ public sealed class AudibleMarketplaceActivity : Activity
     {
         if (_finished) return;
         _finished = true;
-        AndroidExternalBrowserLauncher.CompleteMarketplace(marketplace);
+        AndroidExternalBrowserLauncher.CompleteMarketplace(_requestId, marketplace);
         Finish();
+    }
+
+    internal static void Cancel(string requestId)
+    {
+        AudibleMarketplaceActivity? activity = null;
+        lock (ActiveGate)
+        {
+            if (ActiveActivities.TryGetValue(requestId, out var weakReference))
+            {
+                if (weakReference.TryGetTarget(out var found))
+                    activity = found;
+                else
+                    ActiveActivities.Remove(requestId);
+            }
+        }
+
+        if (activity is { } target)
+            target.RunOnUiThread(() => target.FinishSelection(null));
     }
 
     public override void OnBackPressed()
@@ -121,6 +153,13 @@ public sealed class AudibleMarketplaceActivity : Activity
     protected override void OnDestroy()
     {
         if (!_finished) FinishSelection(null);
+        lock (ActiveGate)
+        {
+            if (ActiveActivities.TryGetValue(_requestId, out var weakReference)
+                && weakReference.TryGetTarget(out var active)
+                && ReferenceEquals(active, this))
+                ActiveActivities.Remove(_requestId);
+        }
         base.OnDestroy();
     }
 }

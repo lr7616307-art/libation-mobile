@@ -16,6 +16,9 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     private string _status = "Checking Audible connection…";
     private bool _isBusy;
     private AccountConnectionState? _lastState;
+    private int _syncedAudiobookCount;
+    private DateTimeOffset? _lastLibrarySync;
+    private string _librarySyncStatus = "No successful Audible library sync yet.";
 
     public AudibleSignInViewModel(AccountConnectionService connection, IExternalBrowserLauncher browser)
     {
@@ -27,7 +30,13 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     public string Marketplace
     {
         get => _marketplace;
-        set { if (_marketplace == value) return; _marketplace = value; OnPropertyChanged(); }
+        set
+        {
+            if (_marketplace == value) return;
+            _marketplace = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(MarketplaceLabel));
+        }
     }
     public string Status
     {
@@ -46,13 +55,78 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         }
     }
     public bool CanBegin => !IsBusy;
+    public bool HasConnectedAccount => _lastState?.Status == AccountConnectionStatus.Connected;
+    public bool CanAddAccount => !HasConnectedAccount && !IsBusy;
+    public bool CanSyncLibrary => HasConnectedAccount && !IsBusy;
     public string ConnectionStatusLabel => _lastState?.Status switch
     {
-        AccountConnectionStatus.Connected => $"Connected · {_lastState.AccountId}",
+        AccountConnectionStatus.Connected => "Connected",
         AccountConnectionStatus.Expired => "Session expired",
         AccountConnectionStatus.ReauthenticationRequired => "Sign-in required",
         _ => "Not connected"
     };
+    public string AccountDisplayName => HasConnectedAccount ? "Audible account" : "No Audible account connected";
+    public string AccountIdLabel
+    {
+        get
+        {
+            var accountId = _lastState?.AccountId;
+            if (!HasConnectedAccount || string.IsNullOrWhiteSpace(accountId) || accountId == "audible-account")
+                return "Amazon account ID not supplied";
+            var suffix = accountId.Length <= 4 ? accountId : accountId[^4..];
+            return $"Amazon account ID ····{suffix}";
+        }
+    }
+    public string MarketplaceLabel
+    {
+        get
+        {
+            var (name, domain) = Marketplace.ToLowerInvariant() switch
+            {
+                "in" => ("India", "audible.in"),
+                "us" => ("United States", "audible.com"),
+                "uk" => ("United Kingdom", "audible.co.uk"),
+                "de" => ("Germany", "audible.de"),
+                "fr" => ("France", "audible.fr"),
+                "ca" => ("Canada", "audible.ca"),
+                "au" => ("Australia", "audible.com.au"),
+                "it" => ("Italy", "audible.it"),
+                "es" => ("Spain", "audible.es"),
+                "jp" => ("Japan", "audible.co.jp"),
+                "br" => ("Brazil", "audible.com.br"),
+                _ => ("Selected marketplace", "Audible")
+            };
+            return $"Marketplace · {name} ({domain})";
+        }
+    }
+    public string SyncedAudiobookCountLabel => _lastLibrarySync is null
+        ? "Library not synced yet"
+        : $"{_syncedAudiobookCount} audiobooks synced";
+    public string LibrarySyncStatusLabel => _librarySyncStatus;
+    public string LastLibrarySyncLabel => _lastLibrarySync is null
+        ? "No successful sync yet"
+        : $"Last synced · {_lastLibrarySync.Value.ToLocalTime():g}";
+
+    public void UpdateLibrarySummary(int count, DateTimeOffset? lastSync, string status)
+    {
+        _syncedAudiobookCount = Math.Max(0, count);
+        _lastLibrarySync = lastSync?.ToUniversalTime();
+        _librarySyncStatus = string.IsNullOrWhiteSpace(status) ? "Library sync status unavailable" : status;
+        OnPropertyChanged(nameof(SyncedAudiobookCountLabel));
+        OnPropertyChanged(nameof(LibrarySyncStatusLabel));
+        OnPropertyChanged(nameof(LastLibrarySyncLabel));
+    }
+
+    private void NotifyAccountSummaryChanged()
+    {
+        OnPropertyChanged(nameof(HasConnectedAccount));
+        OnPropertyChanged(nameof(CanAddAccount));
+        OnPropertyChanged(nameof(CanSyncLibrary));
+        OnPropertyChanged(nameof(ConnectionStatusLabel));
+        OnPropertyChanged(nameof(AccountDisplayName));
+        OnPropertyChanged(nameof(AccountIdLabel));
+        OnPropertyChanged(nameof(MarketplaceLabel));
+    }
 
     public async Task<string> GetDisplayStateAsync()
     {
@@ -64,13 +138,17 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     {
         try
         {
-            var state = await _connection.GetStateAsync(cancellationToken);
+            // Refresh the saved account before deciding whether it is usable. The Audible
+            // maintainer has a 30-minute renewal window, so this is a no-network fast path
+            // for healthy tokens and prevents an expired session marker from blocking sync
+            // when a valid refresh credential is still available.
+            var state = await _connection.RefreshAsync(cancellationToken);
             _lastState = state;
-            OnPropertyChanged(nameof(ConnectionStatusLabel));
+            NotifyAccountSummaryChanged();
             Status = state.Status switch
             {
                 AccountConnectionStatus.Connected => "Audible account connected.",
-                AccountConnectionStatus.Expired => "Your Audible session has expired. Sign in again to restore access.",
+                AccountConnectionStatus.Expired => "Your Audible session expired and automatic refresh did not succeed. Check your connection and try again.",
                 AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
                 _ => "Sign in to Audible inside VØRATH to access your library."
             };
@@ -78,7 +156,29 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception)
         {
-            Status = "Could not read the saved account status. Your encrypted account data was not changed.";
+            // A transient refresh failure must not hide an otherwise restorable
+            // account. Preserve the persisted session and report its actual state.
+            try
+            {
+                var state = await _connection.GetStateAsync(cancellationToken);
+                _lastState = state;
+                NotifyAccountSummaryChanged();
+                Status = state.Status switch
+                {
+                    AccountConnectionStatus.Expired => "Audible token refresh failed. Check your internet connection and retry; saved credentials were not changed.",
+                    AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
+                    AccountConnectionStatus.Connected => "Could not refresh account status, but your saved Audible connection is still valid.",
+                    _ => "Sign in to Audible inside VØRATH to access your library."
+                };
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                Status = "Could not refresh or read the saved account status. Your encrypted account data was not changed.";
+            }
         }
     }
 
@@ -121,11 +221,17 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             Status = "Completing secure Audible device registration…";
             var state = await _connection.CompleteSignInAsync(challenge.ChallengeId, responseUrl, cancellationToken);
             _lastState = state;
-            OnPropertyChanged(nameof(ConnectionStatusLabel));
+            NotifyAccountSummaryChanged();
             challengeId = null;
-            Status = state.Status == AccountConnectionStatus.Connected
-                ? "Audible account connected. Your encrypted device identity is saved."
-                : "Sign-in completed, but the account needs attention.";
+            if (state.Status == AccountConnectionStatus.Connected)
+            {
+                UpdateLibrarySummary(0, null, "Account connected. Sync your Audible library to load its titles.");
+                Status = "Audible account connected. Your encrypted device identity is saved.";
+            }
+            else
+            {
+                Status = "Sign-in completed, but the account needs attention.";
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -158,7 +264,8 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             IsBusy = true;
             await _connection.DisconnectAsync(cancellationToken);
             _lastState = await _connection.GetStateAsync(cancellationToken);
-            OnPropertyChanged(nameof(ConnectionStatusLabel));
+            NotifyAccountSummaryChanged();
+            UpdateLibrarySummary(0, null, "Account disconnected. No Audible library is currently connected.");
             Status = "Audible account disconnected. Saved credentials were removed from encrypted storage.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

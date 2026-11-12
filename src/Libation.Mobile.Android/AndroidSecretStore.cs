@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Android.Content;
 using Android.Security.Keystore;
+using Android.Runtime;
 using Android.Util;
 using Java.Security;
 using Javax.Crypto;
@@ -120,8 +121,7 @@ public sealed class AndroidSecretStore : ISecretStore
         keyStore.Load(null);
         if (!keyStore.ContainsAlias(KeyAlias))
             throw new CryptographicException("The Android Keystore key for stored secrets is missing.");
-        return (ISecretKey)(keyStore.GetKey(KeyAlias, null)
-            ?? throw new CryptographicException("Android Keystore key is unavailable."));
+        return GetSecretKey(keyStore);
     }
 
     private ISecretKey GetOrCreateKey()
@@ -135,8 +135,7 @@ public sealed class AndroidSecretStore : ISecretStore
             keyStore.Load(null);
 
             if (keyStore.ContainsAlias(KeyAlias))
-                return (ISecretKey)(keyStore.GetKey(KeyAlias, null)
-                    ?? throw new CryptographicException("Android Keystore key is unavailable."));
+                return GetSecretKey(keyStore);
 
             // Never create a replacement key while encrypted values still exist.
             // Doing so would make every other value permanently undecryptable.
@@ -156,6 +155,18 @@ public sealed class AndroidSecretStore : ISecretStore
             generator.Init(spec);
             return generator.GenerateKey();
         }
+    }
+
+    private static ISecretKey GetSecretKey(KeyStore keyStore)
+    {
+        var key = keyStore.GetKey(KeyAlias, null)
+            ?? throw new CryptographicException("Android Keystore key is unavailable.");
+
+        // KeyStore.GetKey returns Java.Security.IKey. The Android runtime object
+        // implements javax.crypto.SecretKey, but a CLR interface cast does not
+        // perform the required JNI interface conversion. JavaCast checks and
+        // converts the underlying Java object to the managed ISecretKey binding.
+        return key.JavaCast<ISecretKey>();
     }
 
     private static void Validate(string key, string value)

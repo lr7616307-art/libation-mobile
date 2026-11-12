@@ -26,7 +26,8 @@ public sealed class AudibleItemMapperTests
                 new Person { Name = "Narrator One" },
                 new Person { Name = " Narrator Two " }
             ],
-            PublisherName = "Publisher must not become a contributor"
+            PublisherName = "Publisher must not become a contributor",
+            PublisherSummary = "  Full audiobook description  "
         };
 
         var result = AudibleItemMapper.Map(item);
@@ -36,7 +37,70 @@ public sealed class AudibleItemMapperTests
         Assert.Equal("Author One, Author Two", result.Author);
         Assert.Equal("Narrator One, Narrator Two", result.Narrator);
         Assert.Equal("5h 21m", result.Length);
+        Assert.Equal("Full audiobook description", result.Description);
         Assert.Equal("https://m.media-amazon.com/images/I/cover123._SL500_.jpg", result.CoverImageUrl);
+    }
+
+    [Fact]
+    public void Map_UsesRawProductTitleAndNeverReturnsTheLibraryApiNullSentinel()
+    {
+        var item = new Item
+        {
+            Asin = "B012345678",
+            Title = null,
+            Subtitle = "A meaningful subtitle",
+            Authors = [new Person { Name = "Writer" }]
+        };
+
+        var result = AudibleItemMapper.Map(item);
+
+        Assert.Equal("A meaningful subtitle", result.Title);
+        Assert.DoesNotContain("[null]", result.Title, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Map_UsesStableAsinFallbackWhenBothTitleFieldsAreMissing()
+    {
+        var result = AudibleItemMapper.Map(new Item { Asin = "B012345678" });
+
+        Assert.Equal("Untitled Audible audiobook (B012345678)", result.Title);
+    }
+
+    [Fact]
+    public void Map_CarriesAudiblePlaybackAndDownloadFlags()
+    {
+        var result = AudibleItemMapper.Map(new Item
+        {
+            Asin = "B012345678",
+            Title = "Title",
+            IsPlayable = true,
+            IsDownloaded = false
+        });
+
+        Assert.True(result.IsPlayableOnAudible);
+        Assert.False(result.IsDownloadedOnAudible);
+    }
+
+    [Fact]
+    public void Map_FallsBackToAudibleEditorsSummaryAndEditorialReviewForDescription()
+    {
+        var editorialOnly = AudibleItemMapper.Map(new Item
+        {
+            Asin = "B012345678",
+            Title = "Title",
+            AudibleEditorsSummary = "   ",
+            EditorialReviews = ["  Editorial description  "]
+        });
+        Assert.Equal("Editorial description", editorialOnly.Description);
+
+        var editorsSummary = AudibleItemMapper.Map(new Item
+        {
+            Asin = "B012345678",
+            Title = "Title",
+            AudibleEditorsSummary = "  Editors summary  ",
+            EditorialReviews = ["Editorial review"]
+        });
+        Assert.Equal("Editors summary", editorsSummary.Description);
     }
 
     [Fact]

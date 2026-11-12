@@ -10,7 +10,7 @@ namespace Libation.Mobile.Audible;
 /// </summary>
 public sealed record AudibleIdentitySnapshot
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
     public const string ProviderName = "audible";
     public const string SupportedAudibleApiVersion = "14.1.2";
     public const int MaximumSerializedBytes = 16 * 1024;
@@ -18,6 +18,7 @@ public sealed record AudibleIdentitySnapshot
     public required int SchemaVersion { get; init; }
     public required string Provider { get; init; }
     public required string AudibleApiVersion { get; init; }
+    public required string RegistrationProfileId { get; init; }
     public required string LocaleName { get; init; }
     public required string AccessToken { get; init; }
     public required DateTimeOffset AccessTokenExpiresAtUtc { get; init; }
@@ -91,6 +92,8 @@ public static class AudibleIdentitySnapshotSerializer
             throw new InvalidDataException("Unsupported identity provider.");
         if (!string.Equals(snapshot.AudibleApiVersion, AudibleIdentitySnapshot.SupportedAudibleApiVersion, StringComparison.Ordinal))
             throw new InvalidDataException("Unsupported AudibleApi identity format version.");
+        if (!string.Equals(snapshot.RegistrationProfileId, AudibleOAuthFlow.RegistrationProfileId, StringComparison.Ordinal))
+            throw new InvalidDataException("The saved Audible identity uses an obsolete device-registration profile. Sign in again to register the updated profile.");
 
         RequireText(snapshot.LocaleName, nameof(snapshot.LocaleName));
         RequirePrefix(snapshot.AccessToken, "Atna|", nameof(snapshot.AccessToken));

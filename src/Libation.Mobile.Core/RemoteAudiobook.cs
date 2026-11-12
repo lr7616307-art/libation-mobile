@@ -7,4 +7,6 @@ public sealed record RemoteAudiobook(string ProviderId, string Title, string Aut
     public string Genre { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public string CoverImageUrl { get; init; } = string.Empty;
+    public bool? IsPlayableOnAudible { get; init; }
+    public bool? IsDownloadedOnAudible { get; init; }
 }

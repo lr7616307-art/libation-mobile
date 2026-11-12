@@ -9,30 +9,43 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleLibraryCatalogProviderTests
 {
     [Fact]
-    public async Task GetLibraryAsync_MapsItemsAcrossPagesAndRequestsContributors()
+    public async Task GetLibraryAsync_MapsItemsAndRequestsProductAttributesContributorsAndPlaybackFlags()
     {
         LibraryOptions? capturedOptions = null;
         var provider = new AudibleLibraryCatalogProvider(options =>
         {
             capturedOptions = options;
             return Pages(
-                [new Item { Asin = "A1", Title = "First", Authors = [new Person { Name = "Writer" }] }],
-                [new Item { Asin = "A2", Title = "Second", Narrators = [new Person { Name = "Voice" }] }]);
+                [new Item { Asin = "A1", Title = "First", Authors = [new Person { Name = "Writer" }], IsPlayable = true, IsDownloaded = false }],
+                [new Item { Asin = "A2", Title = "Second", Narrators = [new Person { Name = "Voice" }], IsPlayable = false, IsDownloaded = true }]);
         });
 
         var result = await provider.GetLibraryAsync();
 
-        Assert.Equal(LibraryOptions.ResponseGroupOptions.Contributors, capturedOptions!.ResponseGroups);
+        Assert.Equal(
+            LibraryOptions.ResponseGroupOptions.Contributors
+                | LibraryOptions.ResponseGroupOptions.ProductAttrs
+                | LibraryOptions.ResponseGroupOptions.ProductDesc
+                | LibraryOptions.ResponseGroupOptions.ProductExtendedAttrs
+                | LibraryOptions.ResponseGroupOptions.Media
+                | LibraryOptions.ResponseGroupOptions.IsPlayable
+                | LibraryOptions.ResponseGroupOptions.IsDownloaded,
+            capturedOptions!.ResponseGroups);
+        Assert.Equal(LibraryOptions.ImageSizeOptions._500, capturedOptions.ImageSizes);
         Assert.Collection(result,
             first =>
             {
                 Assert.Equal("A1", first.ProviderId);
                 Assert.Equal("Writer", first.Author);
+                Assert.True(first.IsPlayableOnAudible);
+                Assert.False(first.IsDownloadedOnAudible);
             },
             second =>
             {
                 Assert.Equal("A2", second.ProviderId);
                 Assert.Equal("Voice", second.Narrator);
+                Assert.False(second.IsPlayableOnAudible);
+                Assert.True(second.IsDownloadedOnAudible);
             });
     }
 

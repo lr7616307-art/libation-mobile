@@ -55,7 +55,7 @@ public sealed class AudibleIdentitySnapshotStore(ISecretStore secrets)
         catch (InvalidDataException ex)
         {
             throw new AudibleIdentityRecoveryRequiredException(
-                "Saved Audible credentials are invalid. Sign in again to restore this device.", ex);
+                "Saved Audible credentials are invalid or use an outdated device-registration profile. Sign in again to restore this device.", ex);
         }
         catch (CryptographicException ex)
         {

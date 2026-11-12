@@ -16,3 +16,13 @@ public interface ILocalAudioPlayer : IDisposable
     /// <summary>Optional artwork path for the platform media notification.</summary>
     void SetArtwork(string? coverImagePath) { }
 }
+
+
+/// <summary>
+/// Optional live-state notifications for platform players. The playback engine
+/// remains the source of truth; consumers reread its current snapshot on change.
+/// </summary>
+public interface ILocalAudioPlayerStateNotifier
+{
+    event EventHandler? PlaybackStateChanged;
+}

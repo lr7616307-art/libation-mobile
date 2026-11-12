@@ -8,13 +8,22 @@ using Android.Graphics;
 
 namespace Libation.Mobile.Android;
 
-[Activity(Exported = false, Label = "Audible sign-in", Theme = "@android:style/Theme.Material.NoActionBar")]
+[Activity(
+    Exported = false,
+    Label = "Audible sign-in",
+    Theme = "@android:style/Theme.Material.NoActionBar",
+    ConfigurationChanges = global::Android.Content.PM.ConfigChanges.Orientation | global::Android.Content.PM.ConfigChanges.ScreenSize)]
 public sealed class AudibleLoginActivity : Activity
 {
     internal const string AuthorizationUrlExtra = "audible.authorization_url";
     internal const string ExpectedHostExtra = "audible.expected_host";
+    internal const string RequestIdExtra = "audible.request_id";
+    private static readonly object ActiveGate = new();
+    private static readonly Dictionary<string, WeakReference<AudibleLoginActivity>> ActiveActivities =
+        new(StringComparer.Ordinal);
     private WebView? _webView;
     private string _expectedHost = string.Empty;
+    private string _requestId = string.Empty;
     private bool _finished;
 
     protected override void OnCreate(Bundle? savedInstanceState)
@@ -25,11 +34,17 @@ public sealed class AudibleLoginActivity : Activity
 
         var authorizationUrl = Intent?.GetStringExtra(AuthorizationUrlExtra);
         _expectedHost = Intent?.GetStringExtra(ExpectedHostExtra) ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(authorizationUrl) || string.IsNullOrWhiteSpace(_expectedHost))
+        _requestId = Intent?.GetStringExtra(RequestIdExtra) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(authorizationUrl)
+            || string.IsNullOrWhiteSpace(_expectedHost)
+            || string.IsNullOrWhiteSpace(_requestId))
         {
             FinishLogin(null);
             return;
         }
+
+        lock (ActiveGate)
+            ActiveActivities[_requestId] = new WeakReference<AudibleLoginActivity>(this);
 
         var root = new LinearLayout(this) { Orientation = Orientation.Vertical };
         root.SetBackgroundColor(Color.Black);
@@ -87,8 +102,27 @@ public sealed class AudibleLoginActivity : Activity
     {
         if (_finished) return;
         _finished = true;
-        AndroidExternalBrowserLauncher.Complete(responseUrl);
+        AndroidExternalBrowserLauncher.Complete(_requestId, responseUrl);
         Finish();
+    }
+
+    internal static void Cancel(string requestId)
+    {
+        AudibleLoginActivity? activity = null;
+        lock (ActiveGate)
+        {
+            if (ActiveActivities.TryGetValue(requestId, out var weakReference))
+            {
+                if (weakReference.TryGetTarget(out var found))
+                    activity = found;
+                else
+                    ActiveActivities.Remove(requestId);
+            }
+        }
+
+        // Cancellation can originate from the view model's continuation thread.
+        if (activity is { } target)
+            target.RunOnUiThread(() => target.FinishLogin(null));
     }
 
     public override void OnBackPressed()
@@ -174,14 +208,30 @@ public sealed class AudibleLoginActivity : Activity
     protected override void OnDestroy()
     {
         if (!_finished) FinishLogin(null);
+        lock (ActiveGate)
+        {
+            if (ActiveActivities.TryGetValue(_requestId, out var weakReference)
+                && weakReference.TryGetTarget(out var active)
+                && ReferenceEquals(active, this))
+                ActiveActivities.Remove(_requestId);
+        }
         if (_webView is not null)
         {
             _webView.StopLoading();
             _webView.LoadUrl("about:blank");
+            _webView.ClearHistory();
+            _webView.ClearCache(true);
             _webView.RemoveAllViews();
             _webView.Destroy();
             _webView = null;
         }
+
+        // The returned provider identity (including website cookies) is stored
+        // separately in the encrypted secret store. Do not retain the temporary
+        // browser's Amazon session in WebView's persistent cookie/local storage.
+        var cookieManager = CookieManager.Instance;
+        cookieManager.RemoveAllCookies(new CookieCleanupCallback(cookieManager.Flush));
+        WebStorage.Instance.DeleteAllData();
         base.OnDestroy();
     }
 
@@ -189,6 +239,11 @@ public sealed class AudibleLoginActivity : Activity
     {
         public void OnReceiveValue(Java.Lang.Object? value)
             => callback(value?.ToString());
+    }
+
+    private sealed class CookieCleanupCallback(Action completed) : Java.Lang.Object, IValueCallback
+    {
+        public void OnReceiveValue(Java.Lang.Object? value) => completed();
     }
 
     private sealed class AudibleLoginWebViewClient(string expectedHost, Action<string> completed) : WebViewClient

@@ -18,6 +18,15 @@ public partial class MainView
     /// <summary>Runs a non-invasive, platform-specific Widevine capability diagnostic.</summary>
     public static Func<string>? PlatformWidevineDiagnosticFactory { get; set; }
 
+    /// <summary>Creates an on-demand provider metadata reader for book details.</summary>
+    public static Func<IAudiobookDetailsProvider>? PlatformAudiobookDetailsProviderFactory { get; set; }
+
+    /// <summary>Creates an authorized Audible media source from the saved account identity.</summary>
+    public static Func<CancellationToken, Task<IAuthorizedAudioDownloadSource?>>? PlatformAudibleDownloadSourceFactory { get; set; }
+
+    /// <summary>Legacy external title launcher, retained for non-download navigation only.</summary>
+    public static Func<string, Task>? PlatformOpenAudibleTitleFactory { get; set; }
+
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
 
@@ -26,21 +35,17 @@ public partial class MainView
         var view = new MainView();
         var signInViewModel = PlatformSignInViewModelFactory?.Invoke();
         if (signInViewModel is not null
-            && view.Content is TabControl tabs)
+            && view.FindControl<StackPanel>("AccountContentPanel") is { } accountStack)
         {
-            var accountTab = tabs.Items
-                .OfType<TabItem>()
-                .FirstOrDefault(tab => string.Equals(
-                    tab.Header?.ToString(), "Account", StringComparison.Ordinal));
-
-            if (accountTab?.Content is ScrollViewer { Content: StackPanel accountStack })
-            {
-                // Keep the native sign-in panel inside the visible Account tab,
-                // rather than trying to insert it into the TabControl's root.
-                accountStack.Children.Insert(
-                    Math.Min(2, accountStack.Children.Count),
-                    AudibleSignInPanel.Create(signInViewModel));
-            }
+            // Navigation uses visibility-switched page panels, not a TabControl.
+            // Attach the account tile directly beneath the Accounts heading so
+            // it is present even on a fresh, logged-out installation.
+            accountStack.Children.Insert(
+                Math.Min(1, accountStack.Children.Count),
+                AudibleSignInPanel.Create(
+                    signInViewModel,
+                    () => view._viewModel.OpenAddAccountSheet(),
+                    () => view.SyncLibraryAndUpdateAccountAsync()));
         }
 
         return view;

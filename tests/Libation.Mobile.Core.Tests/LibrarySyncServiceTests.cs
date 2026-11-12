@@ -36,6 +36,10 @@ public sealed class LibrarySyncServiceTests
         var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
         await repository.ReplaceAllAsync([
             new Audiobook("provider:aud-1", "My corrected title", "My corrected author", "My narrator", "9h", "Library")
+            {
+                Chapters = [new AudiobookChapter("Cached chapter", 0)],
+                FileSizeBytes = 18_000_000
+            }
         ]);
         var service = new LibrarySyncService(
             new FakeProvider([new RemoteAudiobook("aud-1", "Remote title", "Remote author", "Remote narrator", "8h")]),
@@ -50,7 +54,47 @@ public sealed class LibrarySyncServiceTests
         Assert.Equal("My corrected author", saved.Author);
         Assert.Equal("My narrator", saved.Narrator);
         Assert.Equal("9h", saved.Length);
+        Assert.Single(saved.Chapters);
+        Assert.Equal(18_000_000, saved.FileSizeBytes);
         Assert.Empty(saved.CoverImageUrl);
+    }
+
+    [Fact]
+    public async Task Sync_ReplacesOldNullTitleAndMissingMetadataWhilePreservingCachedCoverAndAvailability()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("provider:aud-1", "[null]", "Unknown author", "", "", "Library")
+            {
+                CoverImagePath = "/app/covers/aud-1.jpg",
+                CoverImageUrl = "https://m.media-amazon.com/images/I/old.jpg"
+            }
+        ]);
+        var service = new LibrarySyncService(
+            new FakeProvider([
+                new RemoteAudiobook("aud-1", "Recovered audiobook title", "Actual author", "Actual narrator", "7h 12m")
+                {
+                    Description = "Provider summary",
+                    CoverImageUrl = "https://m.media-amazon.com/images/I/new.jpg",
+                    IsPlayableOnAudible = true,
+                    IsDownloadedOnAudible = false
+                }
+            ]),
+            repository);
+
+        await service.SyncAsync();
+
+        var saved = Assert.Single(await repository.GetBooksAsync());
+        Assert.Equal("Recovered audiobook title", saved.Title);
+        Assert.Equal("Actual author", saved.Author);
+        Assert.Equal("Actual narrator", saved.Narrator);
+        Assert.Equal("7h 12m", saved.Length);
+        Assert.Equal("Provider summary", saved.Description);
+        Assert.Equal("/app/covers/aud-1.jpg", saved.CoverImagePath);
+        Assert.Equal("https://m.media-amazon.com/images/I/new.jpg", saved.CoverImageUrl);
+        Assert.True(saved.IsPlayableOnAudible);
+        Assert.False(saved.IsDownloadedOnAudible);
     }
 
     [Fact]

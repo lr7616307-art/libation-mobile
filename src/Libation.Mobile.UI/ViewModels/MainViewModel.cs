@@ -14,16 +14,25 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly LocalAudioImportService? _audioImportService;
     private readonly CoverArtImportService? _coverArtImportService;
     private readonly AudiobookFileImportService? _audiobookFileImportService;
+    private readonly IAudiobookDetailsProvider? _audiobookDetailsProvider;
+    private readonly SemaphoreSlim _providerDetailsGate = new(1, 1);
+    private string _detailMetadataStatus = string.Empty;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
     private readonly LibrarySyncService? _syncService;
     private readonly ISyncStateStore? _syncStateStore;
+    private readonly IDownloadSettingsStore? _downloadSettingsStore;
+    private DownloadSettings _downloadSettings = new();
+    private string _downloadSettingsStatus = string.Empty;
+    private DownloadQueueProgress? _activeDownloadProgress;
+    private bool _isDownloadQueueRunning;
     private readonly Func<string>? _widevineDiagnosticFactory;
     private string _widevineDiagnostic = "Widevine check is available only in the Android app.";
     private bool _isSyncing;
     private string _syncStatus = "Provider not connected. Audible library sync is not available yet.";
     private DateTimeOffset? _lastSuccessfulSync;
     private string _searchText = string.Empty;
+    private bool _isHomeSearchVisible;
     private string _newTitle = string.Empty;
     private string _newAuthor = string.Empty;
     private string _newNarrator = string.Empty;
@@ -58,6 +67,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string[] _pendingRemovalIds = [];
     private string _removalConfirmationMessage = string.Empty;
     private bool _isRemovalConfirmationVisible;
+    private bool _isAddAccountSheetVisible;
     private readonly HashSet<string> _selectedAudiobookIds = new(StringComparer.Ordinal);
 
     private static readonly Audiobook[] InitialSamples = [];
@@ -77,6 +87,78 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasNoLocalAudioBooks => !HasLocalAudioBooks;
     public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "Your library is empty. Import an audiobook file to get started.";
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
+
+    public DownloadSettings CurrentDownloadSettings => _downloadSettings;
+    public string DownloadDirectoryLabel => _downloadSettings.DirectoryLabel;
+    public string DownloadFolderOrganizationLabel => _downloadSettings.FolderOrganizationLabel;
+    public string DownloadFolderOrganizationExample => _downloadSettings.FolderOrganizationExample;
+    public bool HasSelectedDownloadDirectory => _downloadSettings.HasSelectedDirectory;
+    public string DownloadSettingsStatus
+    {
+        get => _downloadSettingsStatus;
+        private set
+        {
+            if (_downloadSettingsStatus == value) return;
+            _downloadSettingsStatus = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public async Task SetDownloadDirectoryAsync(string bookmark, string directoryName, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bookmark);
+        _downloadSettings = (_downloadSettings with
+        {
+            DirectoryBookmark = bookmark,
+            DirectoryName = directoryName
+        }).Normalize();
+        if (_downloadSettingsStore is not null)
+            await _downloadSettingsStore.SaveAsync(_downloadSettings, cancellationToken);
+        RaiseDownloadSettingsChanged();
+        DownloadSettingsStatus = "Download folder saved. Android storage access will be reused for future downloads.";
+    }
+
+    public async Task CycleDownloadFolderOrganizationAsync(CancellationToken cancellationToken = default)
+    {
+        var next = _downloadSettings.FolderOrganization switch
+        {
+            DownloadFolderOrganization.Flat => DownloadFolderOrganization.AuthorBook,
+            DownloadFolderOrganization.AuthorBook => DownloadFolderOrganization.AuthorSeriesBook,
+            _ => DownloadFolderOrganization.Flat
+        };
+        _downloadSettings = (_downloadSettings with { FolderOrganization = next }).Normalize();
+        if (_downloadSettingsStore is not null)
+            await _downloadSettingsStore.SaveAsync(_downloadSettings, cancellationToken);
+        RaiseDownloadSettingsChanged();
+        DownloadSettingsStatus = "File organization preference saved.";
+    }
+
+    public void ReportDownloadSettingsStatus(string message) => DownloadSettingsStatus = message;
+
+    private async Task LoadDownloadSettingsAsync(CancellationToken cancellationToken)
+    {
+        if (_downloadSettingsStore is null) return;
+        try
+        {
+            _downloadSettings = (await _downloadSettingsStore.GetAsync(cancellationToken)).Normalize();
+            RaiseDownloadSettingsChanged();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            DownloadSettingsStatus = "Download settings could not be loaded. The library is still available.";
+        }
+    }
+
+    private void RaiseDownloadSettingsChanged()
+    {
+        OnPropertyChanged(nameof(CurrentDownloadSettings));
+        OnPropertyChanged(nameof(DownloadDirectoryLabel));
+        OnPropertyChanged(nameof(DownloadFolderOrganizationLabel));
+        OnPropertyChanged(nameof(DownloadFolderOrganizationExample));
+        OnPropertyChanged(nameof(HasSelectedDownloadDirectory));
+    }
+
     public Audiobook? SelectedBook
     {
         get => _selectedBook;
@@ -181,18 +263,49 @@ public sealed class MainViewModel : INotifyPropertyChanged
             RefreshAudibleBooks(_allBooks);
         }
     }
-    public bool IsHomeTab => _selectedTabIndex == 0 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
-    public bool IsAudibleLibraryTab => _selectedTabIndex == 1 && !IsFullPlayerVisible && !IsChaptersVisible;
-    public bool IsAudibleAccountTab => _selectedTabIndex == 2 && !IsFullPlayerVisible && !IsChaptersVisible;
-    public bool IsSettingsTab => _selectedTabIndex == 3 && !IsFullPlayerVisible && !IsChaptersVisible;
+    public bool IsHomeNavigationSelected => _selectedTabIndex == 0;
+    public bool IsHomeTab => _selectedTabIndex == 0 && !_isHomeSearchVisible && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
+    public bool IsHomeSearchVisible => _selectedTabIndex == 0 && _isHomeSearchVisible && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
+    public bool IsAudibleLibraryTab => _selectedTabIndex == 1 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
+    public bool IsAudibleAccountTab => _selectedTabIndex == 2 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
+    public bool IsSettingsTab => _selectedTabIndex == 3 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsFullPlayerVisible => _isFullPlayerVisible;
     public bool IsChaptersVisible => _isChaptersVisible;
     public bool IsBookDetailsVisible => _isBookDetailsVisible;
     public Audiobook? DetailBook => _detailBook;
+    public bool IsDetailProviderBook => _detailBook?.IsProviderCatalogueEntry == true;
+    public bool IsDetailLocalBook => _detailBook is not null && !_detailBook.IsProviderCatalogueEntry;
+    public bool CanEditDetailBook => IsDetailLocalBook;
+    public string DetailMetadataStatus
+    {
+        get => _detailMetadataStatus;
+        private set
+        {
+            if (_detailMetadataStatus == value) return;
+            _detailMetadataStatus = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DetailChapterEmptyMessage));
+        }
+    }
+    public string DetailChapterEmptyMessage => HasDetailBookChapters
+        ? string.Empty
+        : IsDetailProviderBook
+            ? (string.IsNullOrWhiteSpace(DetailMetadataStatus) ? "Chapter details have not been loaded yet." : DetailMetadataStatus)
+            : "No chapter markers were found in this audiobook file.";
+    public string DetailAudibleAvailabilityLabel => IsDetailProviderBook
+        ? _detailBook!.AudibleAvailabilityLabel
+        : string.Empty;
+    public string DetailProtectedDownloadLabel => string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
+        ? string.Empty
+        : $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved; this protected file is not playable in VØRATH yet.";
+    public bool HasPlayableDetailAudio => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.AudioFilePath);
+    public bool HasProtectedDetailDownload => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName);
     public string DetailBookDescription
     {
         get
         {
+            if (IsDetailProviderBook && string.IsNullOrWhiteSpace(_detailBook?.Description))
+                return "Audible did not include a description in the library response.";
             if (string.IsNullOrWhiteSpace(_detailBook?.Description))
                 return "No summary was embedded in this audiobook file.";
             var decoded = System.Net.WebUtility.HtmlDecode(_detailBook.Description);
@@ -200,9 +313,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return System.Text.RegularExpressions.Regex.Replace(plainText.Replace('\u00A0', ' '), @"\s+", " ").Trim();
         }
     }
-    public string DetailFileSizeLabel => _detailBook?.FileSizeBytes > 0 ? $"{_detailBook.FileSizeBytes / 1048576d:0.0} MB" : "File size unavailable";
+    public string DetailFileSizeLabel => _detailBook?.FileSizeBytes > 0
+        ? FormatFileSize(_detailBook.FileSizeBytes)
+        : IsDetailProviderBook ? "Not supplied by Audible" : "File size unavailable";
     public string DetailDurationLabel => string.IsNullOrWhiteSpace(_detailBook?.Length) ? "Duration unavailable" : _detailBook.Length;
-    public string DetailChapterLabel => $"{_detailBook?.Chapters.Count ?? 0} chapters";
+    public string DetailChapterLabel => HasDetailBookChapters
+        ? $"{_detailBook!.Chapters.Count} chapters"
+        : "Not available";
     public bool HasDetailBookChapters => (_detailBook?.Chapters.Count ?? 0) > 0;
     public bool HasNoDetailBookChapters => !HasDetailBookChapters;
     public int AllCount => LocalAudioBooks.Count;
@@ -232,8 +349,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     public void OpenBookDetails(string audiobookId)
     {
-        _detailBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId && !book.Id.StartsWith("provider:", StringComparison.Ordinal));
+        _detailBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
         if (_detailBook is null) return;
+        DetailMetadataStatus = string.Empty;
         _isBookDetailsVisible = true;
         _isBookMenuVisible = false;
         _isInfoVisible = false;
@@ -241,7 +359,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsBookMenuVisible));
         OnPropertyChanged(nameof(IsInfoVisible));
         OnPropertyChanged(nameof(DetailBook));
+        OnPropertyChanged(nameof(DetailMetadataStatus));
+        OnPropertyChanged(nameof(DetailChapterEmptyMessage));
         OnPropertyChanged(nameof(IsBookDetailsVisible));
+        OnPropertyChanged(nameof(IsDetailProviderBook));
+        OnPropertyChanged(nameof(IsDetailLocalBook));
+        OnPropertyChanged(nameof(CanEditDetailBook));
+        OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+        OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+        OnPropertyChanged(nameof(HasPlayableDetailAudio));
+        OnPropertyChanged(nameof(HasProtectedDetailDownload));
         OnPropertyChanged(nameof(DetailBookDescription));
         OnPropertyChanged(nameof(DetailFileSizeLabel));
         OnPropertyChanged(nameof(DetailDurationLabel));
@@ -249,6 +376,94 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasDetailBookChapters));
         OnPropertyChanged(nameof(HasNoDetailBookChapters));
     }
+    public async Task LoadProviderBookDetailsAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        if (!audiobookId.StartsWith("provider:", StringComparison.Ordinal))
+            return;
+
+        await _providerDetailsGate.WaitAsync(cancellationToken);
+        try
+        {
+            var current = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
+            if (current is null)
+                return;
+            if (current.FileSizeBytes > 0 && current.Chapters.Count > 0)
+            {
+                DetailMetadataStatus = $"Loaded {current.Chapters.Count} chapters and {FormatFileSize(current.FileSizeBytes)}.";
+                return;
+            }
+            if (_audiobookDetailsProvider is null)
+            {
+                DetailMetadataStatus = "Audible chapter and file-size lookup is unavailable in this build.";
+                return;
+            }
+
+            DetailMetadataStatus = "Loading chapter and file-size details from Audible…";
+            var providerId = audiobookId["provider:".Length..];
+            var metadata = await _audiobookDetailsProvider.GetDetailsAsync(providerId, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (metadata is null)
+            {
+                DetailMetadataStatus = "Audible did not return chapter or file-size metadata for this title.";
+                return;
+            }
+
+            var chapters = AudiobookChapterService.Normalize(metadata.Chapters);
+            var updated = current with
+            {
+                Chapters = chapters.Count > 0 ? chapters : current.Chapters,
+                FileSizeBytes = metadata.FileSizeBytes > 0 ? metadata.FileSizeBytes : current.FileSizeBytes
+            };
+            if (updated != current)
+            {
+                await _repository.UpsertAsync(updated, cancellationToken);
+                _allBooks = await _repository.GetBooksAsync(cancellationToken);
+                ApplyFilter(_allBooks);
+                RefreshAudibleBooks(_allBooks);
+            }
+
+            if (_detailBook?.Id == audiobookId)
+            {
+                _detailBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
+                OnPropertyChanged(nameof(DetailBook));
+                OnPropertyChanged(nameof(DetailFileSizeLabel));
+                OnPropertyChanged(nameof(DetailChapterLabel));
+                OnPropertyChanged(nameof(HasDetailBookChapters));
+                OnPropertyChanged(nameof(HasNoDetailBookChapters));
+            }
+
+            var statusParts = new List<string>();
+            statusParts.Add(chapters.Count > 0
+                ? $"Loaded {chapters.Count} chapters."
+                : "Audible did not provide chapter markers.");
+            statusParts.Add(updated.FileSizeBytes > 0
+                ? $"Audio size: {FormatFileSize(updated.FileSizeBytes)}."
+                : "Audio size was not supplied.");
+            DetailMetadataStatus = string.Join(" ", statusParts);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Audible detail metadata request failed: {ex}");
+            DetailMetadataStatus = "Could not load Audible chapter and file-size details. Try opening this title again.";
+        }
+        finally
+        {
+            _providerDetailsGate.Release();
+        }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        const double bytesPerMegabyte = 1024d * 1024d;
+        return bytes >= bytesPerMegabyte
+            ? $"{bytes / bytesPerMegabyte:0.0} MB"
+            : $"{bytes / 1024d:0} KB";
+    }
+
     public void CloseBookDetails()
     {
         _isBookDetailsVisible = false;
@@ -257,7 +472,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
     public void BeginDetailBookEdit()
     {
-        if (_detailBook is null) return;
+        if (_detailBook is null || _detailBook.IsProviderCatalogueEntry) return;
         BeginEdit(_detailBook.Id);
         if (IsEditing) { _isBookDetailsVisible = false; _isEditVisible = true; RaiseNavigationState(); OnPropertyChanged(nameof(IsEditVisible)); }
     }
@@ -296,6 +511,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsSelectionMode => _isSelectionMode;
     public bool IsStatusPickerVisible => _isStatusPickerVisible;
     public bool IsRemovalConfirmationVisible => _isRemovalConfirmationVisible;
+    public bool IsAddAccountSheetVisible => _isAddAccountSheetVisible;
     public string RemovalConfirmationMessage => _removalConfirmationMessage;
     public bool HasSelectedAudiobooks => _selectedAudiobookIds.Count > 0;
     public string SelectedAudiobookCountLabel => $"{_selectedAudiobookIds.Count} selected";
@@ -306,6 +522,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
         $"{_menuBook.Author}\n{(string.IsNullOrWhiteSpace(_menuBook.Narrator) ? "Narrator not provided" : _menuBook.Narrator)}\n{(string.IsNullOrWhiteSpace(_menuBook.Length) ? "Duration not provided" : _menuBook.Length)}\n{_menuBook.Chapters.Count} chapters";
     public string MenuBookStatus => _menuBook?.ListeningStatus ?? "Not started";
     public string MenuBookStatusColor => MenuBookStatus switch { "Finished" => "#2EAD65", "In progress" => "#E34B4B", _ => "#E69A21" };
+    public void OpenAddAccountSheet()
+    {
+        if (_isAddAccountSheetVisible) return;
+        _isAddAccountSheetVisible = true;
+        OnPropertyChanged(nameof(IsAddAccountSheetVisible));
+    }
+
+    public void CloseAddAccountSheet()
+    {
+        if (!_isAddAccountSheetVisible) return;
+        _isAddAccountSheetVisible = false;
+        OnPropertyChanged(nameof(IsAddAccountSheetVisible));
+    }
+
     public void OpenBookMenu(string audiobookId)
     {
         _menuBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId && !book.Id.StartsWith("provider:", StringComparison.Ordinal));
@@ -443,6 +673,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     /// <summary>Handles one Android system Back press without tearing down the activity or player.</summary>
     public bool TryNavigateBack()
     {
+        if (_isAddAccountSheetVisible) { CloseAddAccountSheet(); return true; }
         if (IsRemovalConfirmationVisible) { CancelPendingRemoval(); return true; }
         if (_isStatusPickerVisible) { CloseStatusPicker(); return true; }
         if (_isBookMenuVisible) { CloseBookMenu(); return true; }
@@ -452,14 +683,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (_isEditVisible) { CancelDetailBookEdit(); return true; }
         if (_isBookDetailsVisible) { CloseBookDetails(); return true; }
         if (_isInfoVisible) { CloseBookInfo(); return true; }
-        if (!string.IsNullOrWhiteSpace(SearchText)) { SearchText = string.Empty; return true; }
+        if (_isHomeSearchVisible) { CloseHomeSearch(); return true; }
+        if (_selectedTabIndex == 1 && !string.IsNullOrWhiteSpace(AudibleSearchText))
+        {
+            AudibleSearchText = string.Empty;
+            return true;
+        }
         if (_selectedTabIndex != 0) { SelectTab(0); return true; }
         return false;
+    }
+
+    public void OpenHomeSearch()
+    {
+        if (_selectedTabIndex != 0 || _isHomeSearchVisible) return;
+        _isHomeSearchVisible = true;
+        RaiseNavigationState();
+    }
+
+    public void CloseHomeSearch()
+    {
+        if (!_isHomeSearchVisible) return;
+        _isHomeSearchVisible = false;
+        RaiseNavigationState();
     }
 
     public void SelectTab(int index)
     {
         _selectedTabIndex = Math.Clamp(index, 0, 3);
+        _isHomeSearchVisible = false;
         _isFullPlayerVisible = false;
         _isChaptersVisible = false;
         RaiseNavigationState();
@@ -492,6 +743,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void RaiseNavigationState()
     {
         OnPropertyChanged(nameof(IsHomeTab));
+        OnPropertyChanged(nameof(IsHomeNavigationSelected));
+        OnPropertyChanged(nameof(IsHomeSearchVisible));
         OnPropertyChanged(nameof(IsAudibleLibraryTab));
         OnPropertyChanged(nameof(IsAudibleAccountTab));
         OnPropertyChanged(nameof(IsSettingsTab));
@@ -513,7 +766,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SelectedBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
     }
 
-    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, CoverArtImportService? coverArtImportService = null, ISyncStateStore? syncStateStore = null, Func<string>? widevineDiagnosticFactory = null, AudiobookFileImportService? audiobookFileImportService = null)
+    public MainViewModel(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null, LocalAudioImportService? audioImportService = null, CoverArtImportService? coverArtImportService = null, ISyncStateStore? syncStateStore = null, Func<string>? widevineDiagnosticFactory = null, AudiobookFileImportService? audiobookFileImportService = null, IAudiobookDetailsProvider? audiobookDetailsProvider = null, IDownloadSettingsStore? downloadSettingsStore = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _downloadQueue = downloadQueue ?? throw new ArgumentNullException(nameof(downloadQueue));
@@ -521,7 +774,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _audioImportService = audioImportService;
         _coverArtImportService = coverArtImportService;
         _audiobookFileImportService = audiobookFileImportService;
+        _audiobookDetailsProvider = audiobookDetailsProvider;
         _syncStateStore = syncStateStore;
+        _downloadSettingsStore = downloadSettingsStore;
         _widevineDiagnosticFactory = widevineDiagnosticFactory;
     }
 
@@ -648,8 +903,35 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string PendingImportLabel => _pendingImport is null ? string.Empty : "Backup contains " + _pendingImport.Count + " entries. Confirm to replace the current catalogue.";
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
     public bool IsQueueEmpty => QueueItems.Count == 0;
+    public bool HasPendingDownloadItems => QueueItems.Any(x => x.Status == DownloadStatus.Queued);
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
-    public string QueueSummaryLabel => $"{QueueItems.Count(x => x.Status == DownloadStatus.Queued)} queued · {QueueItems.Count(x => x.Status == DownloadStatus.Downloading)} downloading · {QueueItems.Count(x => x.Status == DownloadStatus.Completed)} completed · {QueueItems.Count(x => x.Status == DownloadStatus.Failed)} failed";
+    public string QueueSummaryLabel
+    {
+        get
+        {
+            var queued = QueueItems.Count(x => x.Status == DownloadStatus.Queued);
+            var downloading = QueueItems.Count(x => x.Status == DownloadStatus.Downloading);
+            var completed = QueueItems.Count(x => x.Status == DownloadStatus.Completed);
+            var protectedCount = QueueItems.Count(x => x.Status == DownloadStatus.Protected);
+            var failed = QueueItems.Count(x => x.Status == DownloadStatus.Failed);
+            var completedLabel = $"{completed} completed" +
+                (protectedCount > 0 ? $" · {protectedCount} protected" : string.Empty);
+            return $"{queued} queued · {downloading} downloading · {completedLabel} · {failed} failed";
+        }
+    }
+    public bool IsDownloadQueueRunning => _isDownloadQueueRunning;
+    public string DownloadQueueActionLabel => IsDownloadQueueRunning ? "Pause downloads" : "Start pending downloads";
+    public bool HasActiveDownloadProgress => _activeDownloadProgress is not null;
+    public string ActiveDownloadProgressTitle => _activeDownloadProgress is null
+        ? string.Empty
+        : QueueItems.FirstOrDefault(item => item.AudiobookId == _activeDownloadProgress.AudiobookId)?.DisplayTitle
+            ?? "Downloading audiobook";
+    public string ActiveDownloadProgressLabel => _activeDownloadProgress is null
+        ? string.Empty
+        : _activeDownloadProgress.Percentage is { } percentage
+            ? $"{percentage:0}% · {FormatDownloadBytes(_activeDownloadProgress.BytesReceived)} of {FormatDownloadBytes(_activeDownloadProgress.TotalBytes ?? 0)}"
+            : $"{FormatDownloadBytes(_activeDownloadProgress.BytesReceived)} downloaded";
+    public double ActiveDownloadProgressPercent => _activeDownloadProgress?.Percentage ?? 0d;
     public string EmptyMessage => Books.Count > 0 ? string.Empty :
         _allBooks.Count == 0 ? "Your local catalogue is empty." : "No matching audiobooks. Try another title, author or narrator.";
 
@@ -661,6 +943,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             IsLoading = true;
             ErrorMessage = string.Empty;
             await _repository.EnsureInitializedAsync(InitialSamples, cancellationToken);
+            await LoadDownloadSettingsAsync(cancellationToken);
             if (_syncStateStore is not null)
                 LastSuccessfulSync = await _syncStateStore.GetLastSuccessfulSyncAsync(cancellationToken);
             var stored = await _repository.GetBooksAsync(cancellationToken);
@@ -682,7 +965,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void BeginEdit(string audiobookId)
     {
         var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
-        if (book is null || !book.CanDelete) return;
+        if (book is null || !book.CanDelete || book.IsProviderCatalogueEntry) return;
         _editingBookId = book.Id;
         NewTitle = book.Title;
         NewAuthor = book.Author;
@@ -1014,15 +1297,115 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task EnqueueAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
-        if (audiobookId.StartsWith("provider:", StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(audiobookId))
+            return;
+
+        try
         {
-            ErrorMessage = "Direct Audible downloads are not supported yet. Use the official Audible app for protected titles.";
+            await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken);
+            await ReloadQueueAsync(cancellationToken);
+            ErrorMessage = string.Empty;
+            DownloadSettingsStatus = audiobookId.StartsWith("provider:", StringComparison.Ordinal)
+                ? "Added to the Audible download queue. VØRATH will request an Audible-issued offline licence and save the granted file to your selected folder."
+                : "Added to the download queue.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { ErrorMessage = "Could not update the local download queue."; }
+    }
+
+    public async Task EnqueueAuthorizedDownloadAsync(
+        string audiobookId,
+        string sourceUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var book = _allBooks.FirstOrDefault(item => string.Equals(item.Id, audiobookId, StringComparison.Ordinal));
+        if (book is null || !book.CanQueueDownload)
+        {
+            DownloadSettingsStatus = "Only local audiobook entries can use a direct audio URL. Audible titles stay in the official Audible app.";
             return;
         }
 
-        try { await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken); await ReloadQueueAsync(cancellationToken); ErrorMessage = string.Empty; }
+        if (!_downloadSettings.HasSelectedDirectory)
+        {
+            DownloadSettingsStatus = "Choose a download folder in Settings before starting a download.";
+            return;
+        }
+
+        try
+        {
+            var uri = AuthorizedAudioDownloadUrl.Parse(sourceUrl);
+            var existing = QueueItems.FirstOrDefault(item => item.AudiobookId == audiobookId);
+            if (existing?.Status == DownloadStatus.Completed)
+            {
+                DownloadSettingsStatus = "This audiobook is already downloaded. Remove its completed queue entry before downloading it again.";
+                return;
+            }
+
+            await _downloadQueue.EnqueueAuthorizedAsync(
+                audiobookId, uri.AbsoluteUri, book.Title, cancellationToken);
+            await ReloadQueueAsync(cancellationToken);
+            DownloadSettingsStatus = "Added to the download queue. The direct URL is kept only in the app-private queue and is not included in backups.";
+            ErrorMessage = string.Empty;
+        }
+        catch (ArgumentException exception)
+        {
+            DownloadSettingsStatus = exception.Message;
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch (Exception) { ErrorMessage = "Could not update the local download queue."; }
+        catch (Exception)
+        {
+            DownloadSettingsStatus = "Could not add this audio URL to the download queue.";
+        }
+    }
+
+    public void SetDownloadQueueRunning(bool isRunning)
+    {
+        if (_isDownloadQueueRunning == isRunning) return;
+        _isDownloadQueueRunning = isRunning;
+        OnPropertyChanged(nameof(IsDownloadQueueRunning));
+        OnPropertyChanged(nameof(DownloadQueueActionLabel));
+    }
+
+    public void ReportDownloadProgress(DownloadQueueProgress? progress)
+    {
+        _activeDownloadProgress = progress;
+        OnPropertyChanged(nameof(HasActiveDownloadProgress));
+        OnPropertyChanged(nameof(ActiveDownloadProgressTitle));
+        OnPropertyChanged(nameof(ActiveDownloadProgressLabel));
+        OnPropertyChanged(nameof(ActiveDownloadProgressPercent));
+    }
+
+    public async Task RefreshDownloadQueueAsync(CancellationToken cancellationToken = default)
+        => await ReloadQueueAsync(cancellationToken);
+
+    public async Task RefreshLibraryAfterDownloadAsync(CancellationToken cancellationToken = default)
+    {
+        _allBooks = await _repository.GetBooksAsync(cancellationToken);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+        if (_detailBook is not null)
+        {
+            _detailBook = _allBooks.FirstOrDefault(book => book.Id == _detailBook.Id);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+            OnPropertyChanged(nameof(HasPlayableDetailAudio));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
+        }
+    }
+
+    private static string FormatDownloadBytes(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+        string[] units = ["B", "KB", "MB", "GB"];
+        var value = (double)bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return $"{value:0.0} {units[unit]}";
     }
 
     public Task RetryFailedAsync(string audiobookId, CancellationToken cancellationToken = default) => EnqueueAsync(audiobookId, cancellationToken);
@@ -1039,11 +1422,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private async Task ReloadQueueAsync(CancellationToken cancellationToken)
     {
         var items = await _downloadQueue.GetItemsAsync(cancellationToken);
+        var booksById = _allBooks.ToDictionary(book => book.Id, StringComparer.Ordinal);
         QueueItems.Clear();
-        foreach (var item in items) QueueItems.Add(item);
+        foreach (var item in items)
+        {
+            if (string.IsNullOrWhiteSpace(item.DisplayTitle) &&
+                booksById.TryGetValue(item.AudiobookId, out var book))
+                QueueItems.Add(item with { DisplayTitle = $"{book.Title} — {book.Author}" });
+            else
+                QueueItems.Add(item);
+        }
         OnPropertyChanged(nameof(IsQueueEmpty));
+        OnPropertyChanged(nameof(HasPendingDownloadItems));
         OnPropertyChanged(nameof(QueueCountLabel));
         OnPropertyChanged(nameof(QueueSummaryLabel));
+        OnPropertyChanged(nameof(ActiveDownloadProgressTitle));
     }
 
     private void RefreshAudibleBooks(IReadOnlyList<Audiobook> source)

@@ -13,7 +13,7 @@ namespace Libation.Mobile.Audible;
 public sealed class AudibleAccountAuthenticator(
     AudibleIdentitySnapshotStore snapshotStore,
     AudiblePkceRegistrationClient registrationClient,
-    AudibleAndroidDeviceProfile deviceProfile,
+    IAudibleTokenRefresher tokenRefresher,
     ISystemDateTime systemDateTime) : IAccountAuthenticator
 {
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromMinutes(10);
@@ -66,7 +66,7 @@ public sealed class AudibleAccountAuthenticator(
                 var authorizationCode = AudibleOAuthFlow.ReadAuthorizationCode(responseUri);
 
                 var registered = await registrationClient.RegisterAsync(
-                    state.Challenge, authorizationCode, deviceProfile, token).ConfigureAwait(false);
+                    state.Challenge, authorizationCode, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
                 return registered;
             },
@@ -116,6 +116,9 @@ public sealed class AudibleAccountAuthenticator(
         ArgumentNullException.ThrowIfNull(currentSession);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Capture before loading so a concurrent logout or replacement login
+        // cannot make this refresh operate on a stale snapshot as the new identity.
+        var identityGeneration = lifecycleCoordinator.CurrentGeneration;
         var snapshot = await snapshotStore.LoadAsync(cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("No saved Audible identity is available. Sign in again.");
 
@@ -123,9 +126,11 @@ public sealed class AudibleAccountAuthenticator(
         var identity = AudibleIdentitySnapshotMapper.Restore(snapshot);
         var maintainer = new AudibleIdentityMaintainer(
             identity,
-            new Authorize(identity.Locale),
+            tokenRefresher,
             systemDateTime,
-            snapshotStore);
+            snapshotStore,
+            lifecycleCoordinator,
+            identityGeneration);
 
         // The maintainer persists the complete identity before exposing a refreshed token.
         var accessToken = await maintainer.GetAccessTokenAsync().ConfigureAwait(false)
@@ -161,6 +166,7 @@ public sealed class AudibleAccountAuthenticator(
             SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
             Provider = AudibleIdentitySnapshot.ProviderName,
             AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+            RegistrationProfileId = AudibleOAuthFlow.RegistrationProfileId,
             LocaleName = identity.Locale.Name,
             AccessToken = identity.ExistingAccessToken.Reveal(),
             AccessTokenExpiresAtUtc = new DateTimeOffset(expiry),

@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using Libation.Mobile.Core;
 using Libation.Mobile.UI.ViewModels;
+using Libation.Mobile.UI.Services;
 
 namespace Libation.Mobile.UI.Views;
 
@@ -19,6 +20,9 @@ public partial class MainView : UserControl
             && view._viewModel.TryNavigateBack();
     }
     private ILocalAudioPlayer? _localAudioPlayer;
+    private readonly IDownloadQueue? _downloadQueue;
+    private readonly DownloadQueueWorker? _downloadWorker;
+    private CancellationTokenSource? _downloadRunCts;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly DispatcherTimer _playbackCheckpointTimer = new() { Interval = TimeSpan.FromSeconds(15) };
@@ -29,6 +33,11 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private CancellationTokenSource? _chapterMetadataLoadCts;
+    private string? _chapterMetadataLoadBookId;
+    private string? _chapterInfoStatusBookId;
+    private string? _chapterInfoStatusTitle;
+    private string? _chapterInfoStatusMessage;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
     private static readonly FilePickerFileType CoverImageFileType = new("Audiobook cover image") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"] };
@@ -38,20 +47,39 @@ public partial class MainView : UserControl
         var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
         var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
+        _downloadQueue = queue;
         var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
         var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
+        var downloadSettingsStore = new JsonDownloadSettingsStore(Path.Combine(dataDirectory, "download-settings.json"));
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
         var coverDirectory = Path.Combine(dataDirectory, "covers");
         var audioImport = new LocalAudioImportService(audioDirectory);
         _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
-            syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory));
+            syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory),
+            PlatformAudiobookDetailsProviderFactory?.Invoke(), downloadSettingsStore);
+        var downloadPublisher = new StorageFolderAudioDownloadPublisher(
+            () => TopLevel.GetTopLevel(this)?.StorageProvider,
+            downloadSettingsStore, repository, audioImport);
+        var ordinaryDownloadSource = new QueuedHttpsAudioDownloadSource(Path.Combine(dataDirectory, "download-staging"));
+        var routedDownloadSource = new RoutedAudioDownloadSource(
+            ordinaryDownloadSource,
+            cancellationToken => PlatformAudibleDownloadSourceFactory is null
+                ? Task.FromResult<IAuthorizedAudioDownloadSource?>(null)
+                : PlatformAudibleDownloadSourceFactory(cancellationToken));
+        _downloadWorker = new DownloadQueueWorker(
+            queue,
+            new AudioFileDownloader(new HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
+            routedDownloadSource,
+            downloadPublisher);
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        // XAML-generated named controls can be null on some Android/Avalonia startup paths.
-        // Never let an optional seek control prevent the entire app from opening.
-        PlaybackSeekSlider?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        // Some Android/Avalonia startup paths do not populate generated x:Name fields.
+        // Resolve the controls from the live visual tree so player updates still reach them.
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        AttachPlaybackStateNotifications();
         _activeView = new WeakReference<MainView>(this);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
@@ -60,6 +88,7 @@ public partial class MainView : UserControl
     public MainView(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
     {
         _viewModel = new MainViewModel(repository, downloadQueue, syncService);
+        _downloadQueue = downloadQueue;
         InitializeComponent();
         DataContext = _viewModel;
         _activeView = new WeakReference<MainView>(this);
@@ -101,7 +130,20 @@ public partial class MainView : UserControl
         // The view may be unloaded and loaded again while the Android playback
         // service keeps running. Recreate its lightweight adapter on each load.
         _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
+        AttachPlaybackStateNotifications();
         await _viewModel.InitializeAsync();
+        if (_downloadWorker is not null)
+        {
+            var recovered = await _downloadWorker.RecoverInterruptedDownloadsAsync();
+            await _viewModel.RefreshDownloadQueueAsync();
+            if (recovered > 0)
+                _viewModel.ReportDownloadSettingsStatus(
+                    $"{recovered} interrupted download(s) were returned to the queue. Tap Start pending downloads when you are ready.");
+        }
+        await ValidateSavedDownloadFolderBookmarkAsync();
+        if (PlatformSignInViewModelFactory?.Invoke() is { } accountViewModel)
+            await accountViewModel.LoadStatusAsync();
+        UpdateAudibleAccountSummary();
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
 
@@ -113,20 +155,15 @@ public partial class MainView : UserControl
         _playingAudiobookId = currentBook.Id;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
-        // Older library entries may predate embedded chapter extraction. Read
-        // their local file asynchronously without interrupting restored playback.
-        await _viewModel.LoadChapterMetadataAsync(currentBook.Id);
-        var refreshedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book => book.Id == currentBook.Id) ?? currentBook;
-        SetPlayerChapterPositions(refreshedBook);
-        if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
-        if (PlayPauseButton is not null) PlayPauseButton.Content = _localAudioPlayer.IsPlaying ? "⏸" : "▶";
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
-        // Keep the lightweight UI poll alive while paused as well, so play/pause
-        // changes made from the Android notification are reflected in the app.
+
+        // Start live UI updates immediately. Chapter metadata is handled separately
+        // with a bounded wait so it can never leave the player on a loading label.
         _playbackProgressTimer.Start();
         if (_localAudioPlayer.IsPlaying)
             _playbackCheckpointTimer.Start();
         RestoreSleepTimerUi();
+        BeginChapterMetadataLoad(currentBook.Id);
         UpdatePlaybackProgressUi();
     }
 
@@ -184,19 +221,14 @@ public partial class MainView : UserControl
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
             _playingAudiobookId = book.Id;
-            await _viewModel.MarkPlaybackStartedAsync(book.Id);
             _viewModel.SetNowPlayingBook(book.Id);
-            // Start audio first; metadata parsing runs off the UI thread and
-            // can populate chapter navigation for older imported files.
-            await _viewModel.LoadChapterMetadataAsync(book.Id);
-            var refreshedBook = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == book.Id) ?? book;
-            SetPlayerChapterPositions(refreshedBook);
-            if (PlayPauseButton is not null) PlayPauseButton.Content = "⏸";
-            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "⏸";
             _playbackProgressTimer.Start();
             _playbackCheckpointTimer.Start();
             _viewModel.ReportAudioStatus("Playing: " + book.Title);
             UpdatePlaybackProgressUi();
+
+            await _viewModel.MarkPlaybackStartedAsync(book.Id);
+            BeginChapterMetadataLoad(book.Id);
         }
         catch (Exception)
         {
@@ -210,8 +242,6 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Pause();
-            if (PlayPauseButton is not null) PlayPauseButton.Content = "▶";
-            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "▶";
             // Keep UI polling active while paused so notification controls stay in sync.
             _playbackCheckpointTimer.Stop();
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, _localAudioPlayer.PositionMilliseconds);
@@ -230,8 +260,6 @@ public partial class MainView : UserControl
         try
         {
             _localAudioPlayer.Resume();
-            if (PlayPauseButton is not null) PlayPauseButton.Content = "⏸";
-            if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = "⏸";
             _playbackProgressTimer.Start();
             _playbackCheckpointTimer.Start();
             var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
@@ -445,10 +473,15 @@ public partial class MainView : UserControl
 
     private async void MainViewUnloaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        _downloadRunCts?.Cancel();
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
-        PlaybackSeekSlider?.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        if (_localAudioPlayer is ILocalAudioPlayerStateNotifier notifier)
+            notifier.PlaybackStateChanged -= LocalAudioPlayerStateChanged;
+        _chapterMetadataLoadCts?.Cancel();
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         _playbackCheckpointTimer.Tick -= PlaybackCheckpointTimerTick;
@@ -479,42 +512,198 @@ public partial class MainView : UserControl
         var duration = Math.Max(0, player?.DurationMilliseconds ?? 0);
         var isPlaying = player?.IsPlaying == true;
 
-        // These controls are refreshed by the 500 ms UI timer, including while
-        // paused, so Android notification actions cannot leave stale icons.
-        if (PlayPauseButton is not null)
-            PlayPauseButton.Content = isPlaying ? "⏸" : "▶";
-        if (MiniPlayPauseButton is not null)
-            MiniPlayPauseButton.Content = isPlaying ? "⏸" : "▶";
-        if (PlaybackSpeedButton is not null)
+        // The mini player, expanded player and notification all read the same
+        // ExoPlayer-backed adapter. Notifications push transitions; this timer
+        // keeps elapsed/remaining time fresh between transitions.
+        var playPauseButton = ResolveControl(PlayPauseButton, "PlayPauseButton");
+        var miniPlayPauseButton = ResolveControl(MiniPlayPauseButton, "MiniPlayPauseButton");
+        var speedButton = ResolveControl(PlaybackSpeedButton, "PlaybackSpeedButton");
+        var seekSlider = ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider");
+        var positionLabel = ResolveControl(PlaybackPositionLabel, "PlaybackPositionLabel");
+        var durationLabel = ResolveControl(PlaybackDurationLabel, "PlaybackDurationLabel");
+        var remainingLabel = ResolveControl(PlaybackRemainingLabel, "PlaybackRemainingLabel");
+
+        if (playPauseButton is not null)
+            playPauseButton.Content = isPlaying ? "⏸" : "▶";
+        if (miniPlayPauseButton is not null)
+            miniPlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+        if (speedButton is not null)
         {
             var speed = player?.PlaybackSpeed ?? 1f;
-            PlaybackSpeedButton.Content = $"{speed:0.##}×";
+            speedButton.Content = $"{speed:0.##}x";
         }
-
-        if (PlaybackSeekSlider is null || PlaybackPositionLabel is null || PlaybackDurationLabel is null)
-            return;
 
         var chapterRange = GetCurrentChapterRange(position, duration);
         var chapterElapsed = Math.Max(0, position - chapterRange.Start);
         var chapterDuration = Math.Max(0, chapterRange.End - chapterRange.Start);
+        var chapterRemaining = Math.Max(0, chapterDuration - chapterElapsed);
         UpdateCurrentChapterUi(position, duration);
+
+        // Do not let one missing generated control prevent the other player
+        // fields (especially chapter information) from being refreshed.
+        if (seekSlider is null || positionLabel is null || durationLabel is null || remainingLabel is null)
+            return;
 
         _isUpdatingPlaybackSlider = true;
         try
         {
-            PlaybackSeekSlider.Maximum = Math.Max(1, chapterDuration);
-            PlaybackSeekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
-            PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
+            seekSlider.Maximum = Math.Max(1, chapterDuration);
+            seekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
+            seekSlider.IsEnabled = chapterDuration > 0 && _playingAudiobookId is not null;
 
-            // The time row shows whole-book elapsed / total / remaining.
-            PlaybackPositionLabel.Text = FormatPlaybackTime(position);
-            PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
-            if (PlaybackRemainingLabel is not null)
-                PlaybackRemainingLabel.Text = duration > 0
-                    ? "−" + FormatPlaybackTime(Math.Max(0, duration - position))
-                    : "−--:--";
+            // The time row is scoped to the current chapter: elapsed / duration / remaining.
+            positionLabel.Text = FormatPlaybackTime(chapterElapsed);
+            durationLabel.Text = chapterDuration > 0 ? FormatPlaybackTime(chapterDuration) : "--:--";
+            remainingLabel.Text = chapterDuration > 0
+                ? "−" + FormatPlaybackTime(chapterRemaining)
+                : "−--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
+    }
+
+    private T? ResolveControl<T>(T? generatedControl, string name) where T : Control
+        => generatedControl ?? this.FindControl<T>(name);
+
+    private void AttachPlaybackStateNotifications()
+    {
+        if (_localAudioPlayer is ILocalAudioPlayerStateNotifier notifier)
+        {
+            notifier.PlaybackStateChanged -= LocalAudioPlayerStateChanged;
+            notifier.PlaybackStateChanged += LocalAudioPlayerStateChanged;
+        }
+    }
+
+    private void LocalAudioPlayerStateChanged(object? sender, EventArgs e)
+        => Dispatcher.UIThread.Post(UpdatePlaybackProgressUi, DispatcherPriority.Background);
+
+    private void BeginChapterMetadataLoad(string audiobookId)
+    {
+        _chapterMetadataLoadCts?.Cancel();
+        _chapterMetadataLoadCts = null;
+        _chapterMetadataLoadBookId = audiobookId;
+        _chapterInfoStatusBookId = audiobookId;
+
+        var book = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == audiobookId);
+        if (book is null)
+        {
+            _chapterInfoStatusTitle = "Chapter information unavailable";
+            _chapterInfoStatusMessage = "The current audiobook could not be found in the local catalogue.";
+            UpdatePlaybackProgressUi();
+            return;
+        }
+
+        var chapters = AudiobookChapterService.Normalize(book.Chapters);
+        if (chapters.Count > 0)
+        {
+            _chapterInfoStatusBookId = null;
+            _chapterInfoStatusTitle = null;
+            _chapterInfoStatusMessage = null;
+            SetPlayerChapterPositions(book);
+            UpdatePlaybackProgressUi();
+            return;
+        }
+
+        _chapterInfoStatusTitle = "Loading chapter information…";
+        _chapterInfoStatusMessage = "Checking the audiobook file for embedded chapter markers.";
+        UpdatePlaybackProgressUi();
+
+        var cancellation = new CancellationTokenSource();
+        _chapterMetadataLoadCts = cancellation;
+        _ = LoadChapterMetadataWithTimeoutAsync(audiobookId, cancellation);
+    }
+
+    private async Task LoadChapterMetadataWithTimeoutAsync(string audiobookId, CancellationTokenSource cancellation)
+    {
+        var timedOut = false;
+        try
+        {
+            var loadTask = _viewModel.LoadChapterMetadataAsync(audiobookId, cancellation.Token);
+            var completed = await Task.WhenAny(loadTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            if (completed != loadTask)
+            {
+                timedOut = true;
+                cancellation.Cancel();
+                SetChapterInformationStatus(
+                    audiobookId,
+                    "Chapter information unavailable",
+                    "Reading embedded chapter markers took longer than 5 seconds. Playback can continue; add markers in audiobook details if needed.");
+                _ = ObserveTimedOutChapterLoadAsync(loadTask, cancellation, audiobookId);
+                return;
+            }
+
+            var loaded = await loadTask;
+            if (!string.Equals(_playingAudiobookId, audiobookId, StringComparison.Ordinal))
+                return;
+
+            var refreshedBook = _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == audiobookId);
+            var chapters = AudiobookChapterService.Normalize(refreshedBook?.Chapters);
+            if (loaded && chapters.Count > 0 && refreshedBook is not null)
+            {
+                _chapterInfoStatusBookId = null;
+                _chapterInfoStatusTitle = null;
+                _chapterInfoStatusMessage = null;
+                SetPlayerChapterPositions(refreshedBook);
+                UpdatePlaybackProgressUi();
+            }
+            else
+            {
+                SetChapterInformationStatus(
+                    audiobookId,
+                    "Chapter information unavailable",
+                    "No embedded chapter markers were found. Add chapter markers in audiobook details.");
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // A new audiobook or view lifecycle cancelled this metadata read.
+        }
+        catch (Exception ex)
+        {
+            SetChapterInformationStatus(
+                audiobookId,
+                "Chapter information unavailable",
+                $"Chapter metadata could not be read ({ex.GetType().Name}). Playback can continue.");
+        }
+        finally
+        {
+            if (!timedOut)
+            {
+                if (ReferenceEquals(_chapterMetadataLoadCts, cancellation))
+                {
+                    _chapterMetadataLoadCts = null;
+                    _chapterMetadataLoadBookId = null;
+                }
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    private async Task ObserveTimedOutChapterLoadAsync(
+        Task<bool> loadTask,
+        CancellationTokenSource cancellation,
+        string audiobookId)
+    {
+        try { await loadTask; }
+        catch (Exception) { /* The visible timeout state has already been reported. */ }
+        finally
+        {
+            if (ReferenceEquals(_chapterMetadataLoadCts, cancellation))
+            {
+                _chapterMetadataLoadCts = null;
+                _chapterMetadataLoadBookId = null;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private void SetChapterInformationStatus(string audiobookId, string title, string message)
+    {
+        if (!string.Equals(_playingAudiobookId, audiobookId, StringComparison.Ordinal))
+            return;
+        _chapterInfoStatusBookId = audiobookId;
+        _chapterInfoStatusTitle = title;
+        _chapterInfoStatusMessage = message;
+        UpdatePlaybackProgressUi();
     }
 
     private (long Start, long End) GetCurrentChapterRange(long positionMilliseconds, long durationMilliseconds)
@@ -532,7 +721,9 @@ public partial class MainView : UserControl
 
     private void UpdateCurrentChapterUi(long positionMilliseconds, long durationMilliseconds)
     {
-        if (CurrentChapterTitleLabel is null || ChapterProgressLabel is null)
+        var titleLabel = ResolveControl(CurrentChapterTitleLabel, "CurrentChapterTitleLabel");
+        var progressLabel = ResolveControl(ChapterProgressLabel, "ChapterProgressLabel");
+        if (titleLabel is null || progressLabel is null)
             return;
 
         var book = _playingAudiobookId is null
@@ -543,15 +734,21 @@ public partial class MainView : UserControl
 
         if (chapters.Count == 0)
         {
-            CurrentChapterTitleLabel.Text = "No chapter markers available";
-            ChapterProgressLabel.Text = "Add chapter markers in audiobook details";
+            titleLabel.Text = _chapterInfoStatusBookId == _playingAudiobookId
+                ? _chapterInfoStatusTitle ?? "Chapter information unavailable"
+                : book is null ? "No audiobook selected" : "Chapter information unavailable";
+            progressLabel.Text = _chapterInfoStatusBookId == _playingAudiobookId
+                ? _chapterInfoStatusMessage ?? "No embedded chapter markers are available."
+                : book is null
+                    ? "Choose an audiobook to display chapter information."
+                    : "No embedded chapter markers were found. Add markers in audiobook details.";
             return;
         }
 
         if (currentIndex < 0)
         {
-            CurrentChapterTitleLabel.Text = "Before first chapter";
-            ChapterProgressLabel.Text = $"Starts at {FormatPlaybackTime(chapters[0].StartPositionMilliseconds)}";
+            titleLabel.Text = "Before first chapter";
+            progressLabel.Text = $"Starts at {FormatPlaybackTime(chapters[0].StartPositionMilliseconds)}";
             return;
         }
 
@@ -559,12 +756,12 @@ public partial class MainView : UserControl
         var end = currentIndex + 1 < chapters.Count
             ? chapters[currentIndex + 1].StartPositionMilliseconds
             : durationMilliseconds;
-        CurrentChapterTitleLabel.Text = current.Title;
+        titleLabel.Text = current.Title;
         var chapterDuration = Math.Max(0, end - current.StartPositionMilliseconds);
         var chapterElapsed = Math.Clamp(positionMilliseconds - current.StartPositionMilliseconds, 0, chapterDuration);
-        ChapterProgressLabel.Text = chapterDuration > 0
+        progressLabel.Text = chapterDuration > 0
             ? $"Chapter {currentIndex + 1} of {chapters.Count} · {FormatPlaybackTime(chapterElapsed)} / {FormatPlaybackTime(chapterDuration)}"
-            : $"Chapter {currentIndex + 1} of {chapters.Count}";
+            : $"Chapter {currentIndex + 1} of {chapters.Count} · Duration unavailable";
     }
 
     private static string FormatPlaybackTime(long milliseconds)
@@ -575,12 +772,13 @@ public partial class MainView : UserControl
 
     private void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
-        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
+        var seekSlider = ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider");
+        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null || seekSlider is null)
             return;
 
         var duration = _localAudioPlayer.DurationMilliseconds;
         var chapterRange = GetCurrentChapterRange(_localAudioPlayer.PositionMilliseconds, duration);
-        var target = Math.Max(0, chapterRange.Start + (long)PlaybackSeekSlider.Value);
+        var target = Math.Max(0, chapterRange.Start + (long)seekSlider.Value);
         if (duration > 0) target = Math.Min(target, duration);
         _localAudioPlayer.Seek(target);
         UpdateCurrentChapterUi(target, duration);
@@ -590,12 +788,13 @@ public partial class MainView : UserControl
 
     private async void SeekToSelectedPositionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
+        var seekSlider = ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider");
+        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null || seekSlider is null)
             return;
 
         try
         {
-            var target = Math.Max(0, (long)PlaybackSeekSlider.Value);
+            var target = Math.Max(0, (long)seekSlider.Value);
             var duration = _localAudioPlayer.DurationMilliseconds;
             if (duration > 0) target = Math.Min(target, duration);
             _localAudioPlayer.Seek(target);
@@ -723,7 +922,82 @@ public partial class MainView : UserControl
         => await _viewModel.ReloadAsync();
 
     private async void SyncLibraryClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => await _viewModel.SyncLibraryAsync();
+        => await SyncLibraryAndUpdateAccountAsync();
+
+    internal async Task SyncLibraryAndUpdateAccountAsync()
+    {
+        await _viewModel.SyncLibraryAsync();
+        UpdateAudibleAccountSummary();
+    }
+
+    private void UpdateAudibleAccountSummary()
+    {
+        var accountViewModel = PlatformSignInViewModelFactory?.Invoke();
+        if (accountViewModel is null) return;
+
+        if (!accountViewModel.HasConnectedAccount)
+        {
+            accountViewModel.UpdateLibrarySummary(0, null, "Connect an Audible account to sync its library.");
+            return;
+        }
+
+        if (_viewModel.LastSuccessfulSync is null)
+        {
+            accountViewModel.UpdateLibrarySummary(
+                0, null, "Account connected. Sync your Audible library to load its titles.");
+            return;
+        }
+
+        var status = _viewModel.SyncStatus.StartsWith("Provider not connected", StringComparison.Ordinal)
+            ? "Your previously synced library is saved. Sync to refresh it."
+            : _viewModel.SyncStatus;
+        accountViewModel.UpdateLibrarySummary(_viewModel.AudibleBooks.Count, _viewModel.LastSuccessfulSync, status);
+    }
+
+    private async void AudibleBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: Audiobook book }) return;
+        _viewModel.OpenBookDetails(book.Id);
+        await _viewModel.LoadProviderBookDetailsAsync(book.Id);
+    }
+
+    private async void DownloadAudibleBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: Audiobook book })
+            await DownloadOrPlayAudibleBookAsync(book);
+    }
+
+    private async void DownloadAudibleBookFromDetailClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.DetailBook is { } book)
+            await DownloadOrPlayAudibleBookAsync(book);
+    }
+
+    private async Task DownloadOrPlayAudibleBookAsync(Audiobook book)
+    {
+        if (!book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            return;
+
+        if (!string.IsNullOrWhiteSpace(book.AudioFilePath))
+        {
+            await PlayAudiobookAsync(book);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(book.ProtectedAudioFileName))
+        {
+            _viewModel.ReportAudioStatus(
+                "This Audible file is saved in VØRATH, but remains DRM-protected and cannot be played by the current player.");
+            return;
+        }
+
+        await _viewModel.EnqueueAsync(book.Id);
+        if (string.IsNullOrWhiteSpace(_viewModel.ErrorMessage) &&
+            _viewModel.DownloadSettingsStatus.StartsWith("Added to the Audible download queue.", StringComparison.Ordinal))
+        {
+            await StartPendingDownloadsAsync();
+        }
+    }
 
     private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.ProbeWidevine();
@@ -768,18 +1042,14 @@ public partial class MainView : UserControl
     }
 
     private void AddAccountClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        AddAccountSheetOverlay.IsVisible = true;
-    }
+        => _viewModel.OpenAddAccountSheet();
 
     private void CloseAddAccountSheetClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        AddAccountSheetOverlay.IsVisible = false;
-    }
+        => _viewModel.CloseAddAccountSheet();
 
     private void AudibleAddAccountClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        AddAccountSheetOverlay.IsVisible = false;
+        _viewModel.CloseAddAccountSheet();
         AudibleSignInClicked(sender, e);
     }
 
@@ -794,6 +1064,8 @@ public partial class MainView : UserControl
             }
             var vm = PlatformSignInViewModelFactory();
             await vm.BeginSignInAsync();
+            if (!vm.HasConnectedAccount)
+                UpdateAudibleAccountSummary();
             // BeginSignInAsync owns the final status (including the provider error).
             // Reloading here would overwrite a useful failure message with generic
             // "sign-in required" state when the account is not yet connected.
@@ -813,6 +1085,7 @@ public partial class MainView : UserControl
             var vm = PlatformSignInViewModelFactory();
             await vm.DisconnectAsync();
             await vm.LoadStatusAsync();
+            UpdateAudibleAccountSummary();
             _viewModel.ReportAudioStatus(vm.Status);
         }
         catch (Exception ex)
@@ -829,6 +1102,95 @@ public partial class MainView : UserControl
             ResumeAudioClicked(sender, e);
         else
             _viewModel.ReportAudioStatus("Choose an audiobook in Library and tap Play first.");
+    }
+
+    private async Task ValidateSavedDownloadFolderBookmarkAsync()
+    {
+        var bookmark = _viewModel.CurrentDownloadSettings.DirectoryBookmark;
+        if (string.IsNullOrWhiteSpace(bookmark))
+            return;
+
+        var storageProvider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storageProvider is null)
+        {
+            _viewModel.ReportDownloadSettingsStatus("Folder access is unavailable in this environment. Choose a folder again on Android.");
+            return;
+        }
+
+        try
+        {
+            using var folder = await storageProvider.OpenFolderBookmarkAsync(bookmark);
+            _viewModel.ReportDownloadSettingsStatus(folder is null
+                ? "The saved folder permission is no longer available. Choose the download folder again."
+                : $"Download folder ready: {folder.Name}");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportDownloadSettingsStatus("The saved folder permission could not be restored. Choose the download folder again.");
+        }
+    }
+
+    private async void ChooseDownloadFolderClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var storageProvider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storageProvider is null || !storageProvider.CanPickFolder)
+        {
+            _viewModel.ReportDownloadSettingsStatus("Folder selection is not supported on this device.");
+            return;
+        }
+
+        try
+        {
+            var folders = await storageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "Choose VØRATH download folder",
+                AllowMultiple = false
+            });
+            if (folders.Count == 0)
+                return;
+
+            var folder = folders[0];
+            try
+            {
+                var bookmark = await folder.SaveBookmarkAsync();
+                if (string.IsNullOrWhiteSpace(bookmark))
+                {
+                    _viewModel.ReportDownloadSettingsStatus("Android did not grant persistent access to that folder. Please choose another folder.");
+                    return;
+                }
+
+                await _viewModel.SetDownloadDirectoryAsync(bookmark, folder.Name);
+                _viewModel.ReportDownloadSettingsStatus($"Download folder saved: {folder.Name}");
+            }
+            finally
+            {
+                folder.Dispose();
+            }
+
+            await ValidateSavedDownloadFolderBookmarkAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // User cancelled the picker; keep the previously selected folder.
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Download folder selection failed: {ex}");
+            _viewModel.ReportDownloadSettingsStatus("Could not save that folder. Please choose it again.");
+        }
+    }
+
+    private async void CycleDownloadFolderOrganizationClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            await _viewModel.CycleDownloadFolderOrganizationAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Download organization preference save failed: {ex}");
+            _viewModel.ReportDownloadSettingsStatus("Could not save the file organization preference.");
+        }
     }
 
     private async void ImportAudiobookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -877,6 +1239,99 @@ public partial class MainView : UserControl
         await _viewModel.ImportCoverArtAsync(book.Id, files[0].Name, stream);
     }
 
+    public async void QueueAuthorizedDownloadClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.DetailBook is not { } book || book.IsProviderCatalogueEntry)
+            return;
+
+        var urlBox = ResolveControl(AuthorizedDownloadUrlBox, "AuthorizedDownloadUrlBox");
+        var sourceUrl = urlBox?.Text ?? string.Empty;
+        await _viewModel.EnqueueAuthorizedDownloadAsync(book.Id, sourceUrl);
+        if (_viewModel.DownloadSettingsStatus.StartsWith("Added to the download queue.", StringComparison.Ordinal))
+        {
+            if (urlBox is not null) urlBox.Text = string.Empty;
+            await StartPendingDownloadsAsync();
+        }
+    }
+
+    public async void DownloadQueueActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_downloadRunCts is { IsCancellationRequested: false })
+        {
+            _downloadRunCts.Cancel();
+            _viewModel.ReportDownloadSettingsStatus("Download stopped and returned to the queue. Starting it again restarts that file from the beginning.");
+            return;
+        }
+
+        await StartPendingDownloadsAsync();
+    }
+
+    private async Task StartPendingDownloadsAsync()
+    {
+        if (_downloadWorker is null || _downloadQueue is null)
+        {
+            _viewModel.ReportDownloadSettingsStatus("The download worker is unavailable in this build.");
+            return;
+        }
+        if (!_viewModel.HasSelectedDownloadDirectory)
+        {
+            _viewModel.ReportDownloadSettingsStatus("Choose a download folder in Settings before starting downloads.");
+            return;
+        }
+        if (_downloadRunCts is { IsCancellationRequested: false })
+            return;
+
+        var queued = (await _downloadQueue.GetItemsAsync())
+            .Any(item => item.Status == DownloadStatus.Queued);
+        if (!queued)
+        {
+            _viewModel.ReportDownloadSettingsStatus("There are no pending downloads.");
+            await _viewModel.RefreshDownloadQueueAsync();
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _downloadRunCts = cancellation;
+        _viewModel.SetDownloadQueueRunning(true);
+        _viewModel.ReportDownloadSettingsStatus("Download queue started. Downloads run one at a time.");
+        var progress = new Progress<DownloadQueueProgress>(_viewModel.ReportDownloadProgress);
+
+        try
+        {
+            while (await _downloadWorker.ProcessNextAsync(progress, cancellation.Token))
+            {
+                await _viewModel.RefreshDownloadQueueAsync(cancellation.Token);
+                await _viewModel.RefreshLibraryAfterDownloadAsync(cancellation.Token);
+            }
+
+            await _viewModel.RefreshDownloadQueueAsync(CancellationToken.None);
+            await _viewModel.RefreshLibraryAfterDownloadAsync(CancellationToken.None);
+            var failed = (await _downloadQueue.GetItemsAsync(CancellationToken.None))
+                .Count(item => item.Status == DownloadStatus.Failed);
+            _viewModel.ReportDownloadSettingsStatus(failed == 0
+                ? "All queued downloads finished successfully."
+                : $"{failed} download(s) failed. Check the queue for details and retry options.");
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            await _viewModel.RefreshDownloadQueueAsync(CancellationToken.None);
+            _viewModel.ReportDownloadSettingsStatus("Downloads paused. Any unfinished item remains queued.");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Download queue processing failed: {ex}");
+            _viewModel.ReportDownloadSettingsStatus("The download queue stopped unexpectedly. Pending items are preserved.");
+        }
+        finally
+        {
+            _viewModel.ReportDownloadProgress(null);
+            _viewModel.SetDownloadQueueRunning(false);
+            if (ReferenceEquals(_downloadRunCts, cancellation))
+                _downloadRunCts = null;
+            cancellation.Dispose();
+        }
+    }
+
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
@@ -886,7 +1341,11 @@ public partial class MainView : UserControl
     private async void RetryQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: DownloadQueueItem item } && item.Status == DownloadStatus.Failed)
+        {
             await _viewModel.RetryFailedAsync(item.AudiobookId);
+            if (item.SourceUrl is not null)
+                await StartPendingDownloadsAsync();
+        }
     }
 
     private async void RemoveQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -933,10 +1392,17 @@ public partial class MainView : UserControl
         }
     }
 
-    private void OpenBookDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void OpenHomeSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.OpenHomeSearch();
+
+    private void CloseHomeSearchClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CloseHomeSearch();
+
+    private async void OpenBookDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is Button { Tag: string audiobookId })
-            _viewModel.OpenBookDetails(audiobookId);
+        if (sender is not Button { Tag: string audiobookId }) return;
+        _viewModel.OpenBookDetails(audiobookId);
+        await _viewModel.LoadProviderBookDetailsAsync(audiobookId);
     }
     private void CloseBookDetailsClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.CloseBookDetails();

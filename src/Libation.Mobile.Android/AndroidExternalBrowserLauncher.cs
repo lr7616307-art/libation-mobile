@@ -12,7 +12,9 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
 {
     private static readonly object Gate = new();
     private static TaskCompletionSource<string?>? _pending;
+    private static string? _pendingRequestId;
     private static TaskCompletionSource<string?>? _pendingMarketplace;
+    private static string? _pendingMarketplaceRequestId;
     private readonly Context _context = context ?? throw new ArgumentNullException(nameof(context));
 
     public async Task<string?> SelectMarketplaceAsync(
@@ -20,27 +22,36 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
         CancellationToken cancellationToken = default)
     {
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requestId = Guid.NewGuid().ToString("N");
         lock (Gate)
         {
             if (_pendingMarketplace is not null)
                 throw new InvalidOperationException("An Audible marketplace selection is already open.");
             _pendingMarketplace = completion;
+            _pendingMarketplaceRequestId = requestId;
         }
 
         try
         {
             var intent = new Intent(_context, typeof(AudibleMarketplaceActivity));
             intent.PutExtra(AudibleMarketplaceActivity.DefaultMarketplaceExtra, defaultMarketplace);
+            intent.PutExtra(AudibleMarketplaceActivity.RequestIdExtra, requestId);
             intent.AddFlags(ActivityFlags.NewTask);
             _context.StartActivity(intent);
-            using var registration = cancellationToken.Register(() => CompleteMarketplace(null));
+            using var registration = cancellationToken.Register(() => CompleteMarketplace(requestId, null));
             return await completion.Task.WaitAsync(TimeSpan.FromMinutes(2), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
+            CompleteMarketplace(requestId, null);
+            AudibleMarketplaceActivity.Cancel(requestId);
             lock (Gate)
             {
-                if (ReferenceEquals(_pendingMarketplace, completion)) _pendingMarketplace = null;
+                if (string.Equals(_pendingMarketplaceRequestId, requestId, StringComparison.Ordinal))
+                {
+                    _pendingMarketplaceRequestId = null;
+                    if (ReferenceEquals(_pendingMarketplace, completion)) _pendingMarketplace = null;
+                }
             }
         }
     }
@@ -63,11 +74,13 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
             throw new InvalidOperationException("Audible authorization did not include a valid marketplace callback URL.");
 
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requestId = Guid.NewGuid().ToString("N");
         lock (Gate)
         {
             if (_pending is not null)
                 throw new InvalidOperationException("An Audible sign-in window is already open.");
             _pending = completion;
+            _pendingRequestId = requestId;
         }
 
         try
@@ -75,38 +88,59 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
             var intent = new Intent(_context, typeof(AudibleLoginActivity));
             intent.PutExtra(AudibleLoginActivity.AuthorizationUrlExtra, authorizationUri.AbsoluteUri);
             intent.PutExtra(AudibleLoginActivity.ExpectedHostExtra, callbackUri.Host);
+            intent.PutExtra(AudibleLoginActivity.RequestIdExtra, requestId);
             intent.AddFlags(ActivityFlags.NewTask);
             _context.StartActivity(intent);
-            using var registration = cancellationToken.Register(() => Complete(null));
+            using var registration = cancellationToken.Register(() => Complete(requestId, null));
             return await completion.Task.WaitAsync(TimeSpan.FromMinutes(10), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
+            // This also runs after timeout. Never leave an old login WebView active
+            // to deliver a late callback into a later sign-in attempt.
+            Complete(requestId, null);
+            AudibleLoginActivity.Cancel(requestId);
             lock (Gate)
             {
-                if (ReferenceEquals(_pending, completion)) _pending = null;
+                if (string.Equals(_pendingRequestId, requestId, StringComparison.Ordinal))
+                {
+                    _pendingRequestId = null;
+                    if (ReferenceEquals(_pending, completion)) _pending = null;
+                }
             }
         }
     }
 
-    internal static void CompleteMarketplace(string? marketplace)
+    internal static void CompleteMarketplace(string requestId, string? marketplace)
     {
+        if (string.IsNullOrWhiteSpace(requestId))
+            return;
+
         TaskCompletionSource<string?>? completion;
         lock (Gate)
         {
+            if (!string.Equals(_pendingMarketplaceRequestId, requestId, StringComparison.Ordinal))
+                return;
             completion = _pendingMarketplace;
             _pendingMarketplace = null;
+            _pendingMarketplaceRequestId = null;
         }
         completion?.TrySetResult(marketplace);
     }
 
-    internal static void Complete(string? responseUrl)
+    internal static void Complete(string requestId, string? responseUrl)
     {
+        if (string.IsNullOrWhiteSpace(requestId))
+            return;
+
         TaskCompletionSource<string?>? completion;
         lock (Gate)
         {
+            if (!string.Equals(_pendingRequestId, requestId, StringComparison.Ordinal))
+                return;
             completion = _pending;
             _pending = null;
+            _pendingRequestId = null;
         }
         completion?.TrySetResult(responseUrl);
     }

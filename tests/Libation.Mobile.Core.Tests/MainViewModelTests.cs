@@ -7,6 +7,36 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public void AddAccountSheet_UsesViewModelStateAndRaisesNotifications()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        var notifications = new List<string?>();
+        vm.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+
+        vm.OpenAddAccountSheet();
+        Assert.True(vm.IsAddAccountSheetVisible);
+        Assert.Contains(nameof(vm.IsAddAccountSheetVisible), notifications);
+
+        vm.CloseAddAccountSheet();
+        Assert.False(vm.IsAddAccountSheetVisible);
+        Assert.Equal(2, notifications.Count(name => name == nameof(vm.IsAddAccountSheetVisible)));
+    }
+
+    [Fact]
+    public void SystemBack_ClosesAccountSheetBeforeLeavingAccountTab()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        vm.SelectTab(2);
+        vm.OpenAddAccountSheet();
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsAddAccountSheetVisible);
+        Assert.True(vm.IsAudibleAccountTab);
+    }
+
+    [Fact]
     public void ProbeWidevine_UsesPlatformDiagnosticAndRaisesNotification()
     {
         using var directory = new TemporaryDirectory();
@@ -82,6 +112,166 @@ public sealed class MainViewModelTests
         Assert.NotNull(vm.LastSuccessfulSync);
         Assert.Contains("1 audiobook metadata entry updated", vm.SyncStatus);
         Assert.False(vm.IsSyncing);
+    }
+
+    [Fact]
+    public async Task AudibleLibraryEntries_OpenReadOnlyDetailsAndExposeAvailability()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var remote = new RemoteAudiobook("remote-asin", "Audible title", "Author", "Narrator", "5h")
+        {
+            Description = "Audible product summary",
+            IsPlayableOnAudible = true,
+            IsDownloadedOnAudible = false
+        };
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([remote]), repository));
+
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+
+        var book = Assert.Single(vm.AudibleBooks);
+        Assert.False(book.CanQueueDownload);
+        Assert.False(book.CanDelete);
+        Assert.Equal("AVAILABLE", book.AudibleAvailabilityShortLabel);
+
+        vm.OpenBookDetails(book.Id);
+
+        Assert.True(vm.IsBookDetailsVisible);
+        Assert.True(vm.IsDetailProviderBook);
+        Assert.False(vm.CanEditDetailBook);
+        Assert.Equal("Available to download in VØRATH", vm.DetailAudibleAvailabilityLabel);
+        Assert.Equal("Audible product summary", vm.DetailBookDescription);
+    }
+
+    [Fact]
+    public async Task AudibleDetails_HideLibraryAndBackReturnsToTheFilteredResults()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var detailProvider = new FakeAudiobookDetailsProvider(new ProviderAudiobookDetails(
+            [new AudiobookChapter("Introduction", 0), new AudiobookChapter("Chapter 1", 120_000)],
+            42_000_000));
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([
+                new RemoteAudiobook("ikigai-1", "Ikigai for Young Readers", "Hector Garcia", "Narrator", "3h 48m"),
+                new RemoteAudiobook("other-1", "Another book", "Someone Else", "Narrator", "5h")
+            ]), repository),
+            audiobookDetailsProvider: detailProvider);
+
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+        vm.SelectTab(1);
+        vm.AudibleSearchText = "Ikigai";
+        var book = Assert.Single(vm.AudibleBooks);
+
+        vm.OpenBookDetails(book.Id);
+        Assert.False(vm.IsAudibleLibraryTab);
+        await vm.LoadProviderBookDetailsAsync(book.Id);
+
+        Assert.True(vm.IsBookDetailsVisible);
+        Assert.Equal("2 chapters", vm.DetailChapterLabel);
+        Assert.Equal("40.1 MB", vm.DetailFileSizeLabel);
+        Assert.Equal(2, vm.DetailBook!.Chapters.Count);
+        Assert.Equal("Ikigai for Young Readers", vm.DetailBook.Title);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsBookDetailsVisible);
+        Assert.True(vm.IsAudibleLibraryTab);
+        Assert.Equal("Ikigai", vm.AudibleSearchText);
+        Assert.Single(vm.AudibleBooks);
+        Assert.Equal(1, detailProvider.CallCount);
+    }
+
+    [Fact]
+    public async Task AudibleLibrarySystemBack_ClearsSearchAndStaysOnLibraryBeforeLeaving()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([
+                new RemoteAudiobook("ikigai-1", "Ikigai", "Hector Garcia", "Narrator", "3h"),
+                new RemoteAudiobook("other-1", "Another book", "Someone Else", "Narrator", "5h")
+            ]), repository));
+
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+        vm.SelectTab(1);
+        vm.AudibleSearchText = "Ikigai";
+        Assert.Single(vm.AudibleBooks);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.True(vm.IsAudibleLibraryTab);
+        Assert.Empty(vm.AudibleSearchText);
+        Assert.Equal(2, vm.AudibleBooks.Count);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.True(vm.IsHomeTab);
+    }
+
+    [Fact]
+    public async Task HomeSearchPage_FiltersCatalogueAndOpensSharedAudiobookDetails()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+        await vm.InitializeAsync();
+
+        vm.NewTitle = "Atomic Habits";
+        vm.NewAuthor = "James Clear";
+        await vm.AddBookAsync();
+        vm.NewTitle = "The Psychology of Money";
+        vm.NewAuthor = "Morgan Housel";
+        await vm.AddBookAsync();
+
+        vm.OpenHomeSearch();
+        Assert.True(vm.IsHomeSearchVisible);
+        Assert.False(vm.IsHomeTab);
+        Assert.True(vm.IsHomeNavigationSelected);
+
+        vm.SearchText = "Atomic";
+        var result = Assert.Single(vm.Books);
+        Assert.Equal("Atomic Habits", result.Title);
+
+        vm.OpenBookDetails(result.Id);
+        Assert.True(vm.IsBookDetailsVisible);
+        Assert.False(vm.IsHomeSearchVisible);
+        Assert.Equal("Atomic Habits", vm.DetailBook?.Title);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsBookDetailsVisible);
+        Assert.True(vm.IsHomeSearchVisible);
+        Assert.Single(vm.Books);
+        Assert.Equal("Atomic", vm.SearchText);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsHomeSearchVisible);
+        Assert.True(vm.IsHomeTab);
+        Assert.Equal("Atomic", vm.SearchText);
+        Assert.False(vm.TryNavigateBack());
+    }
+
+    [Fact]
+    public void HomeIndicator_IsVisibleOnlyOnTheHomeTab()
+    {
+        using var directory = new TemporaryDirectory();
+        var vm = CreateViewModel(directory.Path);
+
+        Assert.True(vm.IsHomeTab);
+        vm.SelectTab(1);
+        Assert.False(vm.IsHomeTab);
+        vm.SelectTab(2);
+        Assert.False(vm.IsHomeTab);
+        vm.SelectTab(3);
+        Assert.False(vm.IsHomeTab);
+        vm.SelectTab(0);
+        Assert.True(vm.IsHomeTab);
     }
 
     [Fact]
@@ -446,7 +636,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task Enqueue_AudibleCatalogueEntryShowsOfficialHandoffAndDoesNotQueue()
+    public async Task Enqueue_AudibleCatalogueEntryIsAddedToTheVOrathQueue()
     {
         using var directory = new TemporaryDirectory();
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
@@ -459,13 +649,16 @@ public sealed class MainViewModelTests
         await vm.SyncLibraryAsync();
 
         var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
-        Assert.False(book.CanQueueDownload);
-        Assert.Equal("Audible download unavailable", book.DownloadActionLabel);
+        Assert.False(book.CanQueueDownload); // Audible IDs cannot be sent to the generic direct-URL form.
+        Assert.Equal("⇩  Download", book.DownloadActionLabel);
 
         await vm.EnqueueAsync(book.Id);
 
-        Assert.Empty(await queue.GetItemsAsync());
-        Assert.Contains("official Audible app", vm.ErrorMessage);
+        var queued = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(book.Id, queued.AudiobookId);
+        Assert.Equal(DownloadStatus.Queued, queued.Status);
+        Assert.Empty(vm.ErrorMessage);
+        Assert.Contains("Audible download queue", vm.DownloadSettingsStatus);
     }
 
     [Fact]
@@ -676,7 +869,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task TryNavigateBack_ClearsSearchBeforeLeavingHome()
+    public async Task TryNavigateBack_ClosesSearchPageAndPreservesItsQuery()
     {
         using var directory = new TemporaryDirectory();
         var vm = CreateViewModel(directory.Path);
@@ -684,13 +877,19 @@ public sealed class MainViewModelTests
         vm.NewTitle = "Searchable title";
         vm.NewAuthor = "Author";
         await vm.AddBookAsync();
+        vm.OpenHomeSearch();
         vm.SearchText = "Searchable";
         Assert.Single(vm.Books);
+        Assert.True(vm.IsHomeSearchVisible);
+        Assert.True(vm.IsHomeNavigationSelected);
 
         Assert.True(vm.TryNavigateBack());
 
-        Assert.Equal(string.Empty, vm.SearchText);
+        Assert.False(vm.IsHomeSearchVisible);
+        Assert.True(vm.IsHomeTab);
+        Assert.Equal("Searchable", vm.SearchText);
         Assert.Single(vm.Books);
+        Assert.False(vm.TryNavigateBack());
     }
 
     [Fact]
@@ -756,6 +955,19 @@ public sealed class MainViewModelTests
     {
         public Task<IReadOnlyList<RemoteAudiobook>> GetLibraryAsync(CancellationToken cancellationToken = default)
             => error is null ? Task.FromResult(books ?? (IReadOnlyList<RemoteAudiobook>)[]) : Task.FromException<IReadOnlyList<RemoteAudiobook>>(error);
+    }
+
+    private sealed class FakeAudiobookDetailsProvider(ProviderAudiobookDetails details) : IAudiobookDetailsProvider
+    {
+        public int CallCount { get; private set; }
+
+        public Task<ProviderAudiobookDetails?> GetDetailsAsync(
+            string providerId,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult<ProviderAudiobookDetails?>(details);
+        }
     }
 
     private sealed class BlockingCatalogProvider : ILibraryCatalogProvider

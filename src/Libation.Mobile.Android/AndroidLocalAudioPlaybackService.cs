@@ -51,6 +51,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private long? _sleepChapterPositionMilliseconds;
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
+    public static event Action? PlaybackStateChanged;
+    public static bool HasActivePlayer => Current?._player is not null;
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
     public static string? CurrentFilePath => Current?._currentFilePath;
     public static long PositionMilliseconds => Current?.ReadPosition() ?? 0;
@@ -61,6 +63,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         base.OnCreate();
         Current = this;
+        PublishPlaybackState();
         CreateNotificationChannel();
         _checkpointHandler = new Handler(Looper.MainLooper!);
         _checkpointRunnable = new Java.Lang.Runnable(() =>
@@ -155,6 +158,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             StopSelf(startId);
         }
 
+        PublishPlaybackState();
         return StartCommandResult.NotSticky;
     }
 
@@ -194,6 +198,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             _player.Play();
         SavePlaybackSnapshot();
         UpdateNotification();
+        PublishPlaybackState();
     }
 
 
@@ -209,9 +214,15 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
 
         UpdateNotification();
+        PublishPlaybackState();
     }
 
-    public void OnIsPlayingChanged(bool isPlaying) => UpdateNotification();
+    public void OnIsPlayingChanged(bool isPlaying)
+    {
+        SavePlaybackSnapshot();
+        UpdateNotification();
+        PublishPlaybackState();
+    }
 
     public void OnPlayerError(PlaybackException? error)
     {
@@ -221,6 +232,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         SavePlaybackSnapshot();
         StopPlayback(clearRecovery: false);
         StopSelf();
+        PublishPlaybackState();
     }
 
     public void OnAudioAttributesChanged(AudioAttributes? value) { }
@@ -237,8 +249,19 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnMediaMetadataChanged(MediaMetadata? metadata) { }
     public void OnMetadata(Metadata? metadata) { }
     public void OnPlayWhenReadyChanged(bool playWhenReady, int reason) => UpdateNotification();
-    public void OnPositionDiscontinuity(PlayerPositionInfo? oldPosition, PlayerPositionInfo? newPosition, int reason) { }
-    public void OnPlaybackParametersChanged(PlaybackParameters? parameters) { }
+    public void OnPositionDiscontinuity(PlayerPositionInfo? oldPosition, PlayerPositionInfo? newPosition, int reason)
+    {
+        SavePlaybackSnapshot();
+        PublishPlaybackState();
+    }
+    public void OnPlaybackParametersChanged(PlaybackParameters? parameters)
+    {
+        if (parameters is not null && float.IsFinite(parameters.Speed) && parameters.Speed > 0)
+            _playbackSpeed = Math.Clamp(parameters.Speed, 0.5f, 3f);
+        SavePlaybackSnapshot();
+        UpdateNotification();
+        PublishPlaybackState();
+    }
     public void OnPlaybackSuppressionReasonChanged(int reason) { }
     public void OnPlayerErrorChanged(PlaybackException? error) { }
     public void OnPlaylistMetadataChanged(MediaMetadata? metadata) { }
@@ -478,6 +501,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         return $"{FormatTime(Math.Max(0, position - start))} / {FormatTime(Math.Max(0, end - start))}";
     }
 
+    private void PublishPlaybackState()
+    {
+        try { PlaybackStateChanged?.Invoke(); }
+        catch (Exception) { /* UI observers must never interrupt playback or notification updates. */ }
+    }
+
     private void UpdateNotification()
     {
         var manager = (NotificationManager?)GetSystemService(NotificationService);
@@ -542,6 +571,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _coverBitmap?.Dispose();
         _coverBitmap = null;
         if (Current == this) Current = null;
+        PublishPlaybackState();
         base.OnDestroy();
     }
 }
