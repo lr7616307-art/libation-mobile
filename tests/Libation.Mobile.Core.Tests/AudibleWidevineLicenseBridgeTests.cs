@@ -1,6 +1,7 @@
 using AudibleApi;
 using AudibleApi.Common;
 using Libation.Mobile.Audible;
+using Newtonsoft.Json.Linq;
 using Xunit;
 
 namespace Libation.Mobile.Core.Tests;
@@ -179,6 +180,112 @@ public sealed class AudibleWidevineLicenseBridgeTests
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             source.ResolveWidevineAsync("B012345678"));
+    }
+
+    [Fact]
+    public async Task RefreshWidevineLicenseAsync_BuildsRequestAndReturnsPerTitleResult()
+    {
+        byte[] challenge = [0x00, 0x01, 0x7F, 0x80];
+        JObject? observedRequest = null;
+        const string response = """
+        {
+          "license_refresh_responses": [
+            {
+              "asin": "B012345678",
+              "license": "opaque-renewed-response",
+              "status": { "status_code": "Granted" },
+              "license_metadata": {
+                "license_id": "renewed-license-1",
+                "license_expiration_date": "2027-02-01T00:00:00Z"
+              }
+            }
+          ]
+        }
+        """;
+
+        var source = new AudibleAudioDownloadSource(
+            (_, _, _, _) => Task.FromException<ContentLicense>(new NotSupportedException()),
+            (_, _, _) => Task.FromResult("unused"),
+            Path.Combine(Path.GetTempPath(), "vorath-widevine-tests"),
+            requestWidevineLicenseRefresh: (body, _) =>
+            {
+                observedRequest = body;
+                return Task.FromResult(response);
+            });
+
+        var result = await source.RefreshWidevineLicenseAsync(
+            "B012345678",
+            new AudibleWidevineProviderLicenseReference("CR!renewal-reference", 8),
+            challenge);
+
+        Assert.NotNull(observedRequest);
+        var item = Assert.IsType<JObject>(
+            Assert.Single(Assert.IsType<JArray>(observedRequest["license_refresh_requests"])));
+        Assert.Equal("Widevine", item["drm_type"]?.Value<string>());
+        Assert.Equal("8", item["file_version"]?.Value<string>());
+        Assert.Equal(Convert.ToBase64String(challenge), item["drm_challenge"]?.Value<string>());
+        Assert.Equal("Granted", result.StatusCode);
+        Assert.Equal("opaque-renewed-response", result.License);
+        Assert.Equal("renewed-license-1", result.LicenseId);
+    }
+
+    [Fact]
+    public async Task RefreshWidevineLicenseAsync_ReturnsDenialWithoutTreatingItAsRenewal()
+    {
+        const string response = """
+        {
+          "license_refresh_responses": [
+            {
+              "asin": "B012345678",
+              "status": {
+                "status_code": "Denied",
+                "error_message": "title no longer entitled"
+              }
+            }
+          ]
+        }
+        """;
+
+        var source = new AudibleAudioDownloadSource(
+            (_, _, _, _) => Task.FromException<ContentLicense>(new NotSupportedException()),
+            (_, _, _) => Task.FromResult("unused"),
+            Path.Combine(Path.GetTempPath(), "vorath-widevine-tests"),
+            requestWidevineLicenseRefresh: (_, _) => Task.FromResult(response));
+
+        var result = await source.RefreshWidevineLicenseAsync(
+            "B012345678",
+            new AudibleWidevineProviderLicenseReference("CR!reference", 1),
+            [0x01]);
+
+        Assert.Equal("Denied", result.StatusCode);
+        Assert.Equal("title no longer entitled", result.ErrorMessage);
+        Assert.Null(result.License);
+    }
+
+    [Fact]
+    public async Task RefreshWidevineLicenseAsync_HonorsCancellationBeforeTransport()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var called = false;
+        var source = new AudibleAudioDownloadSource(
+            (_, _, _, _) => Task.FromException<ContentLicense>(new NotSupportedException()),
+            (_, _, _) => Task.FromResult("unused"),
+            Path.Combine(Path.GetTempPath(), "vorath-widevine-tests"),
+            requestWidevineLicenseRefresh: (_, _) =>
+            {
+                called = true;
+                return Task.FromResult("{\"license_refresh_responses\":[]}");
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            source.RefreshWidevineLicenseAsync(
+                "B012345678",
+                new AudibleWidevineProviderLicenseReference("CR!reference", 1),
+                [0x01],
+                cancellation.Token));
+
+        Assert.False(called);
     }
 
     private static AudibleAudioDownloadSource CreateSource(
