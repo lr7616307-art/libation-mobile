@@ -164,6 +164,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         string asin,
         string title,
         long startPositionMilliseconds = 0,
+        bool autoPlay = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -198,7 +199,8 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                 accountId,
                 asin,
                 streamKeyValues,
-                startPositionMilliseconds);
+                startPositionMilliseconds,
+                autoPlay);
         }
         finally
         {
