@@ -109,6 +109,8 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             return;
 
         var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
+        await keySetStore.SaveProviderLicenseReferenceAsync(
+            accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
         var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
             .ConfigureAwait(false);
 
@@ -250,6 +252,8 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             return;
 
         var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
+        await keySetStore.SaveProviderLicenseReferenceAsync(
+            accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
         var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
             .ConfigureAwait(false);
 
