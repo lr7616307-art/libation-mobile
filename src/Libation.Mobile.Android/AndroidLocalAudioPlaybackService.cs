@@ -45,6 +45,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private IExoPlayer? _player;
     private string _title = "Audiobook";
     private string? _currentFilePath;
+    private bool _isWidevinePlayback;
     private string? _coverImagePath;
     private Bitmap? _coverBitmap;
     private float _playbackSpeed = 1f;
@@ -181,6 +182,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (string.IsNullOrWhiteSpace(_title))
             _title = System.IO.Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
+        _isWidevinePlayback = false;
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
 
@@ -227,6 +229,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (string.IsNullOrWhiteSpace(_title))
             _title = "Audible audiobook";
         _currentFilePath = null; // Protected remote media is never written as a local clear-audio path.
+        _isWidevinePlayback = true;
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
 
@@ -601,7 +604,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private void StopPlayback(bool clearRecovery = true)
     {
         StopPlayer();
-        if (clearRecovery) PlaybackRecoveryStore.Clear(this);
+        if (clearRecovery && !_isWidevinePlayback) PlaybackRecoveryStore.Clear(this);
+        _isWidevinePlayback = false;
         StopForeground(StopForegroundFlags.Remove);
     }
 
