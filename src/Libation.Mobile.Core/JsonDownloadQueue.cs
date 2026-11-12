@@ -214,8 +214,9 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         => current switch
         {
             DownloadStatus.Queued => next is DownloadStatus.Downloading or DownloadStatus.Failed,
-            DownloadStatus.Downloading => next is DownloadStatus.Completed or DownloadStatus.Failed or DownloadStatus.Queued,
+            DownloadStatus.Downloading => next is DownloadStatus.Completed or DownloadStatus.Protected or DownloadStatus.Failed or DownloadStatus.Queued,
             DownloadStatus.Failed => next == DownloadStatus.Queued,
+            DownloadStatus.Protected => false,
             DownloadStatus.Completed => false,
             _ => false
         };
