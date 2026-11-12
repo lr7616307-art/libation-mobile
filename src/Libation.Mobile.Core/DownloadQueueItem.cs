@@ -15,7 +15,9 @@ public sealed record DownloadQueueItem(
     DownloadStatus Status,
     DateTimeOffset AddedAtUtc,
     DateTimeOffset UpdatedAtUtc,
-    string? ErrorMessage = null)
+    string? ErrorMessage = null,
+    string? SourceUrl = null,
+    string? DisplayTitle = null)
 {
     [JsonIgnore]
     public bool CanRetry => Status == DownloadStatus.Failed;
@@ -25,4 +27,14 @@ public sealed record DownloadQueueItem(
 
     [JsonIgnore]
     public bool CanRemove => Status != DownloadStatus.Downloading;
+
+    [JsonIgnore]
+    public string StatusLabel => Status switch
+    {
+        DownloadStatus.Queued => "Queued",
+        DownloadStatus.Downloading => "Downloading",
+        DownloadStatus.Completed => "Completed",
+        DownloadStatus.Failed => "Failed",
+        _ => "Unknown"
+    };
 }
