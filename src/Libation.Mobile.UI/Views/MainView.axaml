@@ -220,9 +220,10 @@
                   <StackPanel Spacing="7">
                     <TextBlock Text="{Binding DetailAudibleAvailabilityLabel}" FontSize="15"
                                FontWeight="SemiBold" Foreground="#C4B5FD"/>
-                    <Button Content="Open in Audible app" HorizontalAlignment="Stretch"
+                    <Button Content="⇩  Download" HorizontalAlignment="Stretch"
+                            FontSize="17" Padding="14,12"
                             Click="DownloadAudibleBookFromDetailClicked"/>
-                    <TextBlock Text="This opens the title in Audible. Complete the audio download there; Audible's downloaded indicator describes the Audible app, not audio stored by VØRATH."
+                    <TextBlock Text="Opens this title in the official Audible app to complete its protected download. Audible's offline copy stays inside Audible and is not saved to VØRATH's selected folder."
                                FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
                   </StackPanel>
                 </Border>
@@ -308,9 +309,9 @@
                         </Grid>
                       </Button>
                       <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <Button Content="↓  Open Audible" FontSize="10" Padding="7,8"
+                        <Button Content="⇩  Download" FontSize="10" Padding="7,8"
                                 Click="DownloadAudibleBookClicked"/>
-                        <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" FontSize="8" LetterSpacing="0.3"
+                        <TextBlock Text="IN AUDIBLE APP" FontSize="8" LetterSpacing="0.3"
                                    Foreground="#B9A5E8" TextAlignment="Center" TextWrapping="Wrap"/>
                       </StackPanel>
                     </Grid>
@@ -326,6 +327,33 @@
 
           <StackPanel IsVisible="{Binding IsSettingsTab}" Spacing="16">
             <TextBlock Text="Settings" FontSize="30" FontWeight="Bold"/>
+            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="11">
+                <TextBlock Text="Download storage" FontSize="19" FontWeight="Bold"/>
+                <TextBlock Text="Choose where VØRATH should save audio files from sources that provide an authorized, downloadable audio file." FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="Download directory" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadDirectoryLabel}" FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Choose folder" Padding="12,9"
+                          VerticalAlignment="Center" Click="ChooseDownloadFolderClicked"/>
+                </Grid>
+                <TextBlock Text="Android will remember the folder permission. You can change it at any time." FontSize="11" Opacity="0.62" TextWrapping="Wrap"/>
+                <Border Height="1" Background="#40324F" Margin="0,2"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="File organization" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadFolderOrganizationLabel}" FontSize="12" Foreground="#C4B5FD"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Change" Padding="16,9"
+                          VerticalAlignment="Center" Click="CycleDownloadFolderOrganizationClicked"/>
+                </Grid>
+                <TextBlock Text="{Binding DownloadFolderOrganizationExample}" FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
+                <TextBlock Text="Audible protected titles are downloaded in the official Audible app. This folder is for audio sources that VØRATH is authorized to download; Audible offline files are not copied here." FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
             <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="10">
                 <TextBlock Text="Backup and restore" FontSize="19" FontWeight="Bold"/>
