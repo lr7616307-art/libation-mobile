@@ -16,6 +16,7 @@ public sealed class AudibleIdentitySnapshotSerializerTests
         Assert.Equal(expected.SchemaVersion, actual.SchemaVersion);
         Assert.Equal(expected.Provider, actual.Provider);
         Assert.Equal(expected.AudibleApiVersion, actual.AudibleApiVersion);
+        Assert.Equal(expected.RegistrationProfileId, actual.RegistrationProfileId);
         Assert.Equal(expected.LocaleName, actual.LocaleName);
         Assert.Equal(expected.AccessToken, actual.AccessToken);
         Assert.Equal(expected.AccessTokenExpiresAtUtc, actual.AccessTokenExpiresAtUtc);
@@ -30,6 +31,18 @@ public sealed class AudibleIdentitySnapshotSerializerTests
         Assert.Equal(expected.StoreAuthenticationCookie, actual.StoreAuthenticationCookie);
         Assert.Equal(expected.Cookies, actual.Cookies);
         Assert.Equal(expected.AccessTokenExpiresAtUtc, actual.AccessTokenExpiresAtUtc);
+    }
+
+    [Fact]
+    public void Serialize_RejectsObsoleteRegistrationProfile()
+    {
+        var snapshot = CreateSnapshot() with
+        {
+            RegistrationProfileId = "audible-iphone-3.56.2-ios-15.0.0-35602678"
+        };
+
+        Assert.Throws<InvalidDataException>(
+            () => AudibleIdentitySnapshotSerializer.Serialize(snapshot));
     }
 
     [Fact]
@@ -56,7 +69,7 @@ public sealed class AudibleIdentitySnapshotSerializerTests
     public void Deserialize_RejectsUnsupportedSchemaVersion()
     {
         var json = AudibleIdentitySnapshotSerializer.Serialize(CreateSnapshot())
-            .Replace("\"schemaVersion\":1", "\"schemaVersion\":99");
+            .Replace("\"schemaVersion\":2", "\"schemaVersion\":99");
 
         Assert.Throws<InvalidDataException>(() => AudibleIdentitySnapshotSerializer.Deserialize(json));
     }
@@ -175,6 +188,7 @@ public sealed class AudibleIdentitySnapshotSerializerTests
         SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
         Provider = AudibleIdentitySnapshot.ProviderName,
         AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+        RegistrationProfileId = AudibleOAuthFlow.RegistrationProfileId,
         LocaleName = "us",
         AccessToken = "Atna|test-access",
         AccessTokenExpiresAtUtc = new DateTimeOffset(2027, 4, 5, 6, 7, 8, TimeSpan.Zero),

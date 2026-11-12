@@ -11,6 +11,7 @@ namespace Libation.Mobile.Audible;
 public static class AudibleOAuthFlow
 {
     public const string IPhoneDeviceType = "A2CZJZGLK2JJVM";
+    public const string RegistrationProfileId = "audible-iphone-4.60-ios-26.2-46000856";
 
     private sealed record Market(string AmazonDomain, string MarketplaceId, string CountryCode);
 

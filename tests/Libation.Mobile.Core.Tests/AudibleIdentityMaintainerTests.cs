@@ -371,6 +371,7 @@ public sealed class AudibleIdentityMaintainerTests
         var saved = AudibleIdentitySnapshotSerializer.Deserialize(secrets.LastValue!);
         Assert.Equal("Atna|refreshed", saved.AccessToken);
         Assert.Equal("Atnr|rotated", saved.RefreshToken);
+        Assert.Equal(AudibleOAuthFlow.RegistrationProfileId, saved.RegistrationProfileId);
     }
 
     private static AudibleIdentitySnapshot CreateSnapshot(string privateKey, DateTime expiry) => new()
@@ -378,6 +379,7 @@ public sealed class AudibleIdentityMaintainerTests
         SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
         Provider = AudibleIdentitySnapshot.ProviderName,
         AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+        RegistrationProfileId = AudibleOAuthFlow.RegistrationProfileId,
         LocaleName = "us",
         AccessToken = "Atna|test-access",
         AccessTokenExpiresAtUtc = new DateTimeOffset(expiry),

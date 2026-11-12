@@ -99,6 +99,7 @@ public sealed class AudibleIdentitySnapshotMapperTests
         SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
         Provider = AudibleIdentitySnapshot.ProviderName,
         AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+        RegistrationProfileId = AudibleOAuthFlow.RegistrationProfileId,
         LocaleName = "us",
         AccessToken = "Atna|test-access",
         AccessTokenExpiresAtUtc = new DateTimeOffset(2027, 4, 5, 6, 7, 8, TimeSpan.Zero),

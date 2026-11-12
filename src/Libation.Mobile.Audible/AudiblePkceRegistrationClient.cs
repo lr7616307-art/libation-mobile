@@ -156,6 +156,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
             Provider = AudibleIdentitySnapshot.ProviderName,
             AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+            RegistrationProfileId = AudibleOAuthFlow.RegistrationProfileId,
             LocaleName = Localization.Get(challenge.Marketplace).Name,
             AccessToken = bearer.AccessToken ?? string.Empty,
             AccessTokenExpiresAtUtc = DateTimeOffset.UtcNow.AddSeconds(expiresIn),

@@ -166,6 +166,7 @@ public sealed class AudibleAccountAuthenticator(
             SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
             Provider = AudibleIdentitySnapshot.ProviderName,
             AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+            RegistrationProfileId = AudibleOAuthFlow.RegistrationProfileId,
             LocaleName = identity.Locale.Name,
             AccessToken = identity.ExistingAccessToken.Reveal(),
             AccessTokenExpiresAtUtc = new DateTimeOffset(expiry),

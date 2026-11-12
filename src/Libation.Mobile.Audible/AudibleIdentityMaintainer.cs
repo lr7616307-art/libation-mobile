@@ -102,13 +102,15 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
 
                 ApplyIdentity(identity, latestIdentity);
                 if (identity.ExistingAccessToken.Expires > systemDateTime.UtcNow.AddMinutes(30))
-                    return (RefreshResult: (AudibleTokenRefreshResult?)null, Refreshed: false);
+                    return (RefreshResult: (AudibleTokenRefreshResult?)null, Refreshed: false,
+                        RegistrationProfileId: latestSnapshot.RegistrationProfileId);
 
                 var refreshToken = identity.RefreshToken
                     ?? throw new InvalidOperationException("The Audible refresh credential is unavailable.");
                 var refreshed = await tokenRefresher.RefreshAsync(
                     identity.Locale, refreshToken, cancellationToken).ConfigureAwait(false);
-                return (RefreshResult: (AudibleTokenRefreshResult?)refreshed, Refreshed: true);
+                return (RefreshResult: (AudibleTokenRefreshResult?)refreshed, Refreshed: true,
+                    RegistrationProfileId: latestSnapshot.RegistrationProfileId);
             },
             async (result, cancellationToken) =>
             {
@@ -127,7 +129,7 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
                     refreshResult.RefreshToken ?? previousRefreshToken);
                 try
                 {
-                    await snapshotStore.SaveAsync(Capture(identity), cancellationToken).ConfigureAwait(false);
+                    await snapshotStore.SaveAsync(Capture(identity, result.RegistrationProfileId), cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception persistenceException)
                 {
@@ -173,7 +175,7 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
             target.DeviceName,
             target.StoreAuthenticationCookie);
 
-    private static AudibleIdentitySnapshot Capture(Identity source)
+    private static AudibleIdentitySnapshot Capture(Identity source, string registrationProfileId)
     {
         var privateKey = source.PrivateKey
             ?? throw new InvalidOperationException("The Audible private key is unavailable.");
@@ -191,6 +193,7 @@ public sealed class AudibleIdentityMaintainer : IIdentityMaintainer
             SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
             Provider = AudibleIdentitySnapshot.ProviderName,
             AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+            RegistrationProfileId = registrationProfileId,
             LocaleName = source.Locale.Name,
             AccessToken = source.ExistingAccessToken.Reveal(),
             AccessTokenExpiresAtUtc = new DateTimeOffset(expiry),

@@ -74,6 +74,26 @@ public sealed class AudibleIdentitySnapshotStoreTests
     }
 
     [Fact]
+    public async Task Load_WhenSavedIdentityUsesObsoleteRegistrationProfile_RequiresAccountRecovery()
+    {
+        var secrets = new InMemorySecretStore();
+        var currentPayload = AudibleIdentitySnapshotSerializer.Serialize(CreateSnapshot());
+        var legacyPayload = currentPayload.Replace(
+            AudibleOAuthFlow.RegistrationProfileId,
+            "audible-iphone-3.56.2-ios-15.0.0-35602678",
+            StringComparison.Ordinal);
+        Assert.NotEqual(currentPayload, legacyPayload);
+        secrets.Seed(AudibleIdentitySnapshotStore.StorageKey, legacyPayload);
+        var store = new AudibleIdentitySnapshotStore(secrets);
+
+        var error = await Assert.ThrowsAsync<AudibleIdentityRecoveryRequiredException>(
+            () => store.LoadAsync());
+
+        Assert.Contains("Sign in again", error.Message);
+        Assert.Contains("outdated device-registration profile", error.Message);
+    }
+
+    [Fact]
     public async Task Load_WhenMissing_ReturnsNull()
     {
         var store = new AudibleIdentitySnapshotStore(new InMemorySecretStore());
@@ -156,6 +176,7 @@ public sealed class AudibleIdentitySnapshotStoreTests
         SchemaVersion = AudibleIdentitySnapshot.CurrentSchemaVersion,
         Provider = AudibleIdentitySnapshot.ProviderName,
         AudibleApiVersion = AudibleIdentitySnapshot.SupportedAudibleApiVersion,
+        RegistrationProfileId = AudibleOAuthFlow.RegistrationProfileId,
         LocaleName = "us",
         AccessToken = "Atna|access",
         AccessTokenExpiresAtUtc = new DateTimeOffset(2027, 4, 5, 6, 7, 8, TimeSpan.Zero),
