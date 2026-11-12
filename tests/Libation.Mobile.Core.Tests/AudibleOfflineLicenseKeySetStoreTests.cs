@@ -229,18 +229,18 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
         var store = new AudibleOfflineLicenseKeySetStore(secrets);
 
         await store.SaveProviderLicenseReferenceAsync(
-            "account-a", "B012345678", "CR!audible-content-reference", "7");
+            "account-a", "B012345678", "CR!audible-content-reference", 7);
         await store.SaveProviderLicenseReferenceAsync(
-            "account-b", "B012345678", "CR!other-account-reference", "2");
+            "account-b", "B012345678", "CR!other-account-reference", 2);
 
         var actual = await store.LoadProviderLicenseReferenceAsync("account-a", "B012345678");
 
         Assert.NotNull(actual);
         Assert.Equal("CR!audible-content-reference", actual.Acr);
-        Assert.Equal("7", actual.FileVersion);
+        Assert.Equal(7, actual.FileVersion);
         Assert.Null(await store.LoadProviderLicenseReferenceAsync("account-a", "B098765432"));
-        Assert.DoesNotContain("B012345678", secrets.Keys.Single(key =>
-            key.Contains("account", StringComparison.Ordinal) == false), StringComparison.Ordinal);
+        Assert.All(secrets.Keys, key =>
+            Assert.DoesNotContain("B012345678", key, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -248,7 +248,7 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
     {
         var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
         await store.SaveProviderLicenseReferenceAsync(
-            "account-a", "B012345678", "CR!old-reference", "1");
+            "account-a", "B012345678", "CR!old-reference", 1);
 
         await store.SaveProviderLicenseReferenceAsync(
             "account-a", "B012345678", null, null);
@@ -266,7 +266,7 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
                 "account-a", "B012345678", "CR!reference", null));
         await Assert.ThrowsAsync<ArgumentException>(() =>
             store.SaveProviderLicenseReferenceAsync(
-                "account-a", "B012345678", null, "1"));
+                "account-a", "B012345678", null, 1));
     }
 
     [Fact]
@@ -274,7 +274,7 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
     {
         var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
         await store.SaveProviderLicenseReferenceAsync(
-            "account-a", "B012345678", "CR!reference", "1");
+            "account-a", "B012345678", "CR!reference", 1);
         await store.SaveAsync("account-a", "B012345678", [0x01]);
 
         await store.RemoveAsync("account-a", "B012345678");
