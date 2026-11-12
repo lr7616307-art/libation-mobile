@@ -298,6 +298,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string DetailProtectedDownloadLabel => string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
         ? string.Empty
         : $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved; this protected file is not playable in VØRATH yet.";
+    public bool HasPlayableDetailAudio => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.AudioFilePath);
+    public bool HasProtectedDetailDownload => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName);
     public string DetailBookDescription
     {
         get
@@ -365,6 +367,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanEditDetailBook));
         OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
         OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+        OnPropertyChanged(nameof(HasPlayableDetailAudio));
+        OnPropertyChanged(nameof(HasProtectedDetailDownload));
         OnPropertyChanged(nameof(DetailBookDescription));
         OnPropertyChanged(nameof(DetailFileSizeLabel));
         OnPropertyChanged(nameof(DetailDurationLabel));
@@ -901,7 +905,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsQueueEmpty => QueueItems.Count == 0;
     public bool HasPendingDownloadItems => QueueItems.Any(x => x.Status == DownloadStatus.Queued);
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
-    public string QueueSummaryLabel => $"{QueueItems.Count(x => x.Status == DownloadStatus.Queued)} queued · {QueueItems.Count(x => x.Status == DownloadStatus.Downloading)} downloading · {QueueItems.Count(x => x.Status == DownloadStatus.Completed)} completed · {QueueItems.Count(x => x.Status == DownloadStatus.Failed)} failed";
+    public string QueueSummaryLabel
+    {
+        get
+        {
+            var queued = QueueItems.Count(x => x.Status == DownloadStatus.Queued);
+            var downloading = QueueItems.Count(x => x.Status == DownloadStatus.Downloading);
+            var completed = QueueItems.Count(x => x.Status == DownloadStatus.Completed);
+            var protectedCount = QueueItems.Count(x => x.Status == DownloadStatus.Protected);
+            var failed = QueueItems.Count(x => x.Status == DownloadStatus.Failed);
+            var completedLabel = $"{completed} completed" +
+                (protectedCount > 0 ? $" · {protectedCount} protected" : string.Empty);
+            return $"{queued} queued · {downloading} downloading · {completedLabel} · {failed} failed";
+        }
+    }
     public bool IsDownloadQueueRunning => _isDownloadQueueRunning;
     public string DownloadQueueActionLabel => IsDownloadQueueRunning ? "Pause downloads" : "Start pending downloads";
     public bool HasActiveDownloadProgress => _activeDownloadProgress is not null;
@@ -1372,6 +1389,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(DetailBook));
             OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
             OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+            OnPropertyChanged(nameof(HasPlayableDetailAudio));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
         }
     }
 
