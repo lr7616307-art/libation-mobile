@@ -219,10 +219,19 @@ public sealed class AudibleLoginActivity : Activity
         {
             _webView.StopLoading();
             _webView.LoadUrl("about:blank");
+            _webView.ClearHistory();
+            _webView.ClearCache(true);
             _webView.RemoveAllViews();
             _webView.Destroy();
             _webView = null;
         }
+
+        // The returned provider identity (including website cookies) is stored
+        // separately in the encrypted secret store. Do not retain the temporary
+        // browser's Amazon session in WebView's persistent cookie/local storage.
+        var cookieManager = CookieManager.Instance;
+        cookieManager.RemoveAllCookies(new CookieCleanupCallback(cookieManager.Flush));
+        WebStorage.Instance.DeleteAllData();
         base.OnDestroy();
     }
 
@@ -230,6 +239,11 @@ public sealed class AudibleLoginActivity : Activity
     {
         public void OnReceiveValue(Java.Lang.Object? value)
             => callback(value?.ToString());
+    }
+
+    private sealed class CookieCleanupCallback(Action completed) : Java.Lang.Object, IValueCallback
+    {
+        public void OnReceiveValue(Java.Lang.Object? value) => completed();
     }
 
     private sealed class AudibleLoginWebViewClient(string expectedHost, Action<string> completed) : WebViewClient
