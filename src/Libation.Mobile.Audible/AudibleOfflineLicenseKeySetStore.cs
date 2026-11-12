@@ -18,6 +18,7 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
     private const int MaximumManifestUriCharacters = 8192;
     private const int MaximumStreamKeys = 128;
     private const string ManifestStorageKeySuffix = "_dash_manifest_v1";
+    private const string ManifestCompleteStorageKeySuffix = "_dash_manifest_complete_v1";
     private static readonly Regex AsinPattern = new(
         "^[A-Za-z0-9]{10}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -138,13 +139,37 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         return new AudibleWidevineOfflineMediaReference(manifestUri, streamKeys);
     }
 
-    public Task RemoveDashManifestAsync(
+    public async Task MarkDashDownloadCompleteAsync(
         string accountId,
         string asin,
         CancellationToken cancellationToken = default)
     {
         ValidateIdentity(accountId, asin);
-        return secrets.RemoveAsync(GetManifestStorageKey(accountId, asin), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await secrets.SetAsync(
+            GetManifestCompleteStorageKey(accountId, asin), "1", cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool> IsDashDownloadCompleteAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        cancellationToken.ThrowIfCancellationRequested();
+        var value = await secrets.GetAsync(
+            GetManifestCompleteStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+        return string.Equals(value, "1", StringComparison.Ordinal);
+    }
+
+    public async Task RemoveDashManifestAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        await secrets.RemoveAsync(GetManifestStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+        await secrets.RemoveAsync(GetManifestCompleteStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
     }
 
     public Task RemoveAsync(
@@ -158,6 +183,9 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
 
     private static string GetManifestStorageKey(string accountId, string asin)
         => GetStorageKey(accountId, asin) + ManifestStorageKeySuffix;
+
+    private static string GetManifestCompleteStorageKey(string accountId, string asin)
+        => GetStorageKey(accountId, asin) + ManifestCompleteStorageKeySuffix;
 
     private static string GetStorageKey(string accountId, string asin)
     {
