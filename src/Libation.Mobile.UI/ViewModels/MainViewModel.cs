@@ -1464,6 +1464,39 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Clears catalogue "offline available" labels only after account-wide
+    /// device cleanup has succeeded during Audible disconnect.
+    /// </summary>
+    public async Task ClearAllWidevineOfflineFlagsAsync(CancellationToken cancellationToken = default)
+    {
+        var changed = _allBooks
+            .Where(book => book.IsProviderCatalogueEntry && book.IsWidevineOfflineAvailable)
+            .ToArray();
+        if (changed.Length == 0)
+            return;
+
+        var changedIds = changed.Select(book => book.Id).ToHashSet(StringComparer.Ordinal);
+        var updated = _allBooks
+            .Select(book => changedIds.Contains(book.Id)
+                ? book with { IsWidevineOfflineAvailable = false }
+                : book)
+            .ToArray();
+        await _repository.ReplaceAllAsync(updated, cancellationToken).ConfigureAwait(false);
+
+        _allBooks = await _repository.GetBooksAsync(cancellationToken).ConfigureAwait(false);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+        if (_detailBook is not null && changedIds.Contains(_detailBook.Id))
+        {
+            _detailBook = _allBooks.FirstOrDefault(book => book.Id == _detailBook.Id);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
+        }
+    }
+
     public async Task RefreshLibraryAfterDownloadAsync(CancellationToken cancellationToken = default)
     {
         _allBooks = await _repository.GetBooksAsync(cancellationToken);
