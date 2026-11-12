@@ -9,7 +9,12 @@ namespace Libation.Mobile.Audible;
 /// InitializationData is an opaque PSSH box for Android MediaDrm; this parser
 /// does not decode or interpret Widevine licence messages or keys.
 /// </summary>
-public sealed record AudibleWidevineManifestInfo(byte[] InitializationData, string MimeType);
+public sealed record AudibleWidevineStreamKey(int PeriodIndex, int GroupIndex, int TrackIndex);
+
+public sealed record AudibleWidevineManifestInfo(
+    byte[] InitializationData,
+    string MimeType,
+    IReadOnlyList<AudibleWidevineStreamKey> AudioStreamKeys);
 
 /// <summary>
 /// Extracts the Widevine PSSH and audio MIME type from provider-supplied DASH XML.
@@ -52,32 +57,97 @@ public static class AudibleWidevineManifestParser
         if (!string.Equals(document.Root?.Name.LocalName, "MPD", StringComparison.Ordinal))
             throw new InvalidDataException("The Audible manifest root element is not a DASH MPD.");
 
-        var widevineProtection = document
-            .Descendants()
-            .Where(element =>
-                string.Equals(element.Name.LocalName, "ContentProtection", StringComparison.Ordinal) &&
-                string.Equals(
-                    (string?)element.Attribute("schemeIdUri"),
-                    WidevineScheme,
-                    StringComparison.OrdinalIgnoreCase))
+        var periods = document.Descendants()
+            .Where(element => string.Equals(element.Name.LocalName, "Period", StringComparison.Ordinal))
             .ToArray();
+        if (periods.Length == 0 || periods.Length > 128)
+            throw new InvalidDataException("The Audible DASH manifest has an unsupported period count.");
 
-        foreach (var protection in widevineProtection)
+        var streamKeys = new List<AudibleWidevineStreamKey>(periods.Length);
+        var selectedMimeType = string.Empty;
+        XElement? selectedWidevineProtection = null;
+
+        for (var periodIndex = 0; periodIndex < periods.Length; periodIndex++)
         {
-            var psshElement = protection.Elements().FirstOrDefault(element =>
-                string.Equals(element.Name.LocalName, "pssh", StringComparison.Ordinal) &&
-                string.Equals(element.Name.NamespaceName, "urn:mpeg:cenc:2013", StringComparison.Ordinal));
+            var adaptationSets = periods[periodIndex].Elements()
+                .Where(element => string.Equals(element.Name.LocalName, "AdaptationSet", StringComparison.Ordinal))
+                .ToArray();
 
-            if (psshElement is null || string.IsNullOrWhiteSpace(psshElement.Value))
-                continue;
+            // Audible audiobooks are audio-only. Refuse a manifest with video or
+            // multiple adaptation groups rather than downloading the wrong track
+            // or wasting the user's storage on unrelated representations.
+            if (adaptationSets.Length != 1)
+                throw new NotSupportedException(
+                    "The Audible DASH manifest does not contain exactly one audio adaptation set per period.");
 
-            var initializationData = DecodeAndValidatePssh(psshElement.Value);
-            var mimeType = FindAudioMimeType(protection);
-            return new AudibleWidevineManifestInfo(initializationData, mimeType);
+            var adaptationSet = adaptationSets[0];
+            var mimeType = FindAudioMimeType(adaptationSet);
+            if (string.IsNullOrEmpty(selectedMimeType))
+                selectedMimeType = mimeType;
+            else if (!string.Equals(selectedMimeType, mimeType, StringComparison.OrdinalIgnoreCase))
+                throw new NotSupportedException(
+                    "The Audible DASH manifest changes audio MIME type between periods.");
+
+            var representations = adaptationSet.Elements()
+                .Where(element => string.Equals(element.Name.LocalName, "Representation", StringComparison.Ordinal))
+                .ToArray();
+            if (representations.Length == 0 || representations.Length > 128)
+                throw new InvalidDataException(
+                    "An Audible DASH audio adaptation set has no supported representations.");
+
+            var selectedRepresentationIndex = SelectHighestBandwidthRepresentation(representations);
+            streamKeys.Add(new AudibleWidevineStreamKey(periodIndex, 0, selectedRepresentationIndex));
+
+            if (selectedWidevineProtection is null)
+            {
+                selectedWidevineProtection = adaptationSet.Elements().FirstOrDefault(element =>
+                    string.Equals(element.Name.LocalName, "ContentProtection", StringComparison.Ordinal) &&
+                    string.Equals(
+                        (string?)element.Attribute("schemeIdUri"),
+                        WidevineScheme,
+                        StringComparison.OrdinalIgnoreCase));
+            }
         }
 
-        throw new NotSupportedException(
-            "The Audible DASH manifest does not contain a supported Widevine PSSH entry.");
+        if (selectedWidevineProtection is null)
+            throw new NotSupportedException(
+                "The Audible DASH manifest does not contain a supported Widevine protection entry.");
+
+        var psshElement = selectedWidevineProtection.Elements().FirstOrDefault(element =>
+            string.Equals(element.Name.LocalName, "pssh", StringComparison.Ordinal) &&
+            string.Equals(element.Name.NamespaceName, "urn:mpeg:cenc:2013", StringComparison.Ordinal));
+
+        if (psshElement is null || string.IsNullOrWhiteSpace(psshElement.Value))
+            throw new NotSupportedException(
+                "The Audible Widevine protection entry does not contain PSSH initialization data.");
+
+        var initializationData = DecodeAndValidatePssh(psshElement.Value);
+        return new AudibleWidevineManifestInfo(initializationData, selectedMimeType, streamKeys);
+    }
+
+    private static int SelectHighestBandwidthRepresentation(IReadOnlyList<XElement> representations)
+    {
+        var selectedIndex = 0;
+        long highestBandwidth = -1;
+        for (var index = 0; index < representations.Count; index++)
+        {
+            var bandwidthText = (string?)representations[index].Attribute("bandwidth");
+            if (!long.TryParse(
+                    bandwidthText,
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var bandwidth) ||
+                bandwidth < 0)
+                bandwidth = 0;
+
+            if (bandwidth > highestBandwidth)
+            {
+                highestBandwidth = bandwidth;
+                selectedIndex = index;
+            }
+        }
+
+        return selectedIndex;
     }
 
     private static byte[] DecodeAndValidatePssh(string encodedPssh)
@@ -132,13 +202,8 @@ public static class AudibleWidevineManifestParser
         return pssh;
     }
 
-    private static string FindAudioMimeType(XElement protection)
+    private static string FindAudioMimeType(XElement adaptationSet)
     {
-        var adaptationSet = protection.Ancestors().FirstOrDefault(element =>
-            string.Equals(element.Name.LocalName, "AdaptationSet", StringComparison.Ordinal));
-        if (adaptationSet is null)
-            throw new InvalidDataException("The Widevine PSSH is not inside a DASH AdaptationSet.");
-
         var representationMimeType = adaptationSet
             .Elements()
             .Where(element => string.Equals(element.Name.LocalName, "Representation", StringComparison.Ordinal))
