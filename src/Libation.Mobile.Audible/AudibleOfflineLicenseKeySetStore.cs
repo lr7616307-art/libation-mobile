@@ -1,19 +1,23 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Audible;
 
 /// <summary>
-/// Stores only the opaque offline key-set identifier returned by Android MediaDrm.
-/// The secret-store implementation is responsible for encryption at rest. This
-/// class never stores DRM challenges, licence responses, or content keys.
+/// Stores the opaque Android MediaDrm key-set identifier and the protected DASH
+/// playback reference. The secret-store implementation encrypts both at rest.
+/// This class never stores DRM challenges, licence responses, or content keys.
 /// </summary>
 public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
 {
     private const string StorageKeyPrefix = "audible_widevine_keyset_v1_";
     private const int MaximumKeySetIdBytes = 1024;
+    private const int MaximumManifestUriCharacters = 8192;
+    private const int MaximumStreamKeys = 128;
+    private const string ManifestStorageKeySuffix = "_dash_manifest_v1";
     private static readonly Regex AsinPattern = new(
         "^[A-Za-z0-9]{10}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -70,6 +74,77 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         return keySetId;
     }
 
+    public async Task SaveDashManifestAsync(
+        string accountId,
+        string asin,
+        Uri manifestUri,
+        IReadOnlyList<AudibleWidevineStreamKey> streamKeys,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        ValidateManifestReference(manifestUri, streamKeys);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var payload = new StoredDashManifest(
+            manifestUri.AbsoluteUri,
+            streamKeys.Select(key => new StoredStreamKey(
+                key.PeriodIndex, key.GroupIndex, key.TrackIndex)).ToArray());
+        var json = JsonSerializer.Serialize(payload);
+        if (Encoding.UTF8.GetByteCount(json) > 12 * 1024)
+            throw new InvalidDataException("The Audible DASH playback reference exceeds the secure storage limit.");
+
+        await secrets.SetAsync(
+            GetManifestStorageKey(accountId, asin), json, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<AudibleWidevineOfflineMediaReference?> LoadDashManifestAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var json = await secrets.GetAsync(
+            GetManifestStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+        if (json is null)
+            return null;
+        if (Encoding.UTF8.GetByteCount(json) > 12 * 1024)
+            throw new InvalidDataException("The stored Audible DASH playback reference is oversized.");
+
+        StoredDashManifest? payload;
+        try
+        {
+            payload = JsonSerializer.Deserialize<StoredDashManifest>(json);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("The stored Audible DASH playback reference is malformed.", exception);
+        }
+
+        if (payload is null ||
+            !Uri.TryCreate(payload.ManifestUri, UriKind.Absolute, out var manifestUri))
+            throw new InvalidDataException("The stored Audible DASH manifest URI is invalid.");
+
+        var streamKeys = payload.StreamKeys?
+            .Select(key => new AudibleWidevineStreamKey(key.PeriodIndex, key.GroupIndex, key.TrackIndex))
+            .ToArray();
+        if (streamKeys is null)
+            throw new InvalidDataException("The stored Audible DASH stream selection is missing.");
+
+        ValidateManifestReference(manifestUri, streamKeys);
+        return new AudibleWidevineOfflineMediaReference(manifestUri, streamKeys);
+    }
+
+    public Task RemoveDashManifestAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        return secrets.RemoveAsync(GetManifestStorageKey(accountId, asin), cancellationToken);
+    }
+
     public Task RemoveAsync(
         string accountId,
         string asin,
@@ -79,6 +154,9 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         return secrets.RemoveAsync(GetStorageKey(accountId, asin), cancellationToken);
     }
 
+    private static string GetManifestStorageKey(string accountId, string asin)
+        => GetStorageKey(accountId, asin) + ManifestStorageKeySuffix;
+
     private static string GetStorageKey(string accountId, string asin)
     {
         var identity = Encoding.UTF8.GetBytes(
@@ -86,6 +164,32 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         var digest = SHA256.HashData(identity);
         return StorageKeyPrefix + Convert.ToHexString(digest).ToLowerInvariant();
     }
+
+    private static void ValidateManifestReference(
+        Uri manifestUri,
+        IReadOnlyList<AudibleWidevineStreamKey> streamKeys)
+    {
+        ArgumentNullException.ThrowIfNull(manifestUri);
+        ArgumentNullException.ThrowIfNull(streamKeys);
+        if (!manifestUri.IsAbsoluteUri ||
+            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            manifestUri.AbsoluteUri.Length > MaximumManifestUriCharacters ||
+            manifestUri.UserInfo.Length != 0)
+            throw new ArgumentException("The Audible DASH manifest reference must be a bounded HTTPS URI.", nameof(manifestUri));
+
+        if (streamKeys.Count is 0 or > MaximumStreamKeys ||
+            streamKeys.Any(key =>
+                key.PeriodIndex < 0 || key.GroupIndex < 0 || key.TrackIndex < 0))
+            throw new ArgumentException("The Audible DASH audio stream selection is invalid.", nameof(streamKeys));
+    }
+
+    private sealed record StoredDashManifest(string ManifestUri, StoredStreamKey[] StreamKeys);
+    private sealed record StoredStreamKey(int PeriodIndex, int GroupIndex, int TrackIndex);
+}
+
+public sealed record AudibleWidevineOfflineMediaReference(
+    Uri ManifestUri,
+    IReadOnlyList<AudibleWidevineStreamKey> StreamKeys);
 
     private static void ValidateIdentity(string accountId, string asin)
     {
