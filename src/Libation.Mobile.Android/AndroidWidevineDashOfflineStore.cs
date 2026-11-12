@@ -119,7 +119,7 @@ public sealed class AndroidWidevineDashOfflineStore
         var scope = GetTitleScope(accountId, asin);
         var cache = GetCache();
         var liveKeys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var key in cache.GetKeys())
+        foreach (var key in GetCacheKeys(cache))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!string.IsNullOrWhiteSpace(key))
@@ -246,7 +246,7 @@ public sealed class AndroidWidevineDashOfflineStore
                 ? new HashSet<string>(indexedKeys, StringComparer.Ordinal)
                 : new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (var cacheKey in cache.GetKeys())
+            foreach (var cacheKey in GetCacheKeys(cache))
             {
                 if (cacheKey.StartsWith(scope + ":", StringComparison.Ordinal))
                     keysToRemove.Add(cacheKey);
@@ -260,6 +260,34 @@ public sealed class AndroidWidevineDashOfflineStore
             WriteCacheIndex(index);
             WriteCacheRequirements(requirements);
         }
+    }
+
+    private static HashSet<string> GetCacheKeys(SimpleCache cache)
+    {
+        // Media3 exposes SimpleCache.getKeys() publicly, but Xamarin's current
+        // binding omits that member from its C# projection. Invoke the public
+        // Java signature directly so cache reconciliation/removal stays exact.
+        using var runtimeClass = cache.Class;
+        using var getKeys = runtimeClass.GetMethod(
+            "getKeys", Array.Empty<Java.Lang.Class>());
+        using var rawKeys = getKeys.Invoke(
+            cache, Array.Empty<Java.Lang.Object>())
+            ?? throw new InvalidDataException("Media3 returned no cache-key set.");
+
+        if (rawKeys is not Java.Util.ISet keySet)
+            throw new InvalidDataException("Media3 returned an unexpected cache-key collection.");
+
+        using var iterator = keySet.Iterator();
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        while (iterator.HasNext)
+        {
+            using var item = iterator.Next();
+            var key = item?.ToString();
+            if (!string.IsNullOrWhiteSpace(key))
+                keys.Add(key);
+        }
+
+        return keys;
     }
 
     private CacheDataSource.Factory CreateCacheDataSourceFactory(
