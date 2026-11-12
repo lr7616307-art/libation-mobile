@@ -42,6 +42,24 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         return true;
     }
 
+    public async Task<bool> HasOfflineMediaAsync(
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        var isComplete = await keySetStore.IsDashDownloadCompleteAsync(accountId, asin, cancellationToken)
+            .ConfigureAwait(false);
+        if (!isComplete)
+            return false;
+
+        var reference = await keySetStore.LoadDashManifestAsync(accountId, asin, cancellationToken)
+            .ConfigureAwait(false);
+        if (reference is null)
+            return false;
+
+        return new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
+            .HasCachedResources(accountId, asin);
+    }
+
     /// <summary>
     /// Obtains an Audible-issued Widevine manifest, creates a platform offline
     /// challenge, supplies Audible's opaque response to MediaDrm, and persists
@@ -95,6 +113,49 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     }
 
     /// <summary>
+    /// Downloads only the selected provider-encrypted DASH audio representation
+    /// into the app-private Media3 cache. No segment is decrypted or exported.
+    /// The encrypted manifest reference is saved before transfer so interrupted
+    /// work can be retried without putting signed URLs in ordinary queue storage.
+    /// </summary>
+    public async Task DownloadOfflineMediaAsync(
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false))
+            await AcquireOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false);
+
+        if (await HasOfflineMediaAsync(asin, cancellationToken).ConfigureAwait(false))
+            return;
+
+        var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
+        var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
+            .ConfigureAwait(false);
+
+        await keySetStore.SaveDashManifestAsync(
+            accountId, asin, content.ManifestUri, manifest.AudioStreamKeys, cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            var offlineStore = new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context);
+            await offlineStore.DownloadAsync(
+                accountId, asin, content.ManifestUri, manifest.AudioStreamKeys, cancellationToken)
+                .ConfigureAwait(false);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await keySetStore.MarkDashDownloadCompleteAsync(accountId, asin, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Keep partial encrypted segments and the encrypted reference so the
+            // next attempt can resume. The completion marker remains absent.
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Starts DRM-aware DASH playback using a fresh provider manifest and a
     /// previously persisted offline key-set ID. DASH media itself is still
     /// fetched by Media3; this is not yet a local/offline segment cache.
@@ -113,14 +174,31 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
 
         try
         {
-            var content = await source.ResolveWidevineAsync(asin, cancellationToken)
-                .ConfigureAwait(false);
-            var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
-                .ConfigureAwait(false);
+            var mediaReference = await keySetStore.LoadDashManifestAsync(accountId, asin, cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    "No offline Audible DASH media is saved for this audiobook.");
+
+            if (!await keySetStore.IsDashDownloadCompleteAsync(accountId, asin, cancellationToken)
+                    .ConfigureAwait(false) ||
+                !new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
+                    .HasCachedResources(accountId, asin))
+                throw new InvalidOperationException(
+                    "The Audible DASH download is incomplete. Connect to the internet and retry the offline download.");
 
             cancellationToken.ThrowIfCancellationRequested();
+            var streamKeyValues = mediaReference.StreamKeys
+                .SelectMany(key => new[] { key.PeriodIndex, key.GroupIndex, key.TrackIndex })
+                .ToArray();
+
             AndroidLocalAudioPlayer.StartWidevineDash(
-                content.ManifestUri, keySetId, title, startPositionMilliseconds);
+                mediaReference.ManifestUri,
+                keySetId,
+                title,
+                accountId,
+                asin,
+                streamKeyValues,
+                startPositionMilliseconds);
         }
         finally
         {
@@ -148,6 +226,10 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             using var drmSession = new AndroidWidevineOfflineSession();
             drmSession.RestoreOfflineKeys(keySetId);
             drmSession.RemoveOfflineKeys();
+            new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
+                .RemoveTitle(accountId, asin);
+            await keySetStore.RemoveDashManifestAsync(accountId, asin, cancellationToken)
+                .ConfigureAwait(false);
             await keySetStore.RemoveAsync(accountId, asin, cancellationToken)
                 .ConfigureAwait(false);
         }
