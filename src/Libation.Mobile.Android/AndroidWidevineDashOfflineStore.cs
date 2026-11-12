@@ -56,7 +56,7 @@ public sealed class AndroidWidevineDashOfflineStore
         var scopedCacheFactory = CreateCacheDataSourceFactory(cache, scope, manifestUri);
         var androidUri = global::Android.Net.Uri.Parse(manifestUri.AbsoluteUri);
 
-        var streamKeyList = new Java.Util.ArrayList();
+        var streamKeyList = new Android.Runtime.JavaList<StreamKey>();
         foreach (var key in streamKeys)
             streamKeyList.Add(new StreamKey(key.PeriodIndex, key.GroupIndex, key.TrackIndex));
 
