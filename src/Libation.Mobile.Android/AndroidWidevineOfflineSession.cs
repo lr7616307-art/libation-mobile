@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Android.Media;
 using Android.OS;
 using Java.Util;
+using Libation.Mobile.Audible;
 
 namespace Libation.Mobile.Android;
 
@@ -135,6 +136,23 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
         if (keySetId.Length is 0 or > 1024)
             throw new ArgumentOutOfRangeException(nameof(keySetId));
         return (int)mediaDrm.GetOfflineLicenseState(keySetId);
+    }
+
+    /// <summary>
+    /// Restores the opaque key set into this session and reads Widevine's
+    /// documented remaining-duration fields. Missing vendor fields remain
+    /// unknown; callers must not treat them as a licence failure.
+    /// </summary>
+    public AudibleWidevineLicenseDuration GetOfflineLicenseDuration(byte[] keySetId)
+    {
+        EnsureNotDisposed();
+        ArgumentNullException.ThrowIfNull(keySetId);
+        if (keySetId.Length is 0 or > 1024)
+            throw new ArgumentOutOfRangeException(nameof(keySetId));
+
+        mediaDrm.RestoreKeys(sessionId, keySetId);
+        var keyStatus = mediaDrm.QueryKeyStatus(sessionId);
+        return AudibleWidevineLicenseDuration.FromKeyStatus(keyStatus);
     }
 
     /// <summary>
