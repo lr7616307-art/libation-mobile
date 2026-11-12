@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 
@@ -49,6 +48,9 @@ public static class AudibleWidevineManifestParser
         {
             throw new InvalidDataException("The Audible DASH manifest is not valid XML.", exception);
         }
+
+        if (!string.Equals(document.Root?.Name.LocalName, "MPD", StringComparison.Ordinal))
+            throw new InvalidDataException("The Audible manifest root element is not a DASH MPD.");
 
         var widevineProtection = document
             .Descendants()
