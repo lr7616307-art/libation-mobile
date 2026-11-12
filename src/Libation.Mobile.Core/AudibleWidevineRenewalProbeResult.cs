@@ -12,4 +12,9 @@ public sealed record AudibleWidevineRenewalProbeResult(
     string? LicenseRefreshDate,
     string? LicenseRemovalDate,
     string? LicenseExpirationDate,
-    string? ErrorMessage);
+    string? ErrorMessage)
+{
+    public string? GrantedRight { get; init; }
+    public string? AccessExpiryDate { get; init; }
+    public IReadOnlyList<string> LicenseDenialReasons { get; init; } = Array.Empty<string>();
+}
