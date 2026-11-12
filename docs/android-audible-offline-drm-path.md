@@ -36,7 +36,7 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 ## Pass 10 implementation — integration groundwork
 
 - Added `AndroidWidevineOfflinePlaybackCoordinator` to join the provider content grant, MPD/PSSH parsing, Android `MediaDrm` offline challenge, Audible licence exchange, `ProvideKeyResponse`, and secure key-set persistence.
-- Added cleanup for a just-issued offline key set when secure persistence fails, plus a device-side offline-key release operation before deleting the encrypted identifier.
+- Added cleanup for a just-issued persistent offline key set when secure persistence fails. Explicit local deletion uses Android's persistent `removeOfflineLicense(keySetId)` API; this does not notify Audible's licence server.
 - Registered a platform factory that creates the coordinator from the already-saved Audible identity and its account identifier; it does not initiate login or silently change device registration.
 - Added a dedicated `AndroidLocalAudioPlayer.StartWidevineDash` entry point and service action. It passes the HTTPS MPD and offline key-set ID to Media3, sets the Widevine UUID and offline key-set ID on the media item's DRM configuration, and uses the Media3 DASH module.
 - Protected playback uses a dedicated Media3 cache-only DASH source. The selected encrypted audio representation, MPD and referenced segments are cached under app-private storage; cache keys are title-scoped hashes, not signed provider URLs. The player refuses network fallback on cache misses.
@@ -63,7 +63,7 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 
 - Add a **Remove offline copy** action to Audible title details, shown only when the catalogue marks a Widevine title as offline.
 - Before cleanup, stop the matching protected player on Android's main looper so its Media3 session is no longer reading the cache or using the offline licence.
-- Restore the device-side MediaDrm key set and request its removal before deleting the encrypted key-set identifier.
+- Stop matching protected playback and remove the persistent key set with Android `MediaDrm.removeOfflineLicense(keySetId)` before deleting its encrypted identifier. This is local device cleanup, not a server-confirmed licence release.
 - Remove the title-scoped DASH cache resources and protected manifest metadata, then clear the local catalogue's offline-available flag.
 - Keep the offline copy separate from ordinary imported audio; this action does not touch clear local audiobooks or other Audible titles.
 
@@ -86,10 +86,28 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - If the account identity is unavailable or an audit fails transiently, keep the existing catalogue state; an inconclusive check must not label an offline title as missing.
 - Add a regression test proving library metadata sync preserves the local Widevine offline flag.
 
+## Pass 16 — interrupted-download cache-index recovery
+
+- Extracted cache-index reconciliation into a platform-neutral helper used by the Android cache auditor and covered by unit tests.
+- Remove stale index keys that no longer exist in Media3's cache.
+- Recover live title-scoped cache keys committed immediately before an interrupted index write so those resources remain discoverable for later deletion.
+- Do not treat recovered orphan keys as complete: their expected byte ranges are unknown until a retry observes the matching `DataSpec` again and records trusted range requirements.
+- Preserve partial encrypted segments across cancellation and retry; starting a new manifest/stream selection invalidates the prior completion marker before transfer.
+- Added regression coverage for stale-key removal, orphan-key recovery and completion-marker invalidation on retry.
+
+## Pass 17 — offline licence state and account disconnect cleanup
+
+- Check Android's persistent offline-licence state before protected playback. A usable key set can be reused; a released or missing key set is replaced only after VØRATH obtains a fresh provider-issued Widevine grant. An unknown state fails closed and keeps the stored identifier.
+- Remove an inactive old key set before storing its replacement. If the stored key-set ID is no longer present in MediaDrm, remove its local metadata and title cache before reacquiring.
+- Add an encrypted per-account ASIN index alongside each saved key set. The index key contains a hash of the account identifier and the index value is stored through the encrypted secret store.
+- Before Audible credentials are cleared on disconnect, enumerate the account's indexed titles, stop matching protected playback, remove each persistent Android offline key set, remove its DASH cache and encrypted metadata, then clear the catalogue's offline flags.
+- If local cleanup fails, keep the Audible identity and session so the cleanup can be retried; do not strand key sets behind a deleted account.
+- The current removal method is device-local. Android documents a separate KEY_TYPE_RELEASE request/response flow that lets the licence server confirm release and update its offline allocation. That provider-facing release exchange, explicit server revocation, same-key-set licence renewal and real provider/device compatibility are **not yet implemented**. Re-acquisition after an inactive key set is a fresh provider grant, not a claimed renewal of the previous key set.
+
 ## Remaining implementation — not yet verified
 
-1. Add broader integration coverage for stale-index reconciliation and interrupted-download retry behavior.
-2. Add licence expiry/renewal and provider release/revocation handling, plus cleanup when an Audible account is disconnected or loses access.
+1. Implement and validate Audible's server-confirmed KEY_TYPE_RELEASE exchange and documented licence renewal/revocation semantics before claiming provider-side licence release.
+2. Verify account cleanup and interrupted-download retry behavior with multiple entitled titles on a physical Android 10 handset.
 3. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, challenge/response compatibility, persistent key-set validity, DASH segment completion, offline playback with network disabled, cancellation/retry, app restart, removal/release and reinstall behavior.
 
 ## Android 10 / device constraints
