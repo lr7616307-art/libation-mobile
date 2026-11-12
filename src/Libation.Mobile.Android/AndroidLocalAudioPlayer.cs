@@ -138,6 +138,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineAsin, asin);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineStreamKeys, streamKeyValues);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraAutoPlay, autoPlay);
         StartService(intent, foreground: true);
     }
 
