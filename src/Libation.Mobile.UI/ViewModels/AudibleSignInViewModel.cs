@@ -19,6 +19,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     private int _syncedAudiobookCount;
     private DateTimeOffset? _lastLibrarySync;
     private string _librarySyncStatus = "No successful Audible library sync yet.";
+    private Func<CancellationToken, Task>? _beforeDisconnectCleanup;
 
     public AudibleSignInViewModel(AccountConnectionService connection, IExternalBrowserLauncher browser)
     {
@@ -116,6 +117,13 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(LibrarySyncStatusLabel));
         OnPropertyChanged(nameof(LastLibrarySyncLabel));
     }
+
+    /// <summary>
+    /// Platform hosts may install a local offline-licence cleanup step. It runs
+    /// before account secrets are cleared so a failure never strands DRM key sets.
+    /// </summary>
+    public void SetBeforeDisconnectCleanup(Func<CancellationToken, Task>? cleanup)
+        => _beforeDisconnectCleanup = cleanup;
 
     private void NotifyAccountSummaryChanged()
     {
@@ -262,6 +270,11 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         try
         {
             IsBusy = true;
+            if (_beforeDisconnectCleanup is not null)
+            {
+                Status = "Removing this account's protected offline copies from the device…";
+                await _beforeDisconnectCleanup(cancellationToken);
+            }
             await _connection.DisconnectAsync(cancellationToken);
             _lastState = await _connection.GetStateAsync(cancellationToken);
             NotifyAccountSummaryChanged();
