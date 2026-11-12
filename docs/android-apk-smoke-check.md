@@ -8,6 +8,19 @@ Use this guide to install and verify a CI-built VØRATH APK on an Android phone.
 - **ARM64 / `android-arm64`**: use this only when the phone supports 64-bit ARM apps.
 - The Android project targets API 29 (Android 10) or later. CI builds both ABIs, but compilation is not proof of installation or runtime compatibility on a particular phone.
 
+## APK size target
+
+The ARMv7 test APK is built as a single-ABI package for 32-bit ARM phones.
+The measured package at commit `08630424` was **22,728,076 bytes (21.68 MiB)**.
+The Android CI workflow enforces a **24,000,000-byte maximum** for future ARMv7
+test APKs and reports the largest compressed package entries. This is a build
+size budget, not a promise that every later feature will fit without review.
+
+The package retains Avalonia/Skia rendering, AndroidX Media3 playback and the
+.NET Android runtime. Do not remove those runtime components solely to reduce
+the file size; validate the resulting app on a real device after any packaging
+or linker change.
+
 ## Download from GitHub Actions
 
 1. Open the repository [Actions page](https://github.com/lr7616307-art/libation-mobile/actions) in your phone browser and sign in to GitHub.
