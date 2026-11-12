@@ -17,7 +17,7 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
         UUID.FromString("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed");
 
     private const int OfflineKeyRequestType = (int)MediaDrmKeyType.Offline;
-    private const int ReleaseKeyRequestType = 3; // Android MediaDrm.KEY_TYPE_RELEASE
+    private const int ReleaseKeyRequestType = (int)MediaDrmKeyType.Release;
     private const int MaximumInitializationDataBytes = 1024 * 1024;
     private const int MaximumLicenseResponseBytes = 1024 * 1024;
 
