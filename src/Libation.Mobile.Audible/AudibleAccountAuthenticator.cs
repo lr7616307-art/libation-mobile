@@ -116,6 +116,9 @@ public sealed class AudibleAccountAuthenticator(
         ArgumentNullException.ThrowIfNull(currentSession);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Capture before loading so a concurrent logout or replacement login
+        // cannot make this refresh operate on a stale snapshot as the new identity.
+        var identityGeneration = lifecycleCoordinator.CurrentGeneration;
         var snapshot = await snapshotStore.LoadAsync(cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("No saved Audible identity is available. Sign in again.");
 
@@ -125,7 +128,9 @@ public sealed class AudibleAccountAuthenticator(
             identity,
             tokenRefresher,
             systemDateTime,
-            snapshotStore);
+            snapshotStore,
+            lifecycleCoordinator,
+            identityGeneration);
 
         // The maintainer persists the complete identity before exposing a refreshed token.
         var accessToken = await maintainer.GetAccessTokenAsync().ConfigureAwait(false)
