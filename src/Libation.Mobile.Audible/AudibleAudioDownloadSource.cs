@@ -16,7 +16,7 @@ public sealed record AudibleWidevineContent(
     Uri ManifestUri,
     string? ContentFormat,
     string? Acr,
-    string? FileVersion);
+    long? FileVersion);
 
 /// <summary>
 /// Requests Audible-issued content licences and exposes Audible's authenticated
