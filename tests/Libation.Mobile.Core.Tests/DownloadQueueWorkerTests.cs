@@ -29,6 +29,32 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_PublishesDownloadedFileBeforeMarkingCompletedAndCleansStagingCopy()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-publish");
+        var staging = Path.Combine(directory.Path, "book-publish.m4b");
+        var payload = new byte[] { 4, 5, 6, 7 };
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload)
+        }));
+        var publisher = new RecordingCompletionHandler();
+        var worker = new DownloadQueueWorker(
+            queue,
+            new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book-publish"), staging),
+            publisher);
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        Assert.Equal(payload, publisher.PublishedBytes);
+        Assert.False(File.Exists(staging));
+        Assert.Equal(DownloadStatus.Completed, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_EmptyResponseFailsAndDoesNotPublishFile()
     {
         using var directory = new TemporaryDirectory();
@@ -159,6 +185,19 @@ public sealed class DownloadQueueWorkerTests
         Assert.Equal(2, source.CallCount);
         Assert.Equal(1, source.MaximumConcurrentCalls);
         Assert.All(await queue.GetItemsAsync(), item => Assert.Equal(DownloadStatus.Completed, item.Status));
+    }
+
+    private sealed class RecordingCompletionHandler : IAudioDownloadCompletionHandler
+    {
+        public byte[] PublishedBytes { get; private set; } = [];
+
+        public async Task PublishAsync(
+            DownloadQueueItem item,
+            string stagingFilePath,
+            CancellationToken cancellationToken = default)
+        {
+            PublishedBytes = await File.ReadAllBytesAsync(stagingFilePath, cancellationToken);
+        }
     }
 
     private sealed class ConcurrencyTrackingSource : IAuthorizedAudioDownloadSource
