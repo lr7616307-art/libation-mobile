@@ -14,6 +14,7 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
     private static TaskCompletionSource<string?>? _pending;
     private static string? _pendingRequestId;
     private static TaskCompletionSource<string?>? _pendingMarketplace;
+    private static string? _pendingMarketplaceRequestId;
     private readonly Context _context = context ?? throw new ArgumentNullException(nameof(context));
 
     public async Task<string?> SelectMarketplaceAsync(
@@ -21,27 +22,36 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
         CancellationToken cancellationToken = default)
     {
         var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requestId = Guid.NewGuid().ToString("N");
         lock (Gate)
         {
             if (_pendingMarketplace is not null)
                 throw new InvalidOperationException("An Audible marketplace selection is already open.");
             _pendingMarketplace = completion;
+            _pendingMarketplaceRequestId = requestId;
         }
 
         try
         {
             var intent = new Intent(_context, typeof(AudibleMarketplaceActivity));
             intent.PutExtra(AudibleMarketplaceActivity.DefaultMarketplaceExtra, defaultMarketplace);
+            intent.PutExtra(AudibleMarketplaceActivity.RequestIdExtra, requestId);
             intent.AddFlags(ActivityFlags.NewTask);
             _context.StartActivity(intent);
-            using var registration = cancellationToken.Register(() => CompleteMarketplace(null));
+            using var registration = cancellationToken.Register(() => CompleteMarketplace(requestId, null));
             return await completion.Task.WaitAsync(TimeSpan.FromMinutes(2), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
+            CompleteMarketplace(requestId, null);
+            AudibleMarketplaceActivity.Cancel(requestId);
             lock (Gate)
             {
-                if (ReferenceEquals(_pendingMarketplace, completion)) _pendingMarketplace = null;
+                if (string.Equals(_pendingMarketplaceRequestId, requestId, StringComparison.Ordinal))
+                {
+                    _pendingMarketplaceRequestId = null;
+                    if (ReferenceEquals(_pendingMarketplace, completion)) _pendingMarketplace = null;
+                }
             }
         }
     }
@@ -101,13 +111,19 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
         }
     }
 
-    internal static void CompleteMarketplace(string? marketplace)
+    internal static void CompleteMarketplace(string requestId, string? marketplace)
     {
+        if (string.IsNullOrWhiteSpace(requestId))
+            return;
+
         TaskCompletionSource<string?>? completion;
         lock (Gate)
         {
+            if (!string.Equals(_pendingMarketplaceRequestId, requestId, StringComparison.Ordinal))
+                return;
             completion = _pendingMarketplace;
             _pendingMarketplace = null;
+            _pendingMarketplaceRequestId = null;
         }
         completion?.TrySetResult(marketplace);
     }
