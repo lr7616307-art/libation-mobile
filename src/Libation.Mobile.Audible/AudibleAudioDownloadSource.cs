@@ -225,6 +225,28 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         return response;
     }
 
+    /// <summary>
+    /// Exchanges opaque Android MediaDrm challenge bytes using the Base64 text
+    /// transport required by Audible's JSON string field, then returns the provider
+    /// licence as opaque bytes for MediaDrm. No DRM message is parsed here.
+    /// </summary>
+    public async Task<byte[]> RequestWidevineLicenseBytesAsync(
+        string audiobookId,
+        byte[] platformChallenge,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(platformChallenge);
+        if (platformChallenge.Length is 0 or > AudibleWidevineLicenseEncoding.MaximumMessageBytes)
+            throw new ArgumentOutOfRangeException(
+                nameof(platformChallenge), "The Widevine challenge has an unsupported size.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var encodedChallenge = AudibleWidevineLicenseEncoding.EncodeChallenge(platformChallenge);
+        var encodedResponse = await RequestWidevineLicenseAsync(
+            audiobookId, encodedChallenge, cancellationToken).ConfigureAwait(false);
+        return AudibleWidevineLicenseEncoding.DecodeLicenseResponse(encodedResponse);
+    }
+
     private static async Task<string> RequestWidevineLicenseSafelyAsync(
         Api api,
         Locale locale,
