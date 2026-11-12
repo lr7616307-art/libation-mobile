@@ -522,7 +522,8 @@ public sealed class AndroidWidevineDashOfflineStore
                 : "segment";
             var digest = SHA256.HashData(Encoding.UTF8.GetBytes(uri));
             var cacheKey = titleScope + ":" + kind + ":" + Convert.ToHexString(digest).ToLowerInvariant();
-            var position = dataSpec.Position;
+            // The URI check above rejects a null DataSpec before this point.
+            var position = dataSpec!.Position;
             var length = dataSpec.Length;
             recordCacheKey(titleScope, cacheKey, position, length);
             return cacheKey;
