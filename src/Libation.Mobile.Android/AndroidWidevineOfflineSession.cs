@@ -122,6 +122,14 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
     /// Restores a previously stored offline key set into this new DRM session.
     /// The key-set identifier must come from the encrypted app-private store.
     /// </summary>
+    /// <summary>Removes the offline licence associated with the currently restored session.</summary>
+    public void RemoveOfflineKeys()
+    {
+        EnsureNotDisposed();
+        mediaDrm.RemoveKeys(sessionId);
+        hasPendingOfflineRequest = false;
+    }
+
     public void RestoreOfflineKeys(byte[] keySetId)
     {
         EnsureNotDisposed();
