@@ -91,6 +91,104 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
     }
 
     /// <summary>
+    /// Stores a newly issued renewal key-set separately from the active key set.
+    /// This staging record makes renewal recoverable if the app stops before
+    /// the active identifier is replaced.
+    /// </summary>
+    public async Task StageRenewalKeySetAsync(
+        string accountId,
+        string asin,
+        byte[] renewedKeySetId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        ArgumentNullException.ThrowIfNull(renewedKeySetId);
+        if (renewedKeySetId.Length is 0 or > MaximumKeySetIdBytes)
+            throw new ArgumentOutOfRangeException(
+                nameof(renewedKeySetId), "The Android DRM key-set identifier has an unsupported size.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await accountIndexGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await AddAccountTitleUnderGateAsync(accountId, asin, cancellationToken)
+                .ConfigureAwait(false);
+            await secrets.SetAsync(
+                GetPendingRenewalStorageKey(accountId, asin),
+                Convert.ToBase64String(renewedKeySetId),
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            accountIndexGate.Release();
+        }
+    }
+
+    public async Task<byte[]?> LoadPendingRenewalKeySetAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        cancellationToken.ThrowIfCancellationRequested();
+        var encoded = await secrets.GetAsync(
+            GetPendingRenewalStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+        if (encoded is null)
+            return null;
+
+        byte[] keySetId;
+        try
+        {
+            keySetId = Convert.FromBase64String(encoded);
+        }
+        catch (FormatException exception)
+        {
+            throw new InvalidDataException(
+                "The staged Android DRM renewal key-set identifier is malformed.", exception);
+        }
+
+        if (keySetId.Length is 0 or > MaximumKeySetIdBytes)
+            throw new InvalidDataException(
+                "The staged Android DRM renewal key-set identifier has an unsupported size.");
+        return keySetId;
+    }
+
+    /// <summary>
+    /// Promotes the staged identifier only after it has been durably written.
+    /// If writing the active record fails, the old active record and staged
+    /// recovery record both remain available. Repeating promotion is safe.
+    /// </summary>
+    public async Task PromotePendingRenewalKeySetAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        var pending = await LoadPendingRenewalKeySetAsync(accountId, asin, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException("No staged Audible renewal key set exists.");
+        try
+        {
+            await SaveAsync(accountId, asin, pending, cancellationToken).ConfigureAwait(false);
+            await secrets.RemoveAsync(
+                GetPendingRenewalStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(pending);
+        }
+    }
+
+    public async Task DiscardPendingRenewalKeySetAsync(
+        string accountId,
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateIdentity(accountId, asin);
+        await secrets.RemoveAsync(
+            GetPendingRenewalStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Returns the ASINs with key-set records for this account. The list itself
     /// is stored as an encrypted secret and its storage key contains only a hash
     /// of the account identifier. It enables deterministic logout cleanup.
@@ -319,6 +417,7 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
             await secrets.RemoveAsync(GetManifestStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
             await secrets.RemoveAsync(GetManifestCompleteStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
             await secrets.RemoveAsync(GetProviderReferenceStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
+            await secrets.RemoveAsync(GetPendingRenewalStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
 
             var titles = await ReadAccountTitlesUnderGateAsync(accountId, cancellationToken)
                 .ConfigureAwait(false);
