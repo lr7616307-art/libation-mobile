@@ -986,8 +986,7 @@ public partial class MainView : UserControl
 
         if (!string.IsNullOrWhiteSpace(book.ProtectedAudioFileName))
         {
-            _viewModel.ReportAudioStatus(
-                "This Audible file is saved in VØRATH, but remains DRM-protected and cannot be played by the current player.");
+            await PlayProtectedAudibleBookAsync(book);
             return;
         }
 
@@ -996,6 +995,67 @@ public partial class MainView : UserControl
             _viewModel.DownloadSettingsStatus.StartsWith("Added to the Audible download queue.", StringComparison.Ordinal))
         {
             await StartPendingDownloadsAsync();
+        }
+    }
+
+    private async Task PlayProtectedAudibleBookAsync(Audiobook book)
+    {
+        if (_localAudioPlayer is null)
+        {
+            _viewModel.ReportAudioStatus("Protected Audible playback is unavailable on this platform.");
+            return;
+        }
+
+        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+        {
+            _viewModel.ReportAudioStatus("The Android Widevine playback service is not available in this build.");
+            return;
+        }
+
+        try
+        {
+            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(CancellationToken.None);
+            if (coordinator is null)
+            {
+                _viewModel.ReportAudioStatus("Sign in to Audible again before playing this protected audiobook.");
+                return;
+            }
+
+            var asin = book.Id["provider:".Length..];
+            if (!await coordinator.HasOfflineLicenseAsync(asin))
+            {
+                _viewModel.ReportAudioStatus("Requesting an Audible-authorized Widevine offline licence…");
+                await coordinator.AcquireOfflineLicenseAsync(asin);
+            }
+
+            await coordinator.PlayAsync(
+                asin,
+                book.Title,
+                _viewModel.GetResumePositionMilliseconds(book.Id));
+
+            _playingAudiobookId = book.Id;
+            _viewModel.SetNowPlayingBook(book.Id);
+            _playbackProgressTimer.Start();
+            _playbackCheckpointTimer.Start();
+            await _viewModel.MarkPlaybackStartedAsync(book.Id);
+            BeginChapterMetadataLoad(book.Id);
+            UpdatePlaybackProgressUi();
+            _viewModel.ReportAudioStatus(
+                "Playing through Audible's protected DASH stream with the saved Widevine licence. Keep internet connected; encrypted audio segments are not cached for offline playback yet.");
+        }
+        catch (NotSupportedException)
+        {
+            _viewModel.ReportAudioStatus(
+                "Audible or this device did not provide a supported Widevine licence for this title.");
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.ReportAudioStatus("Protected Audible playback was cancelled.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus(
+                "Could not start protected Audible playback. Check the Audible account, connection and device registration.");
         }
     }
 
