@@ -109,6 +109,15 @@ public static class AudibleWidevineLicenseRefreshProtocol
         var result = matches[0];
         var status = result["status"] as JObject;
         var metadata = result["license_metadata"] as JObject;
+        var denialReasons = status?["license_denial_reasons"] is JArray denialArray
+            ? denialArray
+                .OfType<JValue>()
+                .Select(value => value.Value<string>())
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value!.Trim())
+                .Take(8)
+                .ToArray()
+            : Array.Empty<string>();
 
         return new AudibleWidevineLicenseRefreshResult(
             expectedAsin,
@@ -118,7 +127,12 @@ public static class AudibleWidevineLicenseRefreshProtocol
             metadata?["license_id"]?.Value<string>(),
             metadata?["license_refresh_date"]?.Value<string>(),
             metadata?["license_removal_date"]?.Value<string>(),
-            metadata?["license_expiration_date"]?.Value<string>());
+            metadata?["license_expiration_date"]?.Value<string>())
+        {
+            GrantedRight = result["granted_right"]?.Value<string>(),
+            AccessExpiryDate = result["access_expiry_date"]?.Value<string>(),
+            LicenseDenialReasons = denialReasons
+        };
     }
 }
 
@@ -134,4 +148,9 @@ public sealed record AudibleWidevineLicenseRefreshResult(
     string? LicenseId,
     string? LicenseRefreshDate,
     string? LicenseRemovalDate,
-    string? LicenseExpirationDate);
+    string? LicenseExpirationDate)
+{
+    public string? GrantedRight { get; init; }
+    public string? AccessExpiryDate { get; init; }
+    public IReadOnlyList<string> LicenseDenialReasons { get; init; } = Array.Empty<string>();
+}
