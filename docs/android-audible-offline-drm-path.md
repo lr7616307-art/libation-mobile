@@ -15,13 +15,13 @@ The pinned AudibleApi source exposes two distinct operations:
 
 Important registration behavior: AudibleApi changes a requested Widevine content licence to ADRM when the saved identity's `DeviceType` does not match its Android Audible profile. Therefore, VØRATH must inspect the actual returned `DrmType`; it must never assume that asking for Widevine means Widevine was granted.
 
-The upstream Libation desktop implementation uses a separate CDM library to parse a licence into content keys. That key-extraction/decryption path is not being ported. VØRATH's intended route is for Android `MediaDrm` to create the challenge and consume the licence response through its own `ProvideKeyResponse` lifecycle.
+Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` implementation logs its `ApiErrorException` on failure, and that exception can retain the JSON request body containing `licenseChallenge`. The app must not enable this production call until the logging path is proven to redact the challenge or a safe upstream/API transport path is used. Do not assume that suppressing VØRATH's own exception logging also suppresses the dependency's Serilog call.\n\nThe upstream Libation desktop implementation uses a separate CDM library to parse a licence into content keys. That key-extraction/decryption path is not being ported. VØRATH's intended route is for Android `MediaDrm` to create the challenge and consume the licence response through its own `ProvideKeyResponse` lifecycle.
 
 ## Pass 8 implementation
 
 - Added `AudibleAudioDownloadSource.ResolveWidevineAsync`, which explicitly requests Widevine, rejects a response that AudibleApi downgraded to ADRM, and returns the provider's HTTPS DASH manifest URL as a manifest reference (not as an ordinary audio-file download target).
 - Preserved the existing ADRM download request path separately, so the new Widevine experiment does not silently change existing queue behavior.
-- Added `RequestWidevineLicenseAsync`, which forwards the exact platform-generated challenge to AudibleApi's authenticated `WidevineDrmLicense` operation. The challenge/response encoding contract still needs verification on Android `MediaDrm`.
+- Added `RequestWidevineLicenseAsync`, which forwards the exact platform-generated challenge to AudibleApi's authenticated `WidevineDrmLicense` operation. The challenge/response encoding contract still needs verification on Android `MediaDrm`; the upstream API's error logging behavior also needs a safe redaction solution before production use.
 - Added validation for the 10-character ASIN, non-empty challenge, cancellation before the provider request, and non-empty provider response.
 - Added unit tests for challenge forwarding and safe validation behavior.
 
