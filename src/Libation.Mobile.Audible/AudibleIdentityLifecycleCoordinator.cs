@@ -47,7 +47,25 @@ public sealed class AudibleIdentityLifecycleCoordinator
     /// A newer login/replacement or clear invalidates the operation before it
     /// can commit, or causes it to report cancellation if superseded during commit.
     /// </summary>
+    /// <summary>
+    /// Current identity generation. A maintainer captures this when its identity is
+    /// restored; later login or clear operations permanently invalidate that maintainer.
+    /// </summary>
+    public long CurrentGeneration => Volatile.Read(ref generation);
+
+    public Task<T> ExecuteCurrentAsync<T>(
+        Func<CancellationToken, Task<T>> operationAsync,
+        Func<T, CancellationToken, Task> commitAsync,
+        CancellationToken cancellationToken = default)
+        => ExecuteCurrentAsync(CurrentGeneration, operationAsync, commitAsync, cancellationToken);
+
+    /// <summary>
+    /// Executes work only for the identity generation supplied by the caller.
+    /// This prevents an old API session from becoming valid again merely because
+    /// it starts another operation after a newer login or disconnect has completed.
+    /// </summary>
     public async Task<T> ExecuteCurrentAsync<T>(
+        long expectedGeneration,
         Func<CancellationToken, Task<T>> operationAsync,
         Func<T, CancellationToken, Task> commitAsync,
         CancellationToken cancellationToken = default)
@@ -55,19 +73,18 @@ public sealed class AudibleIdentityLifecycleCoordinator
         ArgumentNullException.ThrowIfNull(operationAsync);
         ArgumentNullException.ThrowIfNull(commitAsync);
 
-        var operationGeneration = Volatile.Read(ref generation);
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            EnsureCurrent(operationGeneration);
+            EnsureCurrent(expectedGeneration);
 
             var result = await operationAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            EnsureCurrent(operationGeneration);
+            EnsureCurrent(expectedGeneration);
 
             await commitAsync(result, cancellationToken).ConfigureAwait(false);
-            EnsureCurrent(operationGeneration);
+            EnsureCurrent(expectedGeneration);
 
             return result;
         }
