@@ -39,6 +39,7 @@ public sealed record Audiobook(
     public string AudibleAvailabilityShortLabel => !IsProviderCatalogueEntry
         ? string.Empty
         : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "SAVED IN VØRATH"
+        : !string.IsNullOrWhiteSpace(AudioFilePath) ? "READY TO PLAY"
         : IsDownloadedOnAudible == true ? "DOWNLOADED ON AUDIBLE"
         : IsPlayableOnAudible == true ? "AVAILABLE"
         : IsPlayableOnAudible == false ? "UNAVAILABLE"
@@ -49,7 +50,9 @@ public sealed record Audiobook(
 
     [JsonIgnore]
     public string DownloadActionLabel => IsProviderCatalogueEntry
-        ? "Download in VØRATH"
+        ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶  Play"
+            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "✓  Saved"
+            : "⇩  Download"
         : "Add to queue";
 
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>
