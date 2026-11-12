@@ -31,6 +31,7 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 
     private readonly Func<string, DownloadQuality, DrmType, CancellationToken, Task<ContentLicense>> _requestLicense;
     private readonly Func<string, string, CancellationToken, Task<string>> _requestWidevineLicense;
+    private readonly Func<JObject, CancellationToken, Task<string>>? _requestWidevineLicenseRefresh;
     private readonly bool _widevineLicenseExchangeEnabled;
     private readonly string _downloadDirectory;
 
@@ -53,6 +54,8 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         // intentionally emits no request/response body in diagnostics.
         _requestWidevineLicense = (asin, challenge, cancellationToken) =>
             RequestWidevineLicenseSafelyAsync(api, locale, asin, challenge, cancellationToken);
+        _requestWidevineLicenseRefresh = (requestBody, cancellationToken) =>
+            RequestWidevineLicenseRefreshSafelyAsync(api, locale, requestBody, cancellationToken);
         _widevineLicenseExchangeEnabled = true;
         _downloadDirectory = NormalizeDownloadDirectory(downloadDirectory);
         _quality = apiQuality;
@@ -68,10 +71,12 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         Func<string, DownloadQuality, DrmType, CancellationToken, Task<ContentLicense>> requestLicense,
         Func<string, string, CancellationToken, Task<string>> requestWidevineLicense,
         string downloadDirectory,
-        AudibleDownloadQuality quality = AudibleDownloadQuality.High)
+        AudibleDownloadQuality quality = AudibleDownloadQuality.High,
+        Func<JObject, CancellationToken, Task<string>>? requestWidevineLicenseRefresh = null)
     {
         _requestLicense = requestLicense ?? throw new ArgumentNullException(nameof(requestLicense));
         _requestWidevineLicense = requestWidevineLicense ?? throw new ArgumentNullException(nameof(requestWidevineLicense));
+        _requestWidevineLicenseRefresh = requestWidevineLicenseRefresh;
         _widevineLicenseExchangeEnabled = true;
         _downloadDirectory = NormalizeDownloadDirectory(downloadDirectory);
         _quality = quality == AudibleDownloadQuality.Normal ? DownloadQuality.Normal : DownloadQuality.High;
@@ -252,6 +257,65 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         var encodedResponse = await RequestWidevineLicenseAsync(
             audiobookId, encodedChallenge, cancellationToken).ConfigureAwait(false);
         return AudibleWidevineLicenseEncoding.DecodeLicenseResponse(encodedResponse);
+    }
+
+    /// <summary>
+    /// Performs the observed Audible content-license-refresh exchange for one
+    /// Widevine title. The result status is returned verbatim and must be checked
+    /// by the caller; HTTP 200 does not mean an individual title was granted.
+    /// This method is not wired to playback or account-disconnect flows.
+    /// </summary>
+    public async Task<AudibleWidevineLicenseRefreshResult> RefreshWidevineLicenseAsync(
+        string audiobookId,
+        AudibleWidevineProviderLicenseReference reference,
+        byte[] platformChallenge,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateAsin(audiobookId);
+        ArgumentNullException.ThrowIfNull(reference);
+        ArgumentNullException.ThrowIfNull(platformChallenge);
+        var requestBody = AudibleWidevineLicenseRefreshProtocol.CreateRequestBody(
+            audiobookId, reference, platformChallenge);
+
+        var request = _requestWidevineLicenseRefresh
+            ?? throw new NotSupportedException(
+                "The authenticated Audible licence-refresh transport is unavailable in this adapter.");
+        var responseJson = await request(requestBody, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return AudibleWidevineLicenseRefreshProtocol.ParseResponse(responseJson, audiobookId);
+    }
+
+    private static async Task<string> RequestWidevineLicenseRefreshSafelyAsync(
+        Api api,
+        Locale locale,
+        JObject requestBody,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The challenge-bearing request body is passed only to AudibleApi's
+        // authenticated transport. It is never attached to an exception or log.
+        using var response = await api.AdHocAuthenticatedRequestAsync(
+            "/1.0/content-license-refresh",
+            HttpMethod.Post,
+            api.Sharer.GetSharedHttpClient(locale.AudibleApiUri()),
+            requestBody).ConfigureAwait(false);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (response.StatusCode != HttpStatusCode.OK)
+            throw new HttpRequestException(
+                $"Audible licence refresh failed with HTTP status {(int)response.StatusCode}.");
+
+        if (response.Content.Headers.ContentLength is > 1024 * 1024)
+            throw new InvalidDataException("Audible returned an oversized licence-refresh response.");
+
+        var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (System.Text.Encoding.UTF8.GetByteCount(responseJson) > 1024 * 1024)
+            throw new InvalidDataException("Audible returned an oversized licence-refresh response.");
+
+        return responseJson;
     }
 
     private static async Task<string> RequestWidevineLicenseSafelyAsync(
