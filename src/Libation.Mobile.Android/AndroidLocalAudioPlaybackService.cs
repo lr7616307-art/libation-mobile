@@ -4,6 +4,7 @@ using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer;
 using Android.OS;
 using Android.Graphics;
+using System.Security.Cryptography;
 using Java.Util;
 
 namespace Libation.Mobile.Android;
@@ -235,14 +236,25 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
         StartForeground(NotificationId, BuildNotification());
 
-        var drmConfiguration = new MediaItem.DrmConfiguration.Builder(WidevineUuid)
-            .SetKeySetId(keySetId)
-            .Build();
-        var mediaItem = new MediaItem.Builder()
-            .SetUri(global::Android.Net.Uri.Parse(manifestUri.AbsoluteUri))
-            .SetMimeType("application/dash+xml")
-            .SetDrmConfiguration(drmConfiguration)
-            .Build();
+        MediaItem mediaItem;
+        try
+        {
+            var drmConfiguration = new MediaItem.DrmConfiguration.Builder(WidevineUuid)
+                .SetKeySetId(keySetId)
+                .Build();
+            mediaItem = new MediaItem.Builder()
+                .SetUri(global::Android.Net.Uri.Parse(manifestUri.AbsoluteUri))
+                .SetMimeType("application/dash+xml")
+                .SetDrmConfiguration(drmConfiguration)
+                .Build();
+        }
+        finally
+        {
+            // Media3's DRM configuration copies the supplied key-set byte array.
+            // Clear the Intent-derived transient array after the immutable item is built.
+            CryptographicOperations.ZeroMemory(keySetId);
+            intent.RemoveExtra(ExtraOfflineKeySetId);
+        }
 
         _player = new ExoPlayerBuilder(this).Build();
         _player.AddListener(this);
