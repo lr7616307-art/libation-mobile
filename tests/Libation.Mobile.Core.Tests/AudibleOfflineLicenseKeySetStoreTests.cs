@@ -301,6 +301,81 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
         Assert.Null(await store.LoadProviderLicenseReferenceAsync("account-a", "B012345678"));
     }
 
+    [Fact]
+    public async Task StageRenewal_DoesNotReplaceActiveKeySetUntilPromotion()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        byte[] active = [0x01, 0x02];
+        byte[] renewed = [0x03, 0x04, 0x05];
+        await store.SaveAsync("account-a", "B012345678", active);
+
+        await store.StageRenewalKeySetAsync("account-a", "B012345678", renewed);
+
+        Assert.Equal(active, await store.LoadAsync("account-a", "B012345678"));
+        Assert.Equal(renewed, await store.LoadPendingRenewalKeySetAsync("account-a", "B012345678"));
+    }
+
+    [Fact]
+    public async Task PromotePendingRenewal_ReplacesActiveAndClearsStagedRecord()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        byte[] active = [0x01, 0x02];
+        byte[] renewed = [0x03, 0x04, 0x05];
+        await store.SaveAsync("account-a", "B012345678", active);
+        await store.StageRenewalKeySetAsync("account-a", "B012345678", renewed);
+
+        await store.PromotePendingRenewalKeySetAsync("account-a", "B012345678");
+
+        Assert.Equal(renewed, await store.LoadAsync("account-a", "B012345678"));
+        Assert.Null(await store.LoadPendingRenewalKeySetAsync("account-a", "B012345678"));
+        Assert.Equal(new[] { "B012345678" },
+            await store.ListAccountTitlesAsync("account-a"));
+    }
+
+    [Fact]
+    public async Task PromotePendingRenewal_IsSafeToRetryAfterActiveWrite()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        byte[] renewed = [0x03, 0x04];
+        await store.SaveAsync("account-a", "B012345678", [0x01, 0x02]);
+        await store.StageRenewalKeySetAsync("account-a", "B012345678", renewed);
+
+        await store.PromotePendingRenewalKeySetAsync("account-a", "B012345678");
+        // Simulate a crash after active replacement but before staged-record removal.
+        await store.StageRenewalKeySetAsync("account-a", "B012345678", renewed);
+        await store.PromotePendingRenewalKeySetAsync("account-a", "B012345678");
+
+        Assert.Equal(renewed, await store.LoadAsync("account-a", "B012345678"));
+        Assert.Null(await store.LoadPendingRenewalKeySetAsync("account-a", "B012345678"));
+    }
+
+    [Fact]
+    public async Task DiscardPendingRenewal_LeavesActiveKeySetUntouched()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        byte[] active = [0x01, 0x02];
+        await store.SaveAsync("account-a", "B012345678", active);
+        await store.StageRenewalKeySetAsync("account-a", "B012345678", [0x03, 0x04]);
+
+        await store.DiscardPendingRenewalKeySetAsync("account-a", "B012345678");
+
+        Assert.Equal(active, await store.LoadAsync("account-a", "B012345678"));
+        Assert.Null(await store.LoadPendingRenewalKeySetAsync("account-a", "B012345678"));
+    }
+
+    [Fact]
+    public async Task Remove_AlsoDeletesPendingRenewalKeySet()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        await store.SaveAsync("account-a", "B012345678", [0x01]);
+        await store.StageRenewalKeySetAsync("account-a", "B012345678", [0x02]);
+
+        await store.RemoveAsync("account-a", "B012345678");
+
+        Assert.Null(await store.LoadAsync("account-a", "B012345678"));
+        Assert.Null(await store.LoadPendingRenewalKeySetAsync("account-a", "B012345678"));
+    }
+
     private sealed class MemorySecretStore : ISecretStore
     {
         private readonly Dictionary<string, string> values = new();
