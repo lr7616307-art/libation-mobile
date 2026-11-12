@@ -80,8 +80,8 @@ jobs:
           print(f"APK size: {size:,} bytes ({size / 1048576:.2f} MiB)")
           if abis != {expected}:
               raise SystemExit(f"Expected only {expected}; APK contains {sorted(abis)}")
-          if size > 27 * 1024 * 1024:
-              raise SystemExit(f"APK exceeds the 27 MiB guardrail: {size:,} bytes")
+          if size > 25_000_000:
+              raise SystemExit(f"APK exceeds the 25,000,000-byte size ceiling: {size:,} bytes")
           PY
       - name: Upload signed APK only
         uses: actions/upload-artifact@v4
