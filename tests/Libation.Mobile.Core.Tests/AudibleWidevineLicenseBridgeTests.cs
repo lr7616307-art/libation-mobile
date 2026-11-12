@@ -8,7 +8,7 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleWidevineLicenseBridgeTests
 {
     [Fact]
-    public async Task RequestWidevineLicenseAsync_ForwardsExactPlatformChallengeWithoutLoggingOrPersistingIt()
+    public async Task RequestWidevineLicenseAsync_ForwardsExactPlatformChallengeToProvider()
     {
         const string asin = "B012345678";
         const string challenge = "platform-generated-widevine-challenge";
