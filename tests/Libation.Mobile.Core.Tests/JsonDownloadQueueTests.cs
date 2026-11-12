@@ -25,6 +25,54 @@ public sealed class JsonDownloadQueueTests
     }
 
     [Fact]
+    public async Task EnqueueAuthorizedDownload_PersistsDirectUrlAndDisplayTitle()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(path);
+
+        await queue.EnqueueAuthorizedAsync(
+            "book-1", "https://cdn.example/audio/book.m4b", "Example audiobook");
+
+        var item = Assert.Single(await new JsonDownloadQueue(path).GetItemsAsync());
+        Assert.Equal("book-1", item.AudiobookId);
+        Assert.Equal("https://cdn.example/audio/book.m4b", item.SourceUrl);
+        Assert.Equal("Example audiobook", item.DisplayTitle);
+        Assert.Equal(DownloadStatus.Queued, item.Status);
+        Assert.Equal("Queued", item.StatusLabel);
+    }
+
+    [Fact]
+    public async Task EnqueueAuthorizedDownload_RejectsUrlsWithQueryTokens()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => queue.EnqueueAuthorizedAsync(
+            "book-1", "https://cdn.example/book.m4b?token=private", "Example audiobook"));
+
+        Assert.Empty(await queue.GetItemsAsync());
+    }
+
+    [Fact]
+    public async Task Retry_PreservesAuthorizedSourceUrlAndDisplayTitle()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAuthorizedAsync(
+            "book-1", "https://cdn.example/audio/book.m4b", "Example audiobook");
+        await queue.UpdateStatusAsync("book-1", DownloadStatus.Failed, "Network unavailable");
+
+        await queue.EnqueueAsync("book-1");
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Queued, item.Status);
+        Assert.Equal("https://cdn.example/audio/book.m4b", item.SourceUrl);
+        Assert.Equal("Example audiobook", item.DisplayTitle);
+        Assert.Null(item.ErrorMessage);
+    }
+
+    [Fact]
     public async Task StatusTransitions_ArePersisted()
     {
         using var directory = new TemporaryDirectory();
