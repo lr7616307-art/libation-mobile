@@ -104,6 +104,15 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - If local cleanup fails, keep the Audible identity and session so the cleanup can be retried; do not strand key sets behind a deleted account.
 - The current removal method is device-local. Android documents a separate KEY_TYPE_RELEASE request/response flow that lets the licence server confirm release and update its offline allocation. That provider-facing release exchange, explicit server revocation, same-key-set licence renewal and real provider/device compatibility are **not yet implemented**. Re-acquisition after an inactive key set is a fresh provider grant, not a claimed renewal of the previous key set.
 
+## Pass 18 — Widevine offline expiry preflight
+
+- After restoring a saved Android offline key set, query `MediaDrm.queryKeyStatus` for Widevine's documented `LicenseDurationRemaining` and `PlaybackDurationRemaining` values.
+- Parse durations as non-negative seconds. A reported zero is treated as definitely expired; absent, negative or malformed fields remain unknown and do not invalidate a licence.
+- Check this metadata before starting offline playback or another download attempt. If Widevine confirms expiry, stop before playback/download and retain the existing key-set record and encrypted cache.
+- The Android API's offline-license state and the Widevine duration fields answer different questions: the preflight checks both rather than assuming that a key set reported as usable has unlimited time remaining.
+- Do not automatically replace or delete an expired key set. Audible's documented-but-unofficial `content-license-refresh` flow requires the original ACR, file version and a renewal challenge; provider-side renewal and server-confirmed release remain separate work. A direct Android `removeOfflineLicense` call is local-only and can leave the server's offline allocation unchanged.
+- Added unit tests for positive durations, zero-duration expiry, absent fields and malformed/negative values. Physical-device behavior remains unverified.
+
 ## Remaining implementation — not yet verified
 
 1. Implement and validate Audible's server-confirmed KEY_TYPE_RELEASE exchange and documented licence renewal/revocation semantics before claiming provider-side licence release.
