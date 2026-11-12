@@ -164,7 +164,13 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             using var drmSession = new AndroidWidevineOfflineSession();
             var state = drmSession.GetOfflineLicenseState(existingKeySetId);
             if (state == OfflineLicenseStateUsable)
+            {
+                var duration = drmSession.GetOfflineLicenseDuration(existingKeySetId);
+                if (duration.IsDefinitelyExpired)
+                    throw new InvalidOperationException(
+                        "The saved Audible offline licence has expired. VØRATH verified the expiry but cannot renew this provider licence yet; the protected copy has been preserved.");
                 return true;
+            }
 
             if (state == OfflineLicenseStateUnknown)
                 throw new InvalidOperationException(
@@ -190,6 +196,31 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     }
 
     /// <summary>
+    /// Checks the platform's offline-key state and Widevine-specific remaining
+    /// duration fields. If the device does not expose duration metadata, the
+    /// normal MediaDrm state remains authoritative.
+    /// </summary>
+    private static void EnsureOfflineLicenseNotExpired(byte[] keySetId)
+    {
+        using var drmSession = new AndroidWidevineOfflineSession();
+        var state = drmSession.GetOfflineLicenseState(keySetId);
+        if (state == OfflineLicenseStateUnknown)
+            throw new InvalidOperationException(
+                "Android could not verify the saved Audible offline licence state.");
+        if (state == OfflineLicenseStateReleased)
+            throw new InvalidOperationException(
+                "The saved Audible offline licence has been marked for release and cannot be used.");
+        if (state != OfflineLicenseStateUsable)
+            throw new InvalidDataException(
+                "Android returned an unsupported Audible offline licence state.");
+
+        var duration = drmSession.GetOfflineLicenseDuration(keySetId);
+        if (duration.IsDefinitelyExpired)
+            throw new InvalidOperationException(
+                "The saved Audible offline licence has expired. VØRATH verified the expiry but cannot renew this provider licence yet; the protected copy has been preserved.");
+    }
+
+    /// <summary>
     /// Downloads only the selected provider-encrypted DASH audio representation
     /// into the app-private Media3 cache. No segment is decrypted or exported.
     /// The encrypted manifest reference is saved before transfer so interrupted
@@ -201,6 +232,18 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     {
         if (!await HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false))
             await AcquireOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false);
+
+        var currentKeySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
+            .ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The Audible offline key set was not saved.");
+        try
+        {
+            EnsureOfflineLicenseNotExpired(currentKeySetId);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(currentKeySetId);
+        }
 
         if (await HasOfflineMediaAsync(asin, cancellationToken).ConfigureAwait(false))
             return;
@@ -261,6 +304,8 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
 
         try
         {
+            EnsureOfflineLicenseNotExpired(keySetId);
+
             var mediaReference = await keySetStore.LoadDashManifestAsync(accountId, asin, cancellationToken)
                 .ConfigureAwait(false)
                 ?? throw new InvalidOperationException(
