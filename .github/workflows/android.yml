@@ -42,6 +42,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
       - name: Require persistent Android signing secrets
         shell: bash
         run: |
@@ -85,12 +91,6 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
       - name: Install Android workload
         run: dotnet workload install android
 
@@ -108,6 +108,7 @@ jobs:
         run: |
           from pathlib import Path
           from zipfile import ZipFile
+          import os
           import re
           import subprocess
 
@@ -119,9 +120,8 @@ jobs:
           expected = {"armeabi-v7a", "arm64-v8a"}
           found = set()
           fingerprints = set()
-          build_tools = Path.home() / "Android" / "Sdk" / "build-tools"
-          if not build_tools.exists():
-              build_tools = Path("/usr/local/lib/android/sdk/build-tools")
+          android_home = Path(os.environ.get("ANDROID_HOME", "/usr/local/lib/android/sdk"))
+          build_tools = android_home / "build-tools"
           candidates = sorted(build_tools.glob("*/apksigner"))
           if not candidates:
               raise SystemExit(f"Could not locate apksigner under {build_tools}")
