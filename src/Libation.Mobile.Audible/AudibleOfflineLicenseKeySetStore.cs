@@ -1,15 +1,15 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Audible;
 
 /// <summary>
-/// Stores the opaque Android MediaDrm key-set identifier and the protected DASH
-/// playback reference. The secret-store implementation encrypts both at rest.
-/// This class never stores DRM challenges, licence responses, or content keys.
+/// Stores the opaque Android MediaDrm key-set identifier and protected DASH
+/// playback reference through the encrypted secret store. DRM challenges,
+/// provider licence responses and content keys are never persisted here.
 /// </summary>
 public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
 {
@@ -35,12 +35,9 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
                 nameof(keySetId), "The Android DRM key-set identifier has an unsupported size.");
 
         cancellationToken.ThrowIfCancellationRequested();
-
-        // Hash the account/title pair so preference keys do not reveal which
-        // Audible title or account owns a local offline licence record.
-        var storageKey = GetStorageKey(accountId, asin);
         var encoded = Convert.ToBase64String(keySetId.ToArray());
-        await secrets.SetAsync(storageKey, encoded, cancellationToken).ConfigureAwait(false);
+        await secrets.SetAsync(GetStorageKey(accountId, asin), encoded, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<byte[]?> LoadAsync(
@@ -74,6 +71,11 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         return keySetId;
     }
 
+    /// <summary>
+    /// Stores only the short-lived HTTPS manifest reference and selected audio
+    /// stream indexes. The payload is encrypted by ISecretStore and bounded to
+    /// the secret store's per-value size limit.
+    /// </summary>
     public async Task SaveDashManifestAsync(
         string accountId,
         string asin,
@@ -175,21 +177,15 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
             !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
             manifestUri.AbsoluteUri.Length > MaximumManifestUriCharacters ||
             manifestUri.UserInfo.Length != 0)
-            throw new ArgumentException("The Audible DASH manifest reference must be a bounded HTTPS URI.", nameof(manifestUri));
+            throw new ArgumentException(
+                "The Audible DASH manifest reference must be a bounded HTTPS URI.", nameof(manifestUri));
 
         if (streamKeys.Count is 0 or > MaximumStreamKeys ||
             streamKeys.Any(key =>
                 key.PeriodIndex < 0 || key.GroupIndex < 0 || key.TrackIndex < 0))
-            throw new ArgumentException("The Audible DASH audio stream selection is invalid.", nameof(streamKeys));
+            throw new ArgumentException(
+                "The Audible DASH audio stream selection is invalid.", nameof(streamKeys));
     }
-
-    private sealed record StoredDashManifest(string ManifestUri, StoredStreamKey[] StreamKeys);
-    private sealed record StoredStreamKey(int PeriodIndex, int GroupIndex, int TrackIndex);
-}
-
-public sealed record AudibleWidevineOfflineMediaReference(
-    Uri ManifestUri,
-    IReadOnlyList<AudibleWidevineStreamKey> StreamKeys);
 
     private static void ValidateIdentity(string accountId, string asin)
     {
@@ -201,4 +197,11 @@ public sealed record AudibleWidevineOfflineMediaReference(
                 "The Audible audiobook identifier is not a valid 10-character ASIN.",
                 nameof(asin));
     }
+
+    private sealed record StoredDashManifest(string ManifestUri, StoredStreamKey[] StreamKeys);
+    private sealed record StoredStreamKey(int PeriodIndex, int GroupIndex, int TrackIndex);
 }
+
+public sealed record AudibleWidevineOfflineMediaReference(
+    Uri ManifestUri,
+    IReadOnlyList<AudibleWidevineStreamKey> StreamKeys);
