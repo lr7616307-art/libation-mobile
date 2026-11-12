@@ -2,9 +2,14 @@ name: Android APK
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - fix/pass-5-current-librisync-iphone-profile
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -18,7 +23,10 @@ jobs:
       - name: Run core tests
         run: dotnet test tests/Libation.Mobile.Core.Tests/Libation.Mobile.Core.Tests.csproj -c Release
 
-  build:
+  # Pull requests and feature-branch pushes compile both ABIs with CI-only
+  # signing. These APKs are never uploaded and must not be installed.
+  build_check:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main')
     needs: test
     runs-on: ubuntu-latest
     strategy:
@@ -26,9 +34,9 @@ jobs:
       matrix:
         include:
           - rid: android-arm
-            name: ARMv7
+            abi: armeabi-v7a
           - rid: android-arm64
-            name: ARM64
+            abi: arm64-v8a
     steps:
       - uses: actions/checkout@v4
       - name: Install .NET
@@ -44,11 +52,296 @@ jobs:
         run: dotnet workload install android
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
-      - name: Build APK
+      - name: Compile ${{ matrix.abi }} APK (CI only)
         run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r ${{ matrix.rid }} -p:AndroidPackageFormat=apk
-      - name: Upload APK
+      - name: Verify compile output exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish"
+          if ! compgen -G "$output/*.apk" > /dev/null; then
+            echo "::error::No APK was produced for ${{ matrix.rid }}."
+            exit 1
+          fi
+          find "$output" -maxdepth 1 -name '*.apk' -printf '%f %s bytes\n'
+
+  # A test APK is published for the user's ARMv7 handset. It uses a branch-scoped,
+  # cached CI test key so successive test builds can update in place. This is not
+  # the production/release signing identity.
+  build_test_apk:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/pass-5-current-librisync-iphone-profile'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      TEST_STORE_PASSWORD: vorath-ci-test-store
+      TEST_KEY_PASSWORD: vorath-ci-test-key
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Restore cached CI test signing key
+        id: test-key-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/vorath-ci-test.jks
+          key: vorath-ci-test-key-v1-${{ github.ref_name }}
+      - name: Create CI test signing key when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$RUNNER_TEMP/vorath-ci-test.jks")"
+          if [[ ! -s "$RUNNER_TEMP/vorath-ci-test.jks" ]]; then
+            keytool -genkeypair -v \
+              -keystore "$RUNNER_TEMP/vorath-ci-test.jks" \
+              -storetype JKS \
+              -alias vorath-test \
+              -keyalg RSA \
+              -keysize 3072 \
+              -validity 10000 \
+              -dname "CN=VORATH CI Test,O=VORATH,C=IN" \
+              -storepass "$TEST_STORE_PASSWORD" \
+              -keypass "$TEST_KEY_PASSWORD"
+          fi
+          keytool -list -storetype JKS -keystore "$RUNNER_TEMP/vorath-ci-test.jks" \
+            -alias vorath-test -storepass "$TEST_STORE_PASSWORD" \
+            -keypass "$TEST_KEY_PASSWORD" >/dev/null
+      - name: Install Android workload
+        run: dotnet workload install android
+      - name: Restore Android project
+        run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
+      - name: Build installable ARMv7 test APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj \
+            -c Release -r android-arm --no-restore \
+            -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false \
+            -p:AndroidPackageFormat=apk -p:ApplicationVersion="$version_code" \
+            -p:AndroidKeyStore=true \
+            -p:AndroidSigningKeyStore="$RUNNER_TEMP/vorath-ci-test.jks" \
+            -p:AndroidSigningStorePass="$TEST_STORE_PASSWORD" \
+            -p:AndroidSigningKeyAlias=vorath-test \
+            -p:AndroidSigningKeyPass="$TEST_KEY_PASSWORD"
+          output="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish"
+          mapfile -t apks < <(find "$output" -maxdepth 1 -type f -name '*-Signed.apk')
+          if (( ${#apks[@]} != 1 )); then
+            echo "::error::Expected one signed ARMv7 APK; found ${#apks[@]}."
+            find "$output" -maxdepth 1 -type f -name '*.apk' -print || true
+            exit 1
+          fi
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+          apksigner="$(find "$sdk/build-tools" -type f -name apksigner | sort | tail -n 1)"
+          test -n "$apksigner"
+          "$apksigner" verify --print-certs "${apks[0]}"
+          python3 - "${apks[0]}" <<'PY'
+          import sys
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          apk = Path(sys.argv[1])
+          with ZipFile(apk) as package:
+              abis = {
+                  name.split("/")[1]
+                  for name in package.namelist()
+                  if name.startswith("lib/") and len(name.split("/")) > 2
+              }
+          size = apk.stat().st_size
+          print(f"Installable APK size: {size:,} bytes ({size / 1048576:.2f} MiB)")
+          print(f"Native ABIs: {sorted(abis)}")
+          if abis != {"armeabi-v7a"}:
+              raise SystemExit(f"Expected only armeabi-v7a, got {sorted(abis)}")
+          if size > 25_000_000:
+              raise SystemExit(f"APK exceeds 25,000,000-byte limit: {size:,}")
+          PY
+      - name: Save CI test signing key for future updates
+        if: steps.test-key-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/vorath-ci-test.jks
+          key: vorath-ci-test-key-v1-${{ github.ref_name }}
+      - name: Upload installable ARMv7 APK
         uses: actions/upload-artifact@v4
         with:
-          name: libation-mobile-${{ matrix.name }}
-          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/${{ matrix.rid }}/publish/*.apk
+          name: VORATH-ARMv7-Test-APK
+          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish/*-Signed.apk
           if-no-files-found: error
+          retention-days: 30
+
+  # Only trusted release pushes or a manual dispatch publish installable APKs.
+  build_release:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/pass-5-current-librisync-iphone-profile'))
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      AndroidKeyStore: "true"
+      AndroidSigningKeyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
+      AndroidSigningKeyPass: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      AndroidSigningStorePass: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check whether persistent signing is configured
+        id: signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Stable APK publishing skipped. Add repository Actions secrets: ${missing[*]}"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Persistent signing secrets are present."
+          fi
+      - name: Set up Java
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Set private keystore path for subsequent build steps
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          signing_path="$RUNNER_TEMP/vorath-release.jks"
+          echo "ANDROID_SIGNING_KEYSTORE=$signing_path" >> "$GITHUB_ENV"
+          echo "AndroidSigningKeyStore=$signing_path" >> "$GITHUB_ENV"
+      - name: Decode and validate persistent signing key
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_SIGNING_KEYSTORE"
+          test -s "$ANDROID_SIGNING_KEYSTORE"
+          keytool -list -storetype JKS -keystore "$ANDROID_SIGNING_KEYSTORE" -alias "$ANDROID_KEY_ALIAS" -storepass "$ANDROID_KEYSTORE_PASSWORD" -keypass "$ANDROID_KEY_PASSWORD" >/dev/null
+          echo "Persistent Android signing key validated."
+      - name: Calculate monotonic Android version code
+        if: steps.signing.outputs.enabled == 'true'
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          if (( version_code > 2100000000 )); then
+            echo "::error::Android versionCode exceeded Google's supported maximum."
+            exit 1
+          fi
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "Android versionCode: $version_code"
+      - name: Install .NET
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Android workload
+        if: steps.signing.outputs.enabled == 'true'
+        run: dotnet workload install android
+      - name: Restore both Android runtimes
+        if: steps.signing.outputs.enabled == 'true'
+        run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
+      - name: Publish ARMv7 APK
+        if: steps.signing.outputs.enabled == 'true'
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk -p:ApplicationVersion=${{ steps.version.outputs.version_code }}
+      - name: Publish ARM64 APK
+        if: steps.signing.outputs.enabled == 'true'
+        run: dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj -c Release -r android-arm64 --no-restore -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false -p:AndroidPackageFormat=apk -p:ApplicationVersion=${{ steps.version.outputs.version_code }}
+      - name: Verify ABI and signing identity
+        if: steps.signing.outputs.enabled == 'true'
+        shell: python
+        run: |
+          from pathlib import Path
+          from zipfile import ZipFile
+          import os
+          import re
+          import subprocess
+
+          root = Path("src/Libation.Mobile.Android/bin/Release/net10.0-android36.0")
+          apks = sorted(root.rglob("publish/*-Signed.apk"))
+          if len(apks) != 2:
+              raise SystemExit(f"Expected exactly 2 signed publish APKs, found {len(apks)}: {apks}")
+
+          expected = {"armeabi-v7a", "arm64-v8a"}
+          found = set()
+          fingerprints = set()
+          sdk_roots = [
+              os.environ.get("ANDROID_HOME"),
+              os.environ.get("ANDROID_SDK_ROOT"),
+              "/usr/local/lib/android/sdk",
+              str(Path.home() / "Android" / "Sdk"),
+          ]
+          build_tools = next(
+              (Path(sdk) / "build-tools" for sdk in sdk_roots
+               if sdk and (Path(sdk) / "build-tools").is_dir()),
+              None,
+          )
+          if build_tools is None:
+              raise SystemExit(f"Could not locate Android build-tools in: {sdk_roots}")
+          candidates = sorted(build_tools.glob("*/apksigner"))
+          if not candidates:
+              raise SystemExit(f"Could not locate apksigner under {build_tools}")
+          apksigner = str(candidates[-1])
+
+          for apk in apks:
+              with ZipFile(apk) as package:
+                  abis = {
+                      name.split("/")[1]
+                      for name in package.namelist()
+                      if name.startswith("lib/") and len(name.split("/")) > 2
+                  }
+              print(f"{apk}: {sorted(abis)} ({apk.stat().st_size} bytes)")
+              if len(abis) != 1:
+                  raise SystemExit(f"{apk} is not single-ABI: {sorted(abis)}")
+              found.update(abis)
+
+              verification = subprocess.run(
+                  [apksigner, "verify", "--print-certs", str(apk)],
+                  check=True, capture_output=True, text=True
+              )
+              match = re.search(
+                  r"certificate SHA-256 digest: ([0-9a-fA-F]+)",
+                  verification.stdout + verification.stderr,
+                  re.IGNORECASE,
+              )
+              if not match:
+                  raise SystemExit(f"Could not read signing certificate fingerprint from {apk}")
+              fingerprints.add(match.group(1).lower())
+              print(f"Signing certificate SHA-256: {match.group(1).lower()}")
+
+          if found != expected:
+              raise SystemExit(f"Expected APKs for {sorted(expected)}, found {sorted(found)}")
+          if len(fingerprints) != 1:
+              raise SystemExit(f"ARMv7 and ARM64 APKs do not share one signing identity: {sorted(fingerprints)}")
+
+          print("Verified: both ABI APKs use the same persistent signing identity.")
+      - name: Upload stable-signed ABI APKs
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: VORATH-StableSigned-ABI-specific
+          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/**/publish/*-Signed.apk
+          if-no-files-found: error
+      - name: Remove temporary signing key
+        if: always() && steps.signing.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          if [[ -n "${ANDROID_SIGNING_KEYSTORE:-}" ]]; then
+            rm -f "$ANDROID_SIGNING_KEYSTORE"
+          fi
