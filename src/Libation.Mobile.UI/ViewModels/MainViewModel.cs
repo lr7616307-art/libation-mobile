@@ -910,6 +910,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         : _activeDownloadProgress.Percentage is { } percentage
             ? $"{percentage:0}% · {FormatDownloadBytes(_activeDownloadProgress.BytesReceived)} of {FormatDownloadBytes(_activeDownloadProgress.TotalBytes ?? 0)}"
             : $"{FormatDownloadBytes(_activeDownloadProgress.BytesReceived)} downloaded";
+    public double ActiveDownloadProgressPercent => _activeDownloadProgress?.Percentage ?? 0d;
     public string EmptyMessage => Books.Count > 0 ? string.Empty :
         _allBooks.Count == 0 ? "Your local catalogue is empty." : "No matching audiobooks. Try another title, author or narrator.";
 
@@ -1345,6 +1346,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasActiveDownloadProgress));
         OnPropertyChanged(nameof(ActiveDownloadProgressTitle));
         OnPropertyChanged(nameof(ActiveDownloadProgressLabel));
+        OnPropertyChanged(nameof(ActiveDownloadProgressPercent));
     }
 
     public async Task RefreshDownloadQueueAsync(CancellationToken cancellationToken = default)
