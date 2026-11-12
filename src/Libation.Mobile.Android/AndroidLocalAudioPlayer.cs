@@ -70,22 +70,37 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         Uri manifestUri,
         byte[] offlineKeySetId,
         string title,
+        string accountId,
+        string asin,
+        int[] streamKeyValues,
         long startPositionMilliseconds = 0)
     {
         ArgumentNullException.ThrowIfNull(manifestUri);
         ArgumentNullException.ThrowIfNull(offlineKeySetId);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentException.ThrowIfNullOrWhiteSpace(accountId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(asin);
+        ArgumentNullException.ThrowIfNull(streamKeyValues);
 
         if (!manifestUri.IsAbsoluteUri ||
-            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            manifestUri.UserInfo.Length != 0)
             throw new ArgumentException("Protected Audible playback requires an HTTPS DASH manifest.", nameof(manifestUri));
         if (offlineKeySetId.Length is 0 or > 1024)
             throw new ArgumentOutOfRangeException(nameof(offlineKeySetId));
+        if (asin.Length != 10 || asin.Any(character => !char.IsAsciiLetterOrDigit(character)))
+            throw new ArgumentException("A valid Audible ASIN is required.", nameof(asin));
+        if (streamKeyValues.Length is 0 or > 384 || streamKeyValues.Length % 3 != 0 ||
+            streamKeyValues.Any(value => value < 0))
+            throw new ArgumentException("The offline DASH audio stream selection is invalid.", nameof(streamKeyValues));
 
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionPlayWidevineDash);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraManifestUri, manifestUri.AbsoluteUri);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraOfflineKeySetId, offlineKeySetId);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraTitle, title);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineAccountId, accountId);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineAsin, asin);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineStreamKeys, streamKeyValues);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
         StartService(intent, foreground: true);
     }
