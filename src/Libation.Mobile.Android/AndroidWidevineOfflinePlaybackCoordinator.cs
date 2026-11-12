@@ -96,8 +96,9 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     /// Obtains an Audible-issued Widevine manifest, creates a platform offline
     /// challenge, supplies Audible's opaque response to MediaDrm, and persists
     /// only the resulting key-set ID through the Keystore-backed secret store.
-    /// An expired/released local key set is removed before a new provider grant
-    /// is requested; an unknown DRM state fails closed instead of overwriting it.
+    /// Missing/released local state is cleaned before a new provider grant;
+    /// confirmed expiry is retained until a provider renewal/release flow exists.
+    /// An unknown DRM state fails closed instead of overwriting it.
     /// </summary>
     public async Task AcquireOfflineLicenseAsync(
         string asin,
