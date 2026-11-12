@@ -1,4 +1,5 @@
 using AudibleApi;
+using System.Security.Cryptography;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -36,15 +37,23 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 
         if (!string.Equals(challenge.Marketplace, challenge.Marketplace.Trim().ToLowerInvariant(), StringComparison.Ordinal))
             throw new InvalidOperationException("The OAuth marketplace is invalid.");
-        if (!string.Equals(challenge.AuthorizationUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(challenge.CallbackUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("The OAuth challenge must use HTTPS.");
+        if (!challenge.AuthorizationUri.IsAbsoluteUri
+            || !challenge.CallbackUri.IsAbsoluteUri
+            || !string.Equals(challenge.AuthorizationUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(challenge.CallbackUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            || !challenge.AuthorizationUri.IsDefaultPort
+            || !challenge.CallbackUri.IsDefaultPort
+            || !string.IsNullOrEmpty(challenge.AuthorizationUri.UserInfo)
+            || !string.IsNullOrEmpty(challenge.CallbackUri.UserInfo)
+            || !string.Equals(challenge.AuthorizationUri.AbsolutePath, "/ap/signin", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The OAuth challenge must use the expected absolute HTTPS Amazon sign-in and callback URLs.");
 
         var amazonDomain = challenge.AuthorizationUri.Host;
         if (amazonDomain.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
             amazonDomain = amazonDomain[4..];
         if (!amazonDomain.StartsWith("amazon.", StringComparison.OrdinalIgnoreCase)
             || !string.Equals(challenge.AuthorizationUri.Host, "www." + amazonDomain, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(challenge.AuthorizationUri.Host, challenge.CallbackUri.Host, StringComparison.OrdinalIgnoreCase)
             || !AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
             throw new InvalidOperationException("The OAuth challenge does not match the selected Amazon marketplace.");
 
@@ -52,8 +61,25 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             || challenge.DeviceSerial.Any(character => !char.IsAsciiLetterOrDigit(character)))
             throw new InvalidOperationException("The Audible iPhone-profile serial must be 40 alphanumeric characters.");
 
+        if (challenge.CodeVerifier.Length != 43
+            || challenge.CodeVerifier.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_')))
+            throw new InvalidOperationException("The Audible PKCE verifier is malformed.");
+
+        var expectedCodeChallenge = Base64Url(SHA256.HashData(
+            System.Text.Encoding.ASCII.GetBytes(challenge.CodeVerifier)));
+        if (!string.Equals(challenge.CodeChallenge, expectedCodeChallenge, StringComparison.Ordinal))
+            throw new InvalidOperationException("The Audible PKCE verifier does not match its challenge.");
+
         var serialAndType = $"{challenge.DeviceSerial}#{DeviceType}";
         var clientIdHex = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
+
+        var authorizationParameters = System.Web.HttpUtility.ParseQueryString(challenge.AuthorizationUri.Query);
+        if (!string.Equals(authorizationParameters["openid.oa2.response_type"], "code", StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["openid.oa2.code_challenge_method"], "S256", StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["openid.oa2.code_challenge"], expectedCodeChallenge, StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["openid.oa2.client_id"], "device:" + clientIdHex, StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["openid.return_to"], challenge.CallbackUri.AbsoluteUri, StringComparison.Ordinal))
+            throw new InvalidOperationException("The Audible authorization URL does not match the PKCE verifier, device registration or marketplace callback.");
 
         var request = new RegistrationRequest
         {
@@ -245,6 +271,9 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
     {
         [JsonPropertyName("user_id")] public string? UserId { get; init; }
     }
+
+    private static string Base64Url(byte[] bytes)
+        => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     private static bool TryReadExpiresIn(JsonElement value, out long seconds)
     {
