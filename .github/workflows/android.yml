@@ -141,6 +141,26 @@ jobs:
           apksigner="$(find "$sdk/build-tools" -type f -name apksigner | sort | tail -n 1)"
           test -n "$apksigner"
           "$apksigner" verify --print-certs "${apks[0]}"
+          python3 - "${apks[0]}" <<'PY'
+          import sys
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          apk = Path(sys.argv[1])
+          with ZipFile(apk) as package:
+              abis = {
+                  name.split("/")[1]
+                  for name in package.namelist()
+                  if name.startswith("lib/") and len(name.split("/")) > 2
+              }
+          size = apk.stat().st_size
+          print(f"Installable APK size: {size:,} bytes ({size / 1048576:.2f} MiB)")
+          print(f"Native ABIs: {sorted(abis)}")
+          if abis != {"armeabi-v7a"}:
+              raise SystemExit(f"Expected only armeabi-v7a, got {sorted(abis)}")
+          if size > 25_000_000:
+              raise SystemExit(f"APK exceeds 25,000,000-byte limit: {size:,}")
+          PY
       - name: Save CI test signing key for future updates
         if: steps.test-key-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
