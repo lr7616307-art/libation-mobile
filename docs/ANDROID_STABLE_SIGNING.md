@@ -6,6 +6,41 @@ This repository now requires one persistent signing key before it publishes inst
 
 ## 1. Create the key on a device you control
 
+On your Redmi 9i, you can use **Termux** instead of a computer. Termux supports Android 7 and later, and its current package repository provides OpenJDK 21 (which includes `keytool`). On Android 10 / ARMv7, check that Termux is up to date and that `termux-info` reports the `arm` package architecture. Install Termux and its packages from one source only; do not mix the F-Droid, GitHub and Google Play builds.
+
+Run these commands in Termux:
+
+```sh
+pkg update
+pkg install openjdk-21
+java -version
+keytool -help
+mkdir -p "$HOME/vorath-signing"
+umask 077
+```
+
+Then generate the permanent key in Termux's private app storage:
+
+```sh
+keytool -genkeypair -v \
+  -keystore "$HOME/vorath-signing/vorath-release.jks" \
+  -storetype JKS \
+  -alias vorath \
+  -keyalg RSA \
+  -keysize 3072 \
+  -validity 10000
+```
+
+When prompted, create a strong password. Press Return at the key-password prompt to reuse the keystore password, or set a separate strong password. Verify the alias and certificate:
+
+```sh
+keytool -list -v \
+  -storetype JKS \
+  -keystore "$HOME/vorath-signing/vorath-release.jks" \
+  -alias vorath
+```
+
+The first `pkg install` may download a large JDK package. If Termux says `openjdk-21` is unavailable, check the Termux source and architecture before trying random APKs or repositories. Official references: [Termux installation](https://github.com/termux/termux-app#installation), [Termux OpenJDK 21 package](https://github.com/termux/termux-packages/tree/master/packages/openjdk-21).
 Use a trusted computer or a local Android terminal with Java's `keytool` installed. Run:
 
 ```sh
@@ -24,13 +59,13 @@ Choose a strong keystore password and key password. For simpler setup, you may u
 
 ## 2. Encode the keystore for GitHub Actions
 
-In the same local terminal, run:
+In the same terminal, run:
 
 ```sh
-base64 vorath-release.jks | tr -d '\n'
+base64 "$HOME/vorath-signing/vorath-release.jks" | tr -d '\n'
 ```
 
-Copy the full output. Treat it as a private key: anyone who gets it together with the password can sign VØRATH APKs.
+Copy the full output. Keep the .jks file inside Termux's private storage and make a separate secure backup. Do not put an unencrypted copy in Downloads or ordinary shared storage. Treat the Base64 output as a private key: anyone who gets it together with the password can sign VØRATH APKs.
 
 ## 3. Add four repository Actions secrets
 
