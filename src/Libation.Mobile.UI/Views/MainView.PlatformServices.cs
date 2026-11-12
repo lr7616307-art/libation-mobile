@@ -12,6 +12,7 @@ public interface IAudibleWidevinePlaybackCoordinator
     Task DownloadOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
     Task PlayAsync(string asin, string title, long startPositionMilliseconds = 0, bool autoPlay = true, CancellationToken cancellationToken = default);
     Task RemoveOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
+    Task RemoveAllOfflineLicensesAsync(CancellationToken cancellationToken = default);
 }
 
 public partial class MainView
