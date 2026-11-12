@@ -169,8 +169,8 @@ jobs:
               print(f"  {info.compress_size:>10,} bytes  {info.filename}")
           if abis != {"armeabi-v7a"}:
               raise SystemExit(f"Expected only armeabi-v7a, got {sorted(abis)}")
-          if size > 25_000_000:
-              raise SystemExit(f"APK exceeds 25,000,000-byte limit: {size:,}")
+          if size > 24_000_000:
+              raise SystemExit(f"APK exceeds 24,000,000-byte size budget: {size:,}")
           PY
       - name: Save CI test signing key for future updates
         if: steps.test-key-cache.outputs.cache-hit != 'true'
