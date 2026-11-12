@@ -43,11 +43,10 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 
 ## Remaining implementation — not yet complete
 
-1. Connect the new coordinator to the Audible audiobook details/download UI. The platform factory is registered, but no user-visible action invokes it yet.
-2. Implement a Media3 DASH offline download/cache flow for the encrypted representations and segments. The current Media3 path opens the provider MPD for DRM playback; it is not a local offline media download.
-3. Add protected-playback recovery across app/process restart by storing only non-secret title identity and position, then reacquiring a fresh provider MPD and loading the key-set ID from encrypted storage.
-4. Add licence expiry/renewal, provider release/revocation, account disconnect and title deletion handling, including safe cleanup when the app loses account access.
-5. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, exact challenge/response compatibility, key-set persistence, protected DASH playback, app restart, actual offline segment playback, expiry/release and reinstall behavior.
+1. Implement a Media3 DASH offline download/cache flow for the encrypted representations and segments. The current Media3 path opens the provider MPD for DRM playback; it is not a local offline media download. The UI explicitly reports that an internet connection is still required.
+2. Add protected-playback recovery across app/process restart by storing only non-secret title identity and position, then reacquiring a fresh provider MPD and loading the key-set ID from encrypted storage.
+3. Add licence expiry/renewal, provider release/revocation, account disconnect and title deletion handling, including safe cleanup when the app loses account access.
+4. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, exact challenge/response compatibility, key-set persistence, protected DASH playback, app restart, actual offline segment playback, expiry/release and reinstall behavior.
 
 ## Android 10 / device constraints
 
