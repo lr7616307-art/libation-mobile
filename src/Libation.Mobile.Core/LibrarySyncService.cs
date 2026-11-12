@@ -63,7 +63,20 @@ public sealed class LibrarySyncService
 
         var mergedProviderBooks = mapped.Select(remoteBook =>
             existingProviderBooks.TryGetValue(remoteBook.Id, out var localBook)
-                ? localBook with { CoverImageUrl = string.IsNullOrWhiteSpace(remoteBook.CoverImageUrl) ? localBook.CoverImageUrl : remoteBook.CoverImageUrl }
+                ? remoteBook with
+                {
+                    // Preserve cached artwork and non-placeholder user corrections, but
+                    // let newly available provider fields replace old null sentinels.
+                    Title = IsMissingProviderText(localBook.Title) ? remoteBook.Title : localBook.Title,
+                    Author = IsMissingProviderText(localBook.Author) ? remoteBook.Author : localBook.Author,
+                    Narrator = IsMissingProviderText(localBook.Narrator) ? remoteBook.Narrator : localBook.Narrator,
+                    Length = IsMissingProviderText(localBook.Length) ? remoteBook.Length : localBook.Length,
+                    Series = IsMissingProviderText(localBook.Series) ? remoteBook.Series : localBook.Series,
+                    Genre = IsMissingProviderText(localBook.Genre) ? remoteBook.Genre : localBook.Genre,
+                    Description = IsMissingProviderText(localBook.Description) ? remoteBook.Description : localBook.Description,
+                    CoverImageUrl = string.IsNullOrWhiteSpace(remoteBook.CoverImageUrl) ? localBook.CoverImageUrl : remoteBook.CoverImageUrl,
+                    CoverImagePath = localBook.CoverImagePath
+                }
                 : remoteBook).ToArray();
 
         if (_coverArtDownloader is not null)
@@ -95,6 +108,11 @@ public sealed class LibrarySyncService
         await _repository.ReplaceAllAsync(merged, cancellationToken);
         return mapped.Count;
     }
+
+    private static bool IsMissingProviderText(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            || string.Equals(value.Trim(), "[null]", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value.Trim(), "null", StringComparison.OrdinalIgnoreCase);
 
     private static string NormalizeCoverUrl(string? value)
     {
