@@ -49,7 +49,7 @@ public static class AudibleWidevineCacheRangeIntegrity
         ArgumentException.ThrowIfNullOrWhiteSpace(titleScope);
         ArgumentNullException.ThrowIfNull(indexedKeys);
         ArgumentNullException.ThrowIfNull(liveCacheKeys);
-        if (titleScope.Length > 128 || titleScope.Contains(':', StringComparison.Ordinal))
+        if (titleScope.Length > 128 || titleScope.Contains(':'))
             throw new ArgumentException("The protected cache title scope is invalid.", nameof(titleScope));
 
         var prefix = titleScope + ":";
