@@ -66,7 +66,7 @@ public partial class MainView : UserControl
             ordinaryDownloadSource,
             cancellationToken => PlatformAudibleDownloadSourceFactory is null
                 ? Task.FromResult<IAuthorizedAudioDownloadSource?>(null)
-                : PlatformAudibleDownloadSourceFactory(cancellationToken));
+                : PlatformAudibleDownloadSourceFactory(_viewModel.CurrentDownloadSettings.AudibleQuality, cancellationToken));
         _downloadWorker = new DownloadQueueWorker(
             queue,
             new AudioFileDownloader(new HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
