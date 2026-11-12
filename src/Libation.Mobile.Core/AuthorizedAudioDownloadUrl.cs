@@ -74,7 +74,7 @@ public sealed class QueuedHttpsAudioDownloadSource : IAuthorizedAudioDownloadSou
             .ToLowerInvariant();
 
         Directory.CreateDirectory(_stagingDirectory);
-        var stagingPath = Path.Combine(_stagingDirectory, idHash + extension + ".download");
+        var stagingPath = Path.Combine(_stagingDirectory, idHash + ".download" + extension);
         return Task.FromResult(new AuthorizedAudioDownload(uri, stagingPath));
     }
 }
