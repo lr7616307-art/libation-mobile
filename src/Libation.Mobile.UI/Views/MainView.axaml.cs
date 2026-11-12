@@ -63,7 +63,7 @@ public partial class MainView : UserControl
             downloadSettingsStore, repository, audioImport);
         _downloadWorker = new DownloadQueueWorker(
             queue,
-            new AudioFileDownloader(new HttpClient()),
+            new AudioFileDownloader(new HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
             new QueuedHttpsAudioDownloadSource(Path.Combine(dataDirectory, "download-staging")),
             downloadPublisher);
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
@@ -1250,7 +1250,7 @@ public partial class MainView : UserControl
         if (_downloadRunCts is { IsCancellationRequested: false })
         {
             _downloadRunCts.Cancel();
-            _viewModel.ReportDownloadSettingsStatus("Pausing after the current network read. The item will remain queued for retry.");
+            _viewModel.ReportDownloadSettingsStatus("Download stopped and returned to the queue. Starting it again restarts that file from the beginning.");
             return;
         }
 
