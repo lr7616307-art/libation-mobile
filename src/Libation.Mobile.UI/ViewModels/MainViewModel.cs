@@ -24,6 +24,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly IDownloadSettingsStore? _downloadSettingsStore;
     private DownloadSettings _downloadSettings = new();
     private string _downloadSettingsStatus = string.Empty;
+    private DownloadQueueProgress? _activeDownloadProgress;
+    private bool _isDownloadQueueRunning;
     private readonly Func<string>? _widevineDiagnosticFactory;
     private string _widevineDiagnostic = "Widevine check is available only in the Android app.";
     private bool _isSyncing;
@@ -893,8 +895,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string PendingImportLabel => _pendingImport is null ? string.Empty : "Backup contains " + _pendingImport.Count + " entries. Confirm to replace the current catalogue.";
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
     public bool IsQueueEmpty => QueueItems.Count == 0;
+    public bool HasPendingDownloadItems => QueueItems.Any(x => x.Status == DownloadStatus.Queued);
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
     public string QueueSummaryLabel => $"{QueueItems.Count(x => x.Status == DownloadStatus.Queued)} queued · {QueueItems.Count(x => x.Status == DownloadStatus.Downloading)} downloading · {QueueItems.Count(x => x.Status == DownloadStatus.Completed)} completed · {QueueItems.Count(x => x.Status == DownloadStatus.Failed)} failed";
+    public bool IsDownloadQueueRunning => _isDownloadQueueRunning;
+    public string DownloadQueueActionLabel => IsDownloadQueueRunning ? "Pause downloads" : "Start pending downloads";
+    public bool HasActiveDownloadProgress => _activeDownloadProgress is not null;
+    public string ActiveDownloadProgressTitle => _activeDownloadProgress is null
+        ? string.Empty
+        : QueueItems.FirstOrDefault(item => item.AudiobookId == _activeDownloadProgress.AudiobookId)?.DisplayTitle
+            ?? "Downloading audiobook";
+    public string ActiveDownloadProgressLabel => _activeDownloadProgress is null
+        ? string.Empty
+        : _activeDownloadProgress.Percentage is { } percentage
+            ? $"{percentage:0}% · {FormatDownloadBytes(_activeDownloadProgress.BytesReceived)} of {FormatDownloadBytes(_activeDownloadProgress.TotalBytes ?? 0)}"
+            : $"{FormatDownloadBytes(_activeDownloadProgress.BytesReceived)} downloaded";
     public string EmptyMessage => Books.Count > 0 ? string.Empty :
         _allBooks.Count == 0 ? "Your local catalogue is empty." : "No matching audiobooks. Try another title, author or narrator.";
 
@@ -1271,6 +1286,91 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception) { ErrorMessage = "Could not update the local download queue."; }
     }
 
+    public async Task EnqueueAuthorizedDownloadAsync(
+        string audiobookId,
+        string sourceUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var book = _allBooks.FirstOrDefault(item => string.Equals(item.Id, audiobookId, StringComparison.Ordinal));
+        if (book is null || !book.CanQueueDownload)
+        {
+            DownloadSettingsStatus = "Only local audiobook entries can use a direct audio URL. Audible titles stay in the official Audible app.";
+            return;
+        }
+
+        if (!_downloadSettings.HasSelectedDirectory)
+        {
+            DownloadSettingsStatus = "Choose a download folder in Settings before starting a download.";
+            return;
+        }
+
+        try
+        {
+            var uri = AuthorizedAudioDownloadUrl.Parse(sourceUrl);
+            var existing = QueueItems.FirstOrDefault(item => item.AudiobookId == audiobookId);
+            if (existing?.Status == DownloadStatus.Completed)
+            {
+                DownloadSettingsStatus = "This audiobook is already downloaded. Remove its completed queue entry before downloading it again.";
+                return;
+            }
+
+            await _downloadQueue.EnqueueAuthorizedAsync(
+                audiobookId, uri.AbsoluteUri, book.Title, cancellationToken);
+            await ReloadQueueAsync(cancellationToken);
+            DownloadSettingsStatus = "Added to the download queue. The direct URL is kept only in the app-private queue and is not included in backups.";
+            ErrorMessage = string.Empty;
+        }
+        catch (ArgumentException exception)
+        {
+            DownloadSettingsStatus = exception.Message;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            DownloadSettingsStatus = "Could not add this audio URL to the download queue.";
+        }
+    }
+
+    public void SetDownloadQueueRunning(bool isRunning)
+    {
+        if (_isDownloadQueueRunning == isRunning) return;
+        _isDownloadQueueRunning = isRunning;
+        OnPropertyChanged(nameof(IsDownloadQueueRunning));
+        OnPropertyChanged(nameof(DownloadQueueActionLabel));
+    }
+
+    public void ReportDownloadProgress(DownloadQueueProgress? progress)
+    {
+        _activeDownloadProgress = progress;
+        OnPropertyChanged(nameof(HasActiveDownloadProgress));
+        OnPropertyChanged(nameof(ActiveDownloadProgressTitle));
+        OnPropertyChanged(nameof(ActiveDownloadProgressLabel));
+    }
+
+    public async Task RefreshDownloadQueueAsync(CancellationToken cancellationToken = default)
+        => await ReloadQueueAsync(cancellationToken);
+
+    public async Task RefreshLibraryAfterDownloadAsync(CancellationToken cancellationToken = default)
+    {
+        _allBooks = await _repository.GetBooksAsync(cancellationToken);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+    }
+
+    private static string FormatDownloadBytes(long bytes)
+    {
+        if (bytes <= 0) return "0 B";
+        string[] units = ["B", "KB", "MB", "GB"];
+        var value = (double)bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+        return $"{value:0.0} {units[unit]}";
+    }
+
     public Task RetryFailedAsync(string audiobookId, CancellationToken cancellationToken = default) => EnqueueAsync(audiobookId, cancellationToken);
 
     public async Task RemoveFromQueueAsync(string audiobookId, CancellationToken cancellationToken = default)
@@ -1288,8 +1388,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         QueueItems.Clear();
         foreach (var item in items) QueueItems.Add(item);
         OnPropertyChanged(nameof(IsQueueEmpty));
+        OnPropertyChanged(nameof(HasPendingDownloadItems));
         OnPropertyChanged(nameof(QueueCountLabel));
         OnPropertyChanged(nameof(QueueSummaryLabel));
+        OnPropertyChanged(nameof(ActiveDownloadProgressTitle));
     }
 
     private void RefreshAudibleBooks(IReadOnlyList<Audiobook> source)
