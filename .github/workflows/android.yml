@@ -99,19 +99,19 @@ jobs:
           set -euo pipefail
           mkdir -p "$(dirname "$TEST_KEYSTORE")"
           if [[ ! -s "$TEST_KEYSTORE" ]]; then
-            keytool -genkeypair -v \\
-              -keystore "$TEST_KEYSTORE" \\
-              -storetype JKS \\
-              -alias vorath-test \\
-              -keyalg RSA \\
-              -keysize 3072 \\
-              -validity 10000 \\
-              -dname "CN=VORATH CI Test,O=VORATH,C=IN" \\
-              -storepass "$TEST_STORE_PASSWORD" \\
+            keytool -genkeypair -v \
+              -keystore "$TEST_KEYSTORE" \
+              -storetype JKS \
+              -alias vorath-test \
+              -keyalg RSA \
+              -keysize 3072 \
+              -validity 10000 \
+              -dname "CN=VORATH CI Test,O=VORATH,C=IN" \
+              -storepass "$TEST_STORE_PASSWORD" \
               -keypass "$TEST_KEY_PASSWORD"
           fi
-          keytool -list -storetype JKS -keystore "$TEST_KEYSTORE" \\
-            -alias vorath-test -storepass "$TEST_STORE_PASSWORD" \\
+          keytool -list -storetype JKS -keystore "$TEST_KEYSTORE" \
+            -alias vorath-test -storepass "$TEST_STORE_PASSWORD" \
             -keypass "$TEST_KEY_PASSWORD" >/dev/null
       - name: Install Android workload
         run: dotnet workload install android
@@ -122,23 +122,22 @@ jobs:
         run: |
           set -euo pipefail
           version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
-          dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj \\
-            -c Release -r android-arm --no-restore \\
-            -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false \\
-            -p:AndroidPackageFormat=apk -p:ApplicationVersion="$version_code" \\
-            -p:AndroidKeyStore=true \\
-            -p:AndroidSigningKeyStore="$TEST_KEYSTORE" \\
-            -p:AndroidSigningStorePass="$TEST_STORE_PASSWORD" \\
-            -p:AndroidSigningKeyAlias=vorath-test \\
+          dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj \
+            -c Release -r android-arm --no-restore \
+            -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false \
+            -p:AndroidPackageFormat=apk -p:ApplicationVersion="$version_code" \
+            -p:AndroidKeyStore=true \
+            -p:AndroidSigningKeyStore="$TEST_KEYSTORE" \
+            -p:AndroidSigningStorePass="$TEST_STORE_PASSWORD" \
+            -p:AndroidSigningKeyAlias=vorath-test \
             -p:AndroidSigningKeyPass="$TEST_KEY_PASSWORD"
           output="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish"
           mapfile -t apks < <(find "$output" -maxdepth 1 -type f -name '*-Signed.apk')
           if (( ${#apks[@]} != 1 )); then
             echo "::error::Expected one signed ARMv7 APK; found ${#apks[@]}."
-            find "$output" -maxdepth 1 -type f -name '*.apk' -printf '%f %s bytes\\n' || true
+            find "$output" -maxdepth 1 -type f -name '*.apk' -print || true
             exit 1
           fi
-          echo "APK=${apks[0]}" >> "$GITHUB_ENV"
           sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
           apksigner="$(find "$sdk/build-tools" -type f -name apksigner | sort | tail -n 1)"
           test -n "$apksigner"
@@ -153,7 +152,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VORATH-ARMv7-Test-APK
-          path: ${{ env.APK }}
+          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish/*-Signed.apk
           if-no-files-found: error
           retention-days: 30
 
