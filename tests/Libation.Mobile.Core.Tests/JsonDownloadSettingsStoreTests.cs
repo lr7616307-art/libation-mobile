@@ -14,7 +14,8 @@ public sealed class JsonDownloadSettingsStoreTests
         var settings = new DownloadSettings(
             "bookmark:android-storage-tree",
             "Audiobooks",
-            DownloadFolderOrganization.AuthorSeriesBook);
+            DownloadFolderOrganization.AuthorSeriesBook,
+            AudibleDownloadQuality.Normal);
 
         await store.SaveAsync(settings);
         var loaded = await store.GetAsync();
@@ -22,6 +23,7 @@ public sealed class JsonDownloadSettingsStoreTests
         Assert.Equal("bookmark:android-storage-tree", loaded.DirectoryBookmark);
         Assert.Equal("Audiobooks", loaded.DirectoryName);
         Assert.Equal(DownloadFolderOrganization.AuthorSeriesBook, loaded.FolderOrganization);
+        Assert.Equal(AudibleDownloadQuality.Normal, loaded.AudibleQuality);
         Assert.Equal("Downloads/Author/Series/Book Title/Book Title.m4b", loaded.FolderOrganizationExample);
     }
 
@@ -35,6 +37,7 @@ public sealed class JsonDownloadSettingsStoreTests
 
         Assert.False(loaded.HasSelectedDirectory);
         Assert.Equal(DownloadFolderOrganization.AuthorBook, loaded.FolderOrganization);
+        Assert.Equal(AudibleDownloadQuality.High, loaded.AudibleQuality);
         Assert.Equal("Author / Book", loaded.FolderOrganizationLabel);
     }
 
