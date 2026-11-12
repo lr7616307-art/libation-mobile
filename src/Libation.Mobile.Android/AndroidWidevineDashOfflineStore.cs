@@ -130,25 +130,23 @@ public sealed class AndroidWidevineDashOfflineStore
         {
             var index = ReadCacheIndex();
             var requirements = ReadCacheRequirements();
-            if (!index.TryGetValue(scope, out var keys))
-                keys = new HashSet<string>(StringComparer.Ordinal);
+            var indexedKeys = index.TryGetValue(scope, out var storedKeys)
+                ? storedKeys
+                : new HashSet<string>(StringComparer.Ordinal);
+            var reconciliation = AudibleWidevineCacheRangeIntegrity.ReconcileCacheIndex(
+                scope, indexedKeys, liveKeys);
+            var keys = reconciliation.RetainedKeys.ToHashSet(StringComparer.Ordinal);
+            var changed = reconciliation.StaleKeys.Count > 0
+                || reconciliation.RecoveredOrphanKeys.Count > 0;
 
-            var changed = false;
-            foreach (var staleKey in keys.Where(key => !liveKeys.Contains(key)).ToArray())
+            // Stale requirements are removed with the stale index entry.
+            // Recovered orphans have no trusted range metadata yet; they remain
+            // removable, but the audit fails closed until a retry re-observes
+            // the corresponding DataSpec and its complete byte range.
+            if (requirements.TryGetValue(scope, out var titleRequirements))
             {
-                keys.Remove(staleKey);
-                if (requirements.TryGetValue(scope, out var titleRequirements))
+                foreach (var staleKey in reconciliation.StaleKeys)
                     titleRequirements.Remove(staleKey);
-                changed = true;
-            }
-
-            // Recover cache resources committed just before an interrupted index
-            // write. Their ranges are unknown until a retry revisits the DataSpec,
-            // so they are retained for deletion but never treated as complete.
-            foreach (var orphanKey in liveKeys.Where(key => key.StartsWith(scope + ":", StringComparison.Ordinal)))
-            {
-                if (keys.Add(orphanKey))
-                    changed = true;
             }
 
             if (keys.Count == 0)
