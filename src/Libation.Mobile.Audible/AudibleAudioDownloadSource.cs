@@ -12,7 +12,11 @@ namespace Libation.Mobile.Audible;
 /// A provider-authorized Widevine DASH manifest reference. This is not a downloaded
 /// media file and must only be opened by a DRM-capable platform media pipeline.
 /// </summary>
-public sealed record AudibleWidevineContent(Uri ManifestUri, string? ContentFormat);
+public sealed record AudibleWidevineContent(
+    Uri ManifestUri,
+    string? ContentFormat,
+    string? Acr,
+    string? FileVersion);
 
 /// <summary>
 /// Requests Audible-issued content licences and exposes Audible's authenticated
@@ -139,9 +143,12 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Audible returned no valid HTTPS Widevine manifest URL.");
 
+        var contentReference = license.ContentMetadata?.ContentReference;
         return new AudibleWidevineContent(
             manifestUri,
-            license.ContentMetadata?.ContentReference?.ContentFormat);
+            contentReference?.ContentFormat,
+            contentReference?.Acr,
+            contentReference?.FileVersion);
     }
 
     private async Task<AuthorizedAudioDownload> ResolveWithDrmAsync(
