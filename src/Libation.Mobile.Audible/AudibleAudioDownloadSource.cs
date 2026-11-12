@@ -25,6 +25,7 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 
     private readonly Func<string, DownloadQuality, DrmType, CancellationToken, Task<ContentLicense>> _requestLicense;
     private readonly Func<string, string, CancellationToken, Task<string>> _requestWidevineLicense;
+    private readonly bool _widevineLicenseExchangeEnabled;
     private readonly string _downloadDirectory;
 
     public AudibleAudioDownloadSource(
@@ -38,7 +39,13 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             : DownloadQuality.High;
         _requestLicense = (asin, requestedQuality, drmType, _) =>
             api.GetDownloadLicenseAsync(asin, requestedQuality, ChapterTitlesType.Tree, drmType);
-        _requestWidevineLicense = (asin, challenge, _) => api.WidevineDrmLicense(asin, challenge);
+        // AudibleApi 14.1.2 logs the request exception with its JSON body, which
+        // can contain the platform DRM challenge. Keep the production exchange
+        // disabled until that upstream logging path is safely redacted.
+        _requestWidevineLicense = (_, _, _) => Task.FromException<string>(
+            new NotSupportedException(
+                "Audible Widevine licence exchange is temporarily disabled: the pinned AudibleApi transport can log the DRM challenge on failure."));
+        _widevineLicenseExchangeEnabled = false;
         _downloadDirectory = NormalizeDownloadDirectory(downloadDirectory);
         _quality = apiQuality;
     }
@@ -57,6 +64,7 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
     {
         _requestLicense = requestLicense ?? throw new ArgumentNullException(nameof(requestLicense));
         _requestWidevineLicense = requestWidevineLicense ?? throw new ArgumentNullException(nameof(requestWidevineLicense));
+        _widevineLicenseExchangeEnabled = true;
         _downloadDirectory = NormalizeDownloadDirectory(downloadDirectory);
         _quality = quality == AudibleDownloadQuality.Normal ? DownloadQuality.Normal : DownloadQuality.High;
     }
@@ -195,6 +203,10 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         cancellationToken.ThrowIfCancellationRequested();
         ValidateAsin(audiobookId);
         ArgumentException.ThrowIfNullOrWhiteSpace(licenseChallenge);
+
+        if (!_widevineLicenseExchangeEnabled)
+            throw new NotSupportedException(
+                "Audible Widevine licence exchange is disabled until the upstream challenge-logging issue is fixed.");
 
         var response = await _requestWidevineLicense(audiobookId, licenseChallenge, cancellationToken)
             .ConfigureAwait(false);
