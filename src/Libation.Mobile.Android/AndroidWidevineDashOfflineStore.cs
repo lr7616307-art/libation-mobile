@@ -165,8 +165,9 @@ public sealed class AndroidWidevineDashOfflineStore
 
             if (changed)
             {
-                if (index.ContainsKey(scope))
-                    index[scope] = keys;
+                // Persist both previously indexed and newly reconciled orphan
+                // resources so removal still finds every cache entry.
+                index[scope] = keys;
                 WriteCacheIndex(index);
                 WriteCacheRequirements(requirements);
             }
