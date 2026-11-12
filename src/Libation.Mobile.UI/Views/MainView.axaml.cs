@@ -984,18 +984,9 @@ public partial class MainView : UserControl
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(book.ProtectedAudioFileName))
-        {
-            await PlayProtectedAudibleBookAsync(book);
-            return;
-        }
-
-        await _viewModel.EnqueueAsync(book.Id);
-        if (string.IsNullOrWhiteSpace(_viewModel.ErrorMessage) &&
-            _viewModel.DownloadSettingsStatus.StartsWith("Added to the Audible download queue.", StringComparison.Ordinal))
-        {
-            await StartPendingDownloadsAsync();
-        }
+        // Audible titles use the provider-authorized Widevine DASH path directly.
+        // Do not queue a second ADRM/AAXC copy through the generic file downloader.
+        await PlayProtectedAudibleBookAsync(book);
     }
 
     private async Task PlayProtectedAudibleBookAsync(Audiobook book)
@@ -1035,6 +1026,7 @@ public partial class MainView : UserControl
                 await coordinator.DownloadOfflineMediaAsync(asin);
             }
 
+            await _viewModel.MarkWidevineOfflineAvailableAsync(book.Id);
             await coordinator.PlayAsync(
                 asin,
                 book.Title,
