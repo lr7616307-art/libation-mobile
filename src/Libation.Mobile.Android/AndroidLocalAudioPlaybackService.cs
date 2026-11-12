@@ -252,10 +252,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
         StartForeground(NotificationId, BuildNotification());
 
-        MediaSource mediaSource;
+        var mediaSource = default(AndroidX.Media3.ExoPlayer.Source.IMediaSource);
         try
         {
-            var streamKeys = new Java.Util.ArrayList<StreamKey>();
+            var streamKeys = new Java.Util.ArrayList();
             for (var offset = 0; offset < streamKeyValues.Length; offset += 3)
             {
                 var periodIndex = streamKeyValues[offset];
