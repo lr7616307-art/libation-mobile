@@ -1193,6 +1193,19 @@ public partial class MainView : UserControl
         }
     }
 
+    private async void CycleAudibleDownloadQualityClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            await _viewModel.CycleAudibleDownloadQualityAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Audible download quality preference save failed: {ex}");
+            _viewModel.ReportDownloadSettingsStatus("Could not save the Audible download quality preference.");
+        }
+    }
+
     private async void ImportAudiobookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         var provider = TopLevel.GetTopLevel(this)?.StorageProvider;
