@@ -223,6 +223,8 @@
                     <Button Content="{Binding DetailBook.DownloadActionLabel}" HorizontalAlignment="Stretch"
                             FontSize="17" Padding="14,12"
                             Click="DownloadAudibleBookFromDetailClicked"/>
+                    <TextBlock Text="{Binding DownloadSettingsStatus}"
+                               FontSize="11" Opacity="0.78" TextWrapping="Wrap"/>
                     <Button Content="▶  Play audiobook in VØRATH" HorizontalAlignment="Stretch"
                             IsVisible="{Binding HasPlayableDetailAudio}" Click="PlayDetailBookClicked"/>
                     <TextBlock Text="{Binding DetailProtectedDownloadLabel}"
