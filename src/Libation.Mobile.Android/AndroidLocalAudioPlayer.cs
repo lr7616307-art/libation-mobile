@@ -91,7 +91,6 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraFilePath, filePath);
         if (!string.IsNullOrWhiteSpace(title)) intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraTitle, title);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
-        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraAutoPlay, autoPlay);
         StartService(intent, foreground: true);
     }
 
