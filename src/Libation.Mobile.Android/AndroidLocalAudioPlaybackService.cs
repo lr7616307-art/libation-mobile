@@ -255,7 +255,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         MediaItem mediaItem;
         try
         {
-            var streamKeys = new Java.Util.ArrayList();
+            var streamKeys = new Android.Runtime.JavaList<StreamKey>();
             for (var offset = 0; offset < streamKeyValues.Length; offset += 3)
             {
                 var periodIndex = streamKeyValues[offset];
