@@ -759,10 +759,46 @@ public partial class MainView : UserControl
         accountViewModel.UpdateLibrarySummary(_viewModel.AudibleBooks.Count, _viewModel.LastSuccessfulSync, status);
     }
 
-    private void AudibleBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void AudibleBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: Audiobook book }) return;
+        _viewModel.OpenBookDetails(book.Id);
+        await _viewModel.LoadProviderBookDetailsAsync(book.Id);
+    }
+
+    private async void DownloadAudibleBookClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: Audiobook book })
-            _viewModel.OpenBookDetails(book.Id);
+            await OpenAudibleTitleAsync(book.Id);
+    }
+
+    private async void DownloadAudibleBookFromDetailClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.DetailBook is { } book)
+            await OpenAudibleTitleAsync(book.Id);
+    }
+
+    private async Task OpenAudibleTitleAsync(string audiobookId)
+    {
+        if (!audiobookId.StartsWith("provider:", StringComparison.Ordinal))
+            return;
+        var asin = audiobookId["provider:".Length..];
+        var openTitle = PlatformOpenAudibleTitleFactory;
+        if (openTitle is null)
+        {
+            _viewModel.ReportAudioStatus("Opening Audible titles is unavailable in this build.");
+            return;
+        }
+
+        try
+        {
+            await openTitle(asin);
+            _viewModel.ReportAudioStatus("Opened the title in Audible. Complete the download in the Audible app.");
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ReportAudioStatus($"Could not open Audible ({ex.GetType().Name}).");
+        }
     }
 
     private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
