@@ -7,6 +7,12 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Audible;
 
 /// <summary>
+/// A provider-authorized Widevine DASH manifest reference. This is not a downloaded
+/// media file and must only be opened by a DRM-capable platform media pipeline.
+/// </summary>
+public sealed record AudibleWidevineContent(Uri ManifestUri, string? ContentFormat);
+
+/// <summary>
 /// Requests Audible-issued content licences and exposes Audible's authenticated
 /// Widevine licence exchange. Protected media remains protected; this class does
 /// not extract keys, decrypt streams, or bypass DRM.
@@ -89,10 +95,39 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
     /// the requested DRM type when the saved device registration is not its
     /// supported Android Audible profile; such a response is rejected here.
     /// </summary>
-    public Task<AuthorizedAudioDownload> ResolveWidevineAsync(
+    public async Task<AudibleWidevineContent> ResolveWidevineAsync(
         string audiobookId,
         CancellationToken cancellationToken = default)
-        => ResolveWithDrmAsync(audiobookId, DrmType.Widevine, requireWidevine: true, cancellationToken);
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateAsin(audiobookId);
+
+        var license = await _requestLicense(audiobookId, _quality, DrmType.Widevine, cancellationToken)
+            .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (license is null ||
+            !string.Equals(license.StatusCode, "Granted", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Audible did not grant a Widevine content licence for this audiobook.");
+
+        if (!string.Equals(license.DrmType.ToString(), "Widevine", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException(
+                "Audible did not issue a Widevine licence for this device registration. No DRM fallback was used.");
+
+        // For Widevine, AudibleApi's LicenseResponse is the DASH manifest URL.
+        // The separate WidevineDrmLicense call exchanges the platform-generated
+        // MediaDrm challenge; this URL is not an offline audio-file URL.
+        var manifest = license.LicenseResponse;
+        if (string.IsNullOrWhiteSpace(manifest) ||
+            !Uri.TryCreate(manifest, UriKind.Absolute, out var manifestUri) ||
+            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Audible returned no valid HTTPS Widevine manifest URL.");
+
+        return new AudibleWidevineContent(
+            manifestUri,
+            license.ContentMetadata?.ContentReference?.ContentFormat);
+    }
 
     private async Task<AuthorizedAudioDownload> ResolveWithDrmAsync(
         string audiobookId,
