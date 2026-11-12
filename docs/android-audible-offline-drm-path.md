@@ -41,12 +41,22 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Added a dedicated `AndroidLocalAudioPlayer.StartWidevineDash` entry point and service action. It passes the HTTPS MPD and offline key-set ID to Media3, sets the Widevine UUID and offline key-set ID on the media item's DRM configuration, and uses the Media3 DASH module.
 - Protected remote playback does not set a clear local file path and the key-set ID is not written into playback recovery preferences or the audiobook catalogue.
 
-## Remaining implementation — not yet complete
+## Pass 11 implementation — encrypted DASH offline media groundwork
 
-1. Implement a Media3 DASH offline download/cache flow for the encrypted representations and segments. The current Media3 path opens the provider MPD for DRM playback; it is not a local offline media download. The UI explicitly reports that an internet connection is still required.
-2. Add protected-playback recovery across app/process restart by storing only non-secret title identity and position, then reacquiring a fresh provider MPD and loading the key-set ID from encrypted storage.
-3. Add licence expiry/renewal, provider release/revocation, account disconnect and title deletion handling, including safe cleanup when the app loses account access.
-4. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, exact challenge/response compatibility, key-set persistence, protected DASH playback, app restart, actual offline segment playback, expiry/release and reinstall behavior.
+- Added an Android app-private Media3 `SimpleCache` and a separate cache-only playback data source. Protected content is never routed through the ordinary clear-audio player.
+- Added `DashDownloader` integration using the selected audio representations only. DASH stream selection rejects manifests with ambiguous/multiple adaptation sets rather than caching video or an unverified track.
+- Added a hashed account/ASIN cache scope and hashed resource cache keys. A small app-private index records cache keys by title so cache availability and title deletion survive process death without retaining signed Audible URLs as cache identifiers.
+- Added an 8 GiB protected-cache ceiling and cancellation support. Partial encrypted segments remain retryable; a separate encrypted completion marker is set only after the downloader returns successfully.
+- Stored the short-lived manifest reference and selected stream indexes in the Keystore-backed secret store, separate from catalogue and ordinary download queue files.
+- Changed the Audible action to use the Widevine DASH route directly rather than queueing a separate generic AAXC/ADRM protected file. The UI marks a title offline only after the protected media download completes.
+
+## Remaining implementation — not yet verified
+
+1. Complete Android ABI builds for the latest Media3 downloader/cache bindings; a previous attempt exposed .NET binding mismatches that have been fixed in the latest commits. The latest CI run is still in progress.
+2. Add a robust offline-cache integrity audit. The current completion marker and cache-key index are written by the download path; a future startup audit should verify all DASH resources and reconcile orphaned or missing cache entries before showing a title as offline.
+3. Add protected-playback recovery across app/process restart by persisting only non-secret title identity and position, then loading the key-set ID and cache-only DASH source.
+4. Add licence expiry/renewal, provider release/revocation, account disconnect and title deletion handling, including safe cleanup when the app loses account access.
+5. Verify with an authorized Audible title on a physical Android 10 handset: Widevine grant, challenge/response compatibility, persistent key-set validity, DASH segment completion, offline playback with network disabled, app restart, expiry/release and reinstall behavior.
 
 ## Android 10 / device constraints
 
