@@ -47,6 +47,57 @@ public sealed class AudiblePkceRegistrationClientTests
     }
 
     [Fact]
+    public async Task RegisterAsync_RejectsPkceVerifierThatDoesNotMatchChallengeBeforeNetworkCall()
+    {
+        var handler = new CapturingHandler("{}", HttpStatusCode.OK);
+        using var http = new HttpClient(handler);
+        var challenge = AudibleOAuthFlow.Create("in") with
+        {
+            CodeChallenge = new string('B', 43)
+        };
+        var client = new AudiblePkceRegistrationClient(http);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.RegisterAsync(challenge, "authorization-code"));
+
+        Assert.Null(handler.RequestUri);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_RejectsAuthorizationUrlWithMismatchedPkceChallengeBeforeNetworkCall()
+    {
+        var handler = new CapturingHandler("{}", HttpStatusCode.OK);
+        using var http = new HttpClient(handler);
+        var challenge = AudibleOAuthFlow.Create("in");
+        var tamperedAuthorizationUri = new Uri(challenge.AuthorizationUri.AbsoluteUri.Replace(
+            challenge.CodeChallenge, new string('B', 43), StringComparison.Ordinal));
+        var tampered = challenge with { AuthorizationUri = tamperedAuthorizationUri };
+        var client = new AudiblePkceRegistrationClient(http);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.RegisterAsync(tampered, "authorization-code"));
+
+        Assert.Null(handler.RequestUri);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_RejectsCallbackFromDifferentMarketplaceBeforeNetworkCall()
+    {
+        var handler = new CapturingHandler("{}", HttpStatusCode.OK);
+        using var http = new HttpClient(handler);
+        var challenge = AudibleOAuthFlow.Create("in") with
+        {
+            CallbackUri = new Uri("https://www.amazon.com/ap/maplanding")
+        };
+        var client = new AudiblePkceRegistrationClient(http);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.RegisterAsync(challenge, "authorization-code"));
+
+        Assert.Null(handler.RequestUri);
+    }
+
+    [Fact]
     public async Task RegisterAsync_MapsCompleteRegistrationResponseIntoRestorableIdentity()
     {
         using var rsa = RSA.Create(2048);
