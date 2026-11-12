@@ -11,6 +11,10 @@ namespace Libation.Mobile.Android;
 /// </summary>
 public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevinePlaybackCoordinator
 {
+    private const int OfflineLicenseStateUnknown = 0;
+    private const int OfflineLicenseStateUsable = 1;
+    private const int OfflineLicenseStateReleased = 2;
+
     private readonly AudibleAudioDownloadSource source;
     private readonly AudibleWidevineManifestClient manifestClient;
     private readonly AudibleOfflineLicenseKeySetStore keySetStore;
@@ -38,8 +42,29 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         if (keySetId is null)
             return false;
 
-        CryptographicOperations.ZeroMemory(keySetId);
-        return true;
+        try
+        {
+            using var drmSession = new AndroidWidevineOfflineSession();
+            var state = drmSession.GetOfflineLicenseState(keySetId);
+            return state switch
+            {
+                OfflineLicenseStateUsable => true,
+                OfflineLicenseStateReleased => false,
+                OfflineLicenseStateUnknown => throw new InvalidOperationException(
+                    "Android could not verify the saved Audible offline licence state."),
+                _ => throw new InvalidDataException(
+                    "Android returned an unsupported Audible offline licence state.")
+            };
+        }
+        catch (Java.Lang.IllegalArgumentException)
+        {
+            // The key-set identifier no longer maps to a persistent device licence.
+            return false;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(keySetId);
+        }
     }
 
     public async Task<bool> HasOfflineMediaAsync(
@@ -71,11 +96,16 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     /// Obtains an Audible-issued Widevine manifest, creates a platform offline
     /// challenge, supplies Audible's opaque response to MediaDrm, and persists
     /// only the resulting key-set ID through the Keystore-backed secret store.
+    /// An expired/released local key set is removed before a new provider grant
+    /// is requested; an unknown DRM state fails closed instead of overwriting it.
     /// </summary>
     public async Task AcquireOfflineLicenseAsync(
         string asin,
         CancellationToken cancellationToken = default)
     {
+        await RemoveInactiveLicenseBeforeReplacementAsync(asin, cancellationToken)
+            .ConfigureAwait(false);
+
         var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
         var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
             .ConfigureAwait(false);
@@ -101,11 +131,12 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         }
         catch
         {
-            // If MediaDrm accepted a licence but secure persistence failed, remove
-            // the just-created device-side key set rather than leave an orphan.
+            // If MediaDrm accepted a persistent licence but secure persistence
+            // failed, remove that exact key set rather than only clearing the
+            // active session's temporary keys.
             if (!persisted && keySetId is not null)
             {
-                try { drmSession.RemoveOfflineKeys(); }
+                try { drmSession.RemoveOfflineLicense(keySetId); }
                 catch (Exception) { /* Preserve the original failure; never log DRM state. */ }
             }
             throw;
@@ -115,6 +146,51 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             if (challenge is not null) CryptographicOperations.ZeroMemory(challenge);
             if (response is not null) CryptographicOperations.ZeroMemory(response);
             if (keySetId is not null) CryptographicOperations.ZeroMemory(keySetId);
+        }
+    }
+
+    private async Task RemoveInactiveLicenseBeforeReplacementAsync(
+        string asin,
+        CancellationToken cancellationToken)
+    {
+        var existingKeySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
+            .ConfigureAwait(false);
+        if (existingKeySetId is null)
+            return;
+
+        var canReuseExisting = false;
+        try
+        {
+            using var drmSession = new AndroidWidevineOfflineSession();
+            var state = drmSession.GetOfflineLicenseState(existingKeySetId);
+            if (state == OfflineLicenseStateUsable)
+            {
+                canReuseExisting = true;
+                return;
+            }
+
+            if (state == OfflineLicenseStateUnknown)
+                throw new InvalidOperationException(
+                    "Android could not verify the saved Audible offline licence. The existing licence was retained; try again later.");
+
+            if (state == OfflineLicenseStateReleased)
+                drmSession.RemoveOfflineLicense(existingKeySetId);
+        }
+        catch (Java.Lang.IllegalArgumentException)
+        {
+            // The stored identifier no longer exists in the platform DRM store.
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(existingKeySetId);
+        }
+
+        if (!canReuseExisting)
+        {
+            new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
+                .RemoveTitle(accountId, asin);
+            await keySetStore.RemoveAsync(accountId, asin, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -179,6 +255,10 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        if (!await HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false))
+            throw new InvalidOperationException(
+                "The Audible offline licence is missing, expired or inactive. Connect to the internet to request a new licence.");
+
         var keySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException(
@@ -220,9 +300,9 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     }
 
     /// <summary>
-    /// Releases the provider-authorized offline licence on this device before
-    /// removing its encrypted local identifier. On failure, the identifier is
-    /// retained so the operation can be retried.
+    /// Removes one title's persistent licence from Android and deletes its
+    /// encrypted key-set metadata and DASH cache. Android's direct removal API
+    /// is device-local and does not confirm release to Audible's licence server.
     /// </summary>
     public async Task RemoveOfflineLicenseAsync(
         string asin,
@@ -233,25 +313,48 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
 
         var keySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
             .ConfigureAwait(false);
-        if (keySetId is null)
-            return;
-
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using var drmSession = new AndroidWidevineOfflineSession();
-            drmSession.RestoreOfflineKeys(keySetId);
-            drmSession.RemoveOfflineKeys();
+            if (keySetId is not null)
+            {
+                try
+                {
+                    using var drmSession = new AndroidWidevineOfflineSession();
+                    drmSession.RemoveOfflineLicense(keySetId);
+                }
+                catch (Java.Lang.IllegalArgumentException)
+                {
+                    // The platform no longer has this key set; local metadata can
+                    // still be safely removed after confirming that condition.
+                }
+            }
+
             new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
                 .RemoveTitle(accountId, asin);
-            await keySetStore.RemoveDashManifestAsync(accountId, asin, cancellationToken)
-                .ConfigureAwait(false);
             await keySetStore.RemoveAsync(accountId, asin, cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(keySetId);
+            if (keySetId is not null)
+                CryptographicOperations.ZeroMemory(keySetId);
+        }
+    }
+
+    /// <summary>
+    /// Cleans every offline title indexed for the signed-in Audible account.
+    /// The snapshot of ASINs is taken from encrypted storage, and each removal
+    /// updates the index only after that title's local key set and cache are gone.
+    /// </summary>
+    public async Task RemoveAllOfflineLicensesAsync(CancellationToken cancellationToken = default)
+    {
+        var asins = await keySetStore.ListAccountTitlesAsync(accountId, cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var asin in asins)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await RemoveOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false);
         }
     }
 }
