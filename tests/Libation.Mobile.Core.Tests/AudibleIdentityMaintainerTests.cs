@@ -136,7 +136,7 @@ public sealed class AudibleIdentityMaintainerTests
         Assert.Equal(0, secrets.SetCalls);
         Assert.Equal(1, secrets.RemoveCalls);
         Assert.Null(secrets.LastValue);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => maintainer.GetAccessTokenAsync());
+        await Assert.ThrowsAsync<OperationCanceledException>(() => maintainer.GetAccessTokenAsync());
         Assert.Equal(1, authorize.RefreshCalls);
     }
 
@@ -187,7 +187,7 @@ public sealed class AudibleIdentityMaintainerTests
 
         await maintainer.DisconnectAsync();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => maintainer.GetAccessTokenAsync());
+        await Assert.ThrowsAsync<OperationCanceledException>(() => maintainer.GetAccessTokenAsync());
         Assert.Equal(1, secrets.RemoveCalls);
         Assert.Equal(0, authorize.RefreshCalls);
     }
