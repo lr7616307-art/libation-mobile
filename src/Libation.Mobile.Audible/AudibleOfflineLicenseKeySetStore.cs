@@ -96,6 +96,10 @@ public sealed class AudibleOfflineLicenseKeySetStore(ISecretStore secrets)
         if (Encoding.UTF8.GetByteCount(json) > 12 * 1024)
             throw new InvalidDataException("The Audible DASH playback reference exceeds the secure storage limit.");
 
+        // Invalidate the previous completion marker before replacing its manifest
+        // or stream selection. A failed new transfer must never look complete.
+        await secrets.RemoveAsync(
+            GetManifestCompleteStorageKey(accountId, asin), cancellationToken).ConfigureAwait(false);
         await secrets.SetAsync(
             GetManifestStorageKey(accountId, asin), json, cancellationToken).ConfigureAwait(false);
     }
