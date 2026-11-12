@@ -216,6 +216,9 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         string asin,
         CancellationToken cancellationToken = default)
     {
+        await AndroidLocalAudioPlaybackService.StopWidevinePlaybackIfCurrentAsync(
+            asin, cancellationToken).ConfigureAwait(false);
+
         var keySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
             .ConfigureAwait(false);
         if (keySetId is null)
