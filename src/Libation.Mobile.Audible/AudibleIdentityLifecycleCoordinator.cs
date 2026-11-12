@@ -43,11 +43,6 @@ public sealed class AudibleIdentityLifecycleCoordinator
     }
 
     /// <summary>
-    /// Runs a refresh or other update against the current lifecycle generation.
-    /// A newer login/replacement or clear invalidates the operation before it
-    /// can commit, or causes it to report cancellation if superseded during commit.
-    /// </summary>
-    /// <summary>
     /// Current identity generation. A maintainer captures this when its identity is
     /// restored; later login or clear operations permanently invalidate that maintainer.
     /// </summary>
