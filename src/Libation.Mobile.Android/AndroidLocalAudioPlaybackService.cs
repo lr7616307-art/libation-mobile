@@ -72,6 +72,58 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public static long DurationMilliseconds => Current?.ReadDuration() ?? 0;
     public static float PlaybackSpeed => Current?._playbackSpeed ?? 1f;
 
+    /// <summary>
+    /// Stops this title's protected player on the Android main looper before its
+    /// offline licence or cache is removed. Clear-audio playback is unaffected.
+    /// </summary>
+    public static async Task StopWidevinePlaybackIfCurrentAsync(
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(asin);
+        var service = Current;
+        if (service is null ||
+            !service._isWidevinePlayback ||
+            !string.Equals(service._widevineAsin, asin, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var completion = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void StopOnMainLooper()
+        {
+            try
+            {
+                if (Current == service &&
+                    service._isWidevinePlayback &&
+                    string.Equals(service._widevineAsin, asin, StringComparison.OrdinalIgnoreCase))
+                {
+                    service.StopPlayback();
+                    service.StopSelf();
+                    service.PublishPlaybackState();
+                }
+                completion.TrySetResult(true);
+            }
+            catch (Exception exception)
+            {
+                completion.TrySetException(exception);
+            }
+        }
+
+        if (Looper.MyLooper() == Looper.MainLooper)
+        {
+            StopOnMainLooper();
+        }
+        else
+        {
+            var handler = service._checkpointHandler ?? new Handler(Looper.MainLooper!);
+            if (!handler.Post(new Java.Lang.Runnable(StopOnMainLooper)))
+                throw new InvalidOperationException("Unable to stop protected playback before removing the offline title.");
+        }
+
+        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public override void OnCreate()
     {
         base.OnCreate();
