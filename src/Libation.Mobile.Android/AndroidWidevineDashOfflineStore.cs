@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Libation.Mobile.Audible;
 using Android.Content;
 using AndroidX.Media3.Common;
@@ -13,13 +15,16 @@ namespace Libation.Mobile.Android;
 /// <summary>
 /// Downloads provider-encrypted DASH audio segments into an app-private Media3
 /// cache. Cache index keys are scoped to a hashed account/title identity and
-/// hashed resource URI; signed provider URLs are not written as cache keys.
+/// hashed resource URI; signed provider URLs are never stored as cache keys.
 /// </summary>
 public sealed class AndroidWidevineDashOfflineStore
 {
     private const string CacheDirectoryName = "vorath-widevine-dash-cache-v1";
+    private const string CacheIndexFileName = "vorath-widevine-dash-cache-index-v1.json";
     private const long MaximumCachedBytes = 8L * 1024 * 1024 * 1024;
+    private const int MaximumIndexedKeys = 100_000;
     private static readonly object CacheGate = new();
+    private static readonly object CacheIndexGate = new();
     private static SimpleCache? sharedCache;
 
     private readonly Context applicationContext;
@@ -51,7 +56,7 @@ public sealed class AndroidWidevineDashOfflineStore
         var scopedCacheFactory = CreateCacheDataSourceFactory(cache, scope, manifestUri);
         var androidUri = global::Android.Net.Uri.Parse(manifestUri.AbsoluteUri);
 
-        var streamKeyList = new Java.Util.ArrayList<StreamKey>();
+        var streamKeyList = new Java.Util.ArrayList();
         foreach (var key in streamKeys)
             streamKeyList.Add(new StreamKey(key.PeriodIndex, key.GroupIndex, key.TrackIndex));
 
@@ -61,7 +66,9 @@ public sealed class AndroidWidevineDashOfflineStore
             .SetStreamKeys(streamKeyList)
             .Build();
 
-        var downloader = new DashDownloader.Factory(scopedCacheFactory).Create(mediaItem);
+        // The generated .NET binding exposes the public Java constructor, while
+        // DashDownloader.Factory.create(MediaItem) is not projected as a method.
+        var downloader = new DashDownloader(mediaItem, scopedCacheFactory);
         using var registration = cancellationToken.Register(() =>
         {
             try { downloader.Cancel(); }
@@ -75,6 +82,13 @@ public sealed class AndroidWidevineDashOfflineStore
             await Task.Run(() => downloader.Download(null), cancellationToken)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (cache.CacheSpace > MaximumCachedBytes)
+            {
+                RemoveTitle(accountId, asin);
+                throw new IOException(
+                    "The protected Audible download would exceed VØRATH's 8 GiB offline cache limit. The incomplete title cache was removed.");
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -85,8 +99,12 @@ public sealed class AndroidWidevineDashOfflineStore
     public bool HasCachedResources(string accountId, string asin)
     {
         ValidateIdentity(accountId, asin);
-        var prefix = GetTitleScope(accountId, asin) + ":";
-        return GetCache().GetKeys().Any(key => key.StartsWith(prefix, StringComparison.Ordinal));
+        var scope = GetTitleScope(accountId, asin);
+        lock (CacheIndexGate)
+        {
+            var index = ReadCacheIndex();
+            return index.TryGetValue(scope, out var keys) && keys.Count > 0;
+        }
     }
 
     public CacheDataSource.Factory CreatePlaybackDataSourceFactory(
@@ -97,7 +115,7 @@ public sealed class AndroidWidevineDashOfflineStore
         ValidateIdentity(accountId, asin);
         ValidateManifestUri(manifestUri);
         // No upstream factory is configured. A cache miss fails closed rather
-        // than silently switching to online streaming when the user expects offline playback.
+        // than silently switching to the network when the user expects offline playback.
         return CreateCacheDataSourceFactory(
             GetCache(), GetTitleScope(accountId, asin), manifestUri, allowNetwork: false);
     }
@@ -105,13 +123,20 @@ public sealed class AndroidWidevineDashOfflineStore
     public void RemoveTitle(string accountId, string asin)
     {
         ValidateIdentity(accountId, asin);
-        var prefix = GetTitleScope(accountId, asin) + ":";
+        var scope = GetTitleScope(accountId, asin);
         var cache = GetCache();
 
-        // Materialize first because RemoveResource mutates the key set.
-        foreach (var key in cache.GetKeys().Where(key =>
-                     key.StartsWith(prefix, StringComparison.Ordinal)).ToArray())
-            cache.RemoveResource(key);
+        lock (CacheIndexGate)
+        {
+            var index = ReadCacheIndex();
+            if (index.TryGetValue(scope, out var keys))
+            {
+                foreach (var key in keys)
+                    cache.RemoveResource(key);
+                index.Remove(scope);
+                WriteCacheIndex(index);
+            }
+        }
     }
 
     private CacheDataSource.Factory CreateCacheDataSourceFactory(
@@ -122,7 +147,10 @@ public sealed class AndroidWidevineDashOfflineStore
     {
         var factory = new CacheDataSource.Factory()
             .SetCache(cache)
-            .SetCacheKeyFactory(new ScopedCacheKeyFactory(titleScope, manifestUri.AbsoluteUri));
+            .SetCacheKeyFactory(new ScopedCacheKeyFactory(
+                titleScope,
+                manifestUri.AbsoluteUri,
+                RecordCacheKey));
 
         if (allowNetwork)
         {
@@ -153,6 +181,74 @@ public sealed class AndroidWidevineDashOfflineStore
             return sharedCache;
         }
     }
+
+    private void RecordCacheKey(string titleScope, string cacheKey)
+    {
+        lock (CacheIndexGate)
+        {
+            var index = ReadCacheIndex();
+            if (!index.TryGetValue(titleScope, out var keys))
+            {
+                keys = new HashSet<string>(StringComparer.Ordinal);
+                index.Add(titleScope, keys);
+            }
+
+            if (keys.Add(cacheKey))
+            {
+                if (index.Sum(pair => pair.Value.Count) > MaximumIndexedKeys)
+                    throw new IOException("The protected-audio cache index has reached its safety limit.");
+                WriteCacheIndex(index);
+            }
+        }
+    }
+
+    private Dictionary<string, HashSet<string>> ReadCacheIndex()
+    {
+        var path = CacheIndexPath;
+        if (!File.Exists(path))
+            return new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        var json = File.ReadAllText(path, Encoding.UTF8);
+        if (Encoding.UTF8.GetByteCount(json) > 8 * 1024 * 1024)
+            throw new InvalidDataException("The protected-audio cache index exceeds its supported size.");
+
+        try
+        {
+            var stored = JsonSerializer.Deserialize<Dictionary<string, string[]>>(json)
+                ?? throw new InvalidDataException("The protected-audio cache index is empty.");
+            if (stored.Count > 4096 ||
+                stored.Any(pair => pair.Value is null || pair.Value.Length > MaximumIndexedKeys))
+                throw new InvalidDataException("The protected-audio cache index exceeds its supported limits.");
+
+            return stored.ToDictionary(
+                pair => pair.Key,
+                pair => new HashSet<string>(pair.Value, StringComparer.Ordinal),
+                StringComparer.Ordinal);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("The protected-audio cache index is malformed.", exception);
+        }
+    }
+
+    private void WriteCacheIndex(Dictionary<string, HashSet<string>> index)
+    {
+        var path = CacheIndexPath;
+        var temporaryPath = path + ".tmp";
+        var payload = index.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
+            StringComparer.Ordinal);
+        var json = JsonSerializer.Serialize(payload);
+        if (Encoding.UTF8.GetByteCount(json) > 8 * 1024 * 1024)
+            throw new InvalidDataException("The protected-audio cache index exceeds its supported size.");
+
+        File.WriteAllText(temporaryPath, json, new UTF8Encoding(false));
+        File.Move(temporaryPath, path, overwrite: true);
+    }
+
+    private string CacheIndexPath
+        => Path.Combine(applicationContext.FilesDir!.AbsolutePath!, CacheIndexFileName);
 
     private static string GetTitleScope(string accountId, string asin)
     {
@@ -194,29 +290,36 @@ public sealed class AndroidWidevineDashOfflineStore
     }
 
     /// <summary>
-    /// Cache keys contain only hashes. The manifest URI is tagged separately so
-    /// title-scoped cache cleanup can be performed without retaining the signed URL.
+    /// Cache keys contain only hashes. A private app-only index records the
+    /// hashed keys by title so cache checks and removal survive process death.
     /// </summary>
     private sealed class ScopedCacheKeyFactory : Java.Lang.Object, ICacheKeyFactory
     {
         private readonly string titleScope;
         private readonly string manifestUri;
+        private readonly Action<string, string> recordCacheKey;
 
-        public ScopedCacheKeyFactory(string titleScope, string manifestUri)
+        public ScopedCacheKeyFactory(
+            string titleScope,
+            string manifestUri,
+            Action<string, string> recordCacheKey)
         {
             this.titleScope = titleScope;
             this.manifestUri = manifestUri;
+            this.recordCacheKey = recordCacheKey;
         }
 
-        public string BuildCacheKey(DataSpec dataSpec)
+        public string? BuildCacheKey(DataSpec? dataSpec)
         {
-            var uri = dataSpec.Uri?.ToString()
+            var uri = dataSpec?.Uri?.ToString()
                 ?? throw new InvalidDataException("Media3 supplied a DASH resource without a URI.");
             var kind = string.Equals(uri, manifestUri, StringComparison.Ordinal)
                 ? "manifest"
                 : "segment";
             var digest = SHA256.HashData(Encoding.UTF8.GetBytes(uri));
-            return titleScope + ":" + kind + ":" + Convert.ToHexString(digest).ToLowerInvariant();
+            var cacheKey = titleScope + ":" + kind + ":" + Convert.ToHexString(digest).ToLowerInvariant();
+            recordCacheKey(titleScope, cacheKey);
+            return cacheKey;
         }
     }
 }
