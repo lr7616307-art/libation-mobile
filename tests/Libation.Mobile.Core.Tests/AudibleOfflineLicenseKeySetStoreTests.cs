@@ -146,6 +146,27 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
                 [new AudibleWidevineStreamKey(-1, 0, 0)]));
     }
 
+    [Fact]
+    public async Task InvalidateDashDownloadComplete_RemovesOnlyTheMatchingTitleMarker()
+    {
+        var store = new AudibleOfflineLicenseKeySetStore(new MemorySecretStore());
+        await store.SaveDashManifestAsync(
+            "account-a", "B012345678",
+            new Uri("https://media.example.invalid/a.mpd"),
+            [new AudibleWidevineStreamKey(0, 0, 0)]);
+        await store.SaveDashManifestAsync(
+            "account-b", "B012345678",
+            new Uri("https://media.example.invalid/b.mpd"),
+            [new AudibleWidevineStreamKey(0, 0, 0)]);
+        await store.MarkDashDownloadCompleteAsync("account-a", "B012345678");
+        await store.MarkDashDownloadCompleteAsync("account-b", "B012345678");
+
+        await store.InvalidateDashDownloadCompleteAsync("account-a", "B012345678");
+
+        Assert.False(await store.IsDashDownloadCompleteAsync("account-a", "B012345678"));
+        Assert.True(await store.IsDashDownloadCompleteAsync("account-b", "B012345678"));
+    }
+
     private sealed class MemorySecretStore : ISecretStore
     {
         private readonly Dictionary<string, string> values = new();
