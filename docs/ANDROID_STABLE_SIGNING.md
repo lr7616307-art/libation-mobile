@@ -59,10 +59,16 @@ Choose a strong keystore password and key password. For simpler setup, you may u
 
 ## 2. Encode the keystore for GitHub Actions
 
-In the same terminal, run:
+On Termux, run:
 
 ```sh
 base64 "$HOME/vorath-signing/vorath-release.jks" | tr -d '\n'
+```
+
+On a computer where step 1 created the file in the current directory, run:
+
+```sh
+base64 vorath-release.jks | tr -d '\n'
 ```
 
 Copy the full output. Keep the .jks file inside Termux's private storage and make a separate secure backup. Do not put an unencrypted copy in Downloads or ordinary shared storage. Treat the Base64 output as a private key: anyone who gets it together with the password can sign VØRATH APKs.
