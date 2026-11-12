@@ -16,7 +16,7 @@ public sealed class AudibleAccountAuthenticatorTests
 
         Assert.True(challenge.AuthorizationUri.IsAbsoluteUri);
         Assert.Equal(Uri.UriSchemeHttps, challenge.AuthorizationUri.Scheme);
-        Assert.True(challenge.ExpiresAtUtc > DateTimeOffset.UtcNow);
+        Assert.Equal(new DateTimeOffset(FixedUtcNow.AddMinutes(10)), challenge.ExpiresAtUtc);
     }
 
     [Theory]
@@ -72,9 +72,11 @@ public sealed class AudibleAccountAuthenticatorTests
         Assert.Equal(0, secrets.SetCalls);
     }
 
+    private static readonly DateTime FixedUtcNow = new(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc);
+
     private static AudibleAccountAuthenticator CreateAuthenticator(InMemorySecretStore secrets)
     {
-        var clock = new FixedClock(new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc));
+        var clock = new FixedClock(FixedUtcNow);
         return new AudibleAccountAuthenticator(new AudibleIdentitySnapshotStore(secrets), clock);
     }
 
