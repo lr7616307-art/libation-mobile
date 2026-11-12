@@ -78,17 +78,18 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             "Widevine" => AudioProtectionKind.Widevine,
             _ => AudioProtectionKind.UnknownProtected
         };
-        var protection = new AudioProtectionDescriptor(
-            protectionKind,
-            license.ContentMetadata?.ContentReference?.ContentFormat);
+        var contentFormat = license.ContentMetadata?.ContentReference?.ContentFormat;
+        var protection = new AudioProtectionDescriptor(protectionKind, contentFormat);
 
-        // Keep the file extension consistent with the format Audible actually
-        // granted. Protected source files are saved as protected media, never
-        // passed to VØRATH's ordinary playable-audio importer.
+        // GetDownloadLicenseAsync can fall back to Audible's older AAX
+        // delivery for titles that do not have an AAXC representation.
+        // Keep the original container extension accurate; neither container
+        // is attached to VØRATH's normal audio player while it remains protected.
         var extension = drmName switch
         {
             "Mpeg" => ".mp3",
-            "Adrm" => ".aaxc",
+            "Adrm" when contentFormat?.Contains("AAXC", StringComparison.OrdinalIgnoreCase) == true => ".aaxc",
+            "Adrm" when contentFormat?.Contains("AAX", StringComparison.OrdinalIgnoreCase) == true => ".aax",
             _ => ".protected"
         };
 
