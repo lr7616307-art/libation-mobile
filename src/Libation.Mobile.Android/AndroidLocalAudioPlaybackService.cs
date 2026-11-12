@@ -255,7 +255,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         MediaItem mediaItem;
         try
         {
-            var streamKeys = new Android.Runtime.JavaList<StreamKey>();
+            var streamKeys = new global::Android.Runtime.JavaList<StreamKey>();
             for (var offset = 0; offset < streamKeyValues.Length; offset += 3)
             {
                 var periodIndex = streamKeyValues[offset];
@@ -269,7 +269,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             var drmConfiguration = new MediaItem.DrmConfiguration.Builder(WidevineUuid)
                 .SetKeySetId(keySetId)
                 .Build();
-            var mediaItem = new MediaItem.Builder()
+            mediaItem = new MediaItem.Builder()
                 .SetUri(global::Android.Net.Uri.Parse(manifestUri.AbsoluteUri))
                 .SetMimeType("application/dash+xml")
                 .SetStreamKeys(streamKeys)
