@@ -26,7 +26,9 @@ public sealed record Audiobook(
     public string AudibleAvailabilityLabel => !IsProviderCatalogueEntry
         ? string.Empty
         : IsPlayableOnAudible == true
-            ? (IsDownloadedOnAudible == true ? "Downloaded in Audible" : "Available in Audible")
+            ? (IsDownloadedOnAudible == true
+                ? "Audible app reports this title downloaded"
+                : "Available to download in Audible app")
             : IsPlayableOnAudible == false
                 ? "Not currently playable in Audible"
                 : "Availability not reported by Audible";
@@ -34,8 +36,8 @@ public sealed record Audiobook(
     [JsonIgnore]
     public string AudibleAvailabilityShortLabel => !IsProviderCatalogueEntry
         ? string.Empty
-        : IsDownloadedOnAudible == true ? "DOWNLOADED"
-        : IsPlayableOnAudible == true ? "↓ AVAILABLE"
+        : IsDownloadedOnAudible == true ? "IN AUDIBLE APP"
+        : IsPlayableOnAudible == true ? "AVAILABLE IN AUDIBLE"
         : IsPlayableOnAudible == false ? "UNAVAILABLE"
         : "STATUS UNKNOWN";
 
@@ -44,7 +46,7 @@ public sealed record Audiobook(
 
     [JsonIgnore]
     public string DownloadActionLabel => IsProviderCatalogueEntry
-        ? "Download in Audible app"
+        ? "Open in Audible app"
         : "Add to queue";
 
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>

@@ -21,7 +21,10 @@ public static class AudibleItemMapper
             JoinNames(item.Narrators?.Select(person => person?.Name)),
             FormatRuntime(item.RuntimeLengthMin))
         {
-            Description = item.Description?.Trim() ?? string.Empty,
+            Description = FirstNonEmpty(
+                item.Description,
+                item.AudibleEditorsSummary,
+                item.EditorialReviews?.FirstOrDefault()),
             CoverImageUrl = item.ProductImages?.The500?.AbsoluteUri ?? string.Empty,
             IsPlayableOnAudible = item.IsPlayable,
             IsDownloadedOnAudible = item.IsDownloaded
@@ -77,6 +80,9 @@ public static class AudibleItemMapper
 
     private static string OrUnknownAuthor(string author)
         => string.IsNullOrWhiteSpace(author) ? "Unknown author" : author;
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
 
     /// <summary>Joins usable names in source order; null, blank and whitespace-only values are ignored.</summary>
     public static string JoinNames(IEnumerable<string?>? names)

@@ -26,6 +26,8 @@ public sealed class AudibleLibraryCatalogProviderTests
             LibraryOptions.ResponseGroupOptions.Contributors
                 | LibraryOptions.ResponseGroupOptions.ProductAttrs
                 | LibraryOptions.ResponseGroupOptions.ProductDesc
+                | LibraryOptions.ResponseGroupOptions.ProductExtendedAttrs
+                | LibraryOptions.ResponseGroupOptions.Media
                 | LibraryOptions.ResponseGroupOptions.IsPlayable
                 | LibraryOptions.ResponseGroupOptions.IsDownloaded,
             capturedOptions!.ResponseGroups);

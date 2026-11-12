@@ -36,6 +36,10 @@ public sealed class LibrarySyncServiceTests
         var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
         await repository.ReplaceAllAsync([
             new Audiobook("provider:aud-1", "My corrected title", "My corrected author", "My narrator", "9h", "Library")
+            {
+                Chapters = [new AudiobookChapter("Cached chapter", 0)],
+                FileSizeBytes = 18_000_000
+            }
         ]);
         var service = new LibrarySyncService(
             new FakeProvider([new RemoteAudiobook("aud-1", "Remote title", "Remote author", "Remote narrator", "8h")]),
@@ -50,6 +54,8 @@ public sealed class LibrarySyncServiceTests
         Assert.Equal("My corrected author", saved.Author);
         Assert.Equal("My narrator", saved.Narrator);
         Assert.Equal("9h", saved.Length);
+        Assert.Single(saved.Chapters);
+        Assert.Equal(18_000_000, saved.FileSizeBytes);
         Assert.Empty(saved.CoverImageUrl);
     }
 

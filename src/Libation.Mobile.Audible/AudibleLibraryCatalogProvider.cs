@@ -63,6 +63,8 @@ public sealed class AudibleLibraryCatalogProvider : ILibraryCatalogProvider
             ResponseGroups = LibraryOptions.ResponseGroupOptions.Contributors
                 | LibraryOptions.ResponseGroupOptions.ProductAttrs
                 | LibraryOptions.ResponseGroupOptions.ProductDesc
+                | LibraryOptions.ResponseGroupOptions.ProductExtendedAttrs
+                | LibraryOptions.ResponseGroupOptions.Media
                 | LibraryOptions.ResponseGroupOptions.IsPlayable
                 | LibraryOptions.ResponseGroupOptions.IsDownloaded,
             ImageSizes = LibraryOptions.ImageSizeOptions._500

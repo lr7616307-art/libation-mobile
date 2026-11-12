@@ -45,7 +45,8 @@ public partial class MainView : UserControl
         var coverDirectory = Path.Combine(dataDirectory, "covers");
         var audioImport = new LocalAudioImportService(audioDirectory);
         _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
-            syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory));
+            syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory),
+            PlatformAudiobookDetailsProviderFactory?.Invoke());
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;

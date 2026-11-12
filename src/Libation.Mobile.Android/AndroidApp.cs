@@ -45,6 +45,10 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         // If the user has not signed in, sync reports that sign-in is required.
         MainView.PlatformLibraryCatalogProviderFactory =
             () => new SavedIdentityAudibleCatalogProvider(snapshots);
+        MainView.PlatformAudiobookDetailsProviderFactory =
+            () => new SavedIdentityAudibleBookDetailsProvider(snapshots);
+        MainView.PlatformOpenAudibleTitleFactory =
+            asin => AndroidAudibleBookLauncher.OpenAsync(this, asin, signInViewModel.Marketplace);
         MainView.PlatformLocalAudioPlayerFactory = () => new AndroidLocalAudioPlayer();
         MainView.PlatformWidevineDiagnosticFactory = () =>
         {

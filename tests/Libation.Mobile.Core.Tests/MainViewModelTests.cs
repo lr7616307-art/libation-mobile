@@ -136,15 +136,83 @@ public sealed class MainViewModelTests
         var book = Assert.Single(vm.AudibleBooks);
         Assert.False(book.CanQueueDownload);
         Assert.False(book.CanDelete);
-        Assert.Equal("↓ AVAILABLE", book.AudibleAvailabilityShortLabel);
+        Assert.Equal("AVAILABLE IN AUDIBLE", book.AudibleAvailabilityShortLabel);
 
         vm.OpenBookDetails(book.Id);
 
         Assert.True(vm.IsBookDetailsVisible);
         Assert.True(vm.IsDetailProviderBook);
         Assert.False(vm.CanEditDetailBook);
-        Assert.Equal("Available in Audible", vm.DetailAudibleAvailabilityLabel);
+        Assert.Equal("Available to download in Audible app", vm.DetailAudibleAvailabilityLabel);
         Assert.Equal("Audible product summary", vm.DetailBookDescription);
+    }
+
+    [Fact]
+    public async Task AudibleDetails_HideLibraryAndBackReturnsToTheFilteredResults()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var detailProvider = new FakeAudiobookDetailsProvider(new ProviderAudiobookDetails(
+            [new AudiobookChapter("Introduction", 0), new AudiobookChapter("Chapter 1", 120_000)],
+            42_000_000));
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([
+                new RemoteAudiobook("ikigai-1", "Ikigai for Young Readers", "Hector Garcia", "Narrator", "3h 48m"),
+                new RemoteAudiobook("other-1", "Another book", "Someone Else", "Narrator", "5h")
+            ]), repository),
+            audiobookDetailsProvider: detailProvider);
+
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+        vm.AudibleSearchText = "Ikigai";
+        var book = Assert.Single(vm.AudibleBooks);
+
+        vm.OpenBookDetails(book.Id);
+        Assert.False(vm.IsAudibleLibraryTab);
+        await vm.LoadProviderBookDetailsAsync(book.Id);
+
+        Assert.True(vm.IsBookDetailsVisible);
+        Assert.Equal("2 chapters", vm.DetailChapterLabel);
+        Assert.Equal("40.1 MB", vm.DetailFileSizeLabel);
+        Assert.Equal(2, vm.DetailBook!.Chapters.Count);
+        Assert.Equal("Ikigai for Young Readers", vm.DetailBook.Title);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.False(vm.IsBookDetailsVisible);
+        Assert.True(vm.IsAudibleLibraryTab);
+        Assert.Equal("Ikigai", vm.AudibleSearchText);
+        Assert.Single(vm.AudibleBooks);
+        Assert.Equal(1, detailProvider.CallCount);
+    }
+
+    [Fact]
+    public async Task AudibleLibrarySystemBack_ClearsSearchAndStaysOnLibraryBeforeLeaving()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([
+                new RemoteAudiobook("ikigai-1", "Ikigai", "Hector Garcia", "Narrator", "3h"),
+                new RemoteAudiobook("other-1", "Another book", "Someone Else", "Narrator", "5h")
+            ]), repository));
+
+        await vm.InitializeAsync();
+        await vm.SyncLibraryAsync();
+        vm.SelectTab(1);
+        vm.AudibleSearchText = "Ikigai";
+        Assert.Single(vm.AudibleBooks);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.True(vm.IsAudibleLibraryTab);
+        Assert.Empty(vm.AudibleSearchText);
+        Assert.Equal(2, vm.AudibleBooks.Count);
+
+        Assert.True(vm.TryNavigateBack());
+        Assert.True(vm.IsHomeTab);
     }
 
     [Fact]
@@ -523,7 +591,7 @@ public sealed class MainViewModelTests
 
         var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
         Assert.False(book.CanQueueDownload);
-        Assert.Equal("Download in Audible app", book.DownloadActionLabel);
+        Assert.Equal("Open in Audible app", book.DownloadActionLabel);
 
         await vm.EnqueueAsync(book.Id);
 
@@ -819,6 +887,19 @@ public sealed class MainViewModelTests
     {
         public Task<IReadOnlyList<RemoteAudiobook>> GetLibraryAsync(CancellationToken cancellationToken = default)
             => error is null ? Task.FromResult(books ?? (IReadOnlyList<RemoteAudiobook>)[]) : Task.FromException<IReadOnlyList<RemoteAudiobook>>(error);
+    }
+
+    private sealed class FakeAudiobookDetailsProvider(ProviderAudiobookDetails details) : IAudiobookDetailsProvider
+    {
+        public int CallCount { get; private set; }
+
+        public Task<ProviderAudiobookDetails?> GetDetailsAsync(
+            string providerId,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult<ProviderAudiobookDetails?>(details);
+        }
     }
 
     private sealed class BlockingCatalogProvider : ILibraryCatalogProvider

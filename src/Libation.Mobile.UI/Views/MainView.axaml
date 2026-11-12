@@ -165,8 +165,9 @@
                   <StackPanel Spacing="7">
                     <TextBlock Text="{Binding DetailAudibleAvailabilityLabel}" FontSize="15"
                                FontWeight="SemiBold" Foreground="#C4B5FD"/>
-                    <TextBlock Text="{Binding DetailBook.DownloadActionLabel}" FontSize="13" FontWeight="SemiBold"/>
-                    <TextBlock Text="VØRATH currently syncs Audible catalogue metadata only. Protected Audible audio cannot be downloaded or played inside VØRATH yet; use the official Audible app for downloads and playback."
+                    <Button Content="Open in Audible app" HorizontalAlignment="Stretch"
+                            Click="DownloadAudibleBookFromDetailClicked"/>
+                    <TextBlock Text="This opens the title in Audible. Complete the audio download there; Audible's downloaded indicator describes the Audible app, not audio stored by VØRATH."
                                FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
                   </StackPanel>
                 </Border>
@@ -178,19 +179,13 @@
                 <TextBlock Text="{Binding DetailBookDescription}" TextWrapping="Wrap" LineHeight="22"/>
               </StackPanel>
             </Border>
-            <Border CornerRadius="18" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="8">
-                <TextBlock Text="REVIEWS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
-                <TextBlock Text="No review or rating information was embedded in this audiobook file." FontSize="13" Opacity="0.7" TextWrapping="Wrap"/>
-              </StackPanel>
-            </Border>
             <Grid ColumnDefinitions="*,*" ColumnSpacing="8" IsVisible="{Binding CanEditDetailBook}">
               <Button Grid.Column="0" Content="Edit information" Click="EditDetailBookClicked"/>
               <Button Grid.Column="1" Content="Change cover" Click="ChooseCoverFromDetailClicked"/>
             </Grid>
-            <StackPanel Spacing="8" IsVisible="{Binding IsDetailLocalBook}">
-              <TextBlock Text="CHAPTERS IN THIS FILE" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
-              <TextBlock Text="No chapter markers were found in this audiobook." FontSize="12" Opacity="0.65" IsVisible="{Binding HasNoDetailBookChapters}"/>
+            <StackPanel Spacing="8">
+              <TextBlock Text="CHAPTERS" FontSize="11" LetterSpacing="2" Foreground="#B9A5E8"/>
+              <TextBlock Text="{Binding DetailChapterEmptyMessage}" FontSize="12" Opacity="0.65" IsVisible="{Binding HasNoDetailBookChapters}"/>
               <ItemsControl ItemsSource="{Binding DetailBook.Chapters}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate>
@@ -235,32 +230,36 @@
             <ItemsControl ItemsSource="{Binding AudibleBooks}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                  <Button Background="Transparent" BorderThickness="0" Padding="0"
-                          HorizontalAlignment="Stretch" Click="AudibleBookClicked">
-                    <Border CornerRadius="16" Padding="12" Margin="0,0,0,8" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-                      <Grid ColumnDefinitions="78,*,Auto">
-                        <Border Grid.Column="0" Width="68" Height="92" CornerRadius="8" ClipToBounds="True" Background="#292238">
-                          <Grid>
-                            <Image Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
-                            <TextBlock Text="◉" FontSize="28" Foreground="#B9A5E8"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       IsVisible="{Binding HasNoCoverArt}"/>
-                          </Grid>
-                        </Border>
-                        <StackPanel Grid.Column="1" Margin="12,0" Spacing="3" VerticalAlignment="Center">
-                          <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
-                          <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.78"/>
-                          <TextBlock Text="{Binding Narrator}" FontSize="11" Opacity="0.68"/>
-                          <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
-                          <TextBlock Text="↓" FontSize="22" Foreground="#B9A5E8" HorizontalAlignment="Center"/>
-                          <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" FontSize="8" LetterSpacing="0.5"
-                                     Foreground="#B9A5E8" TextAlignment="Center" TextWrapping="Wrap"/>
-                        </StackPanel>
-                      </Grid>
-                    </Border>
-                  </Button>
+                  <Border CornerRadius="16" Padding="12" Margin="0,0,0,8" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+                    <Grid ColumnDefinitions="78,*,Auto">
+                      <Button Grid.Column="0" Grid.ColumnSpan="2" Background="Transparent" BorderThickness="0"
+                              Padding="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                              Click="AudibleBookClicked">
+                        <Grid ColumnDefinitions="78,*">
+                          <Border Grid.Column="0" Width="68" Height="92" CornerRadius="8" ClipToBounds="True" Background="#292238">
+                            <Grid>
+                              <Image Source="{Binding CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                              <TextBlock Text="◉" FontSize="28" Foreground="#B9A5E8"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                                         IsVisible="{Binding HasNoCoverArt}"/>
+                            </Grid>
+                          </Border>
+                          <StackPanel Grid.Column="1" Margin="12,0" Spacing="3" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding Author}" FontSize="12" Opacity="0.78"/>
+                            <TextBlock Text="{Binding Narrator}" FontSize="11" Opacity="0.68"/>
+                            <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.6"/>
+                          </StackPanel>
+                        </Grid>
+                      </Button>
+                      <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <Button Content="↓  Open Audible" FontSize="10" Padding="7,8"
+                                Click="DownloadAudibleBookClicked"/>
+                        <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" FontSize="8" LetterSpacing="0.3"
+                                   Foreground="#B9A5E8" TextAlignment="Center" TextWrapping="Wrap"/>
+                      </StackPanel>
+                    </Grid>
+                  </Border>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>

@@ -18,6 +18,12 @@ public partial class MainView
     /// <summary>Runs a non-invasive, platform-specific Widevine capability diagnostic.</summary>
     public static Func<string>? PlatformWidevineDiagnosticFactory { get; set; }
 
+    /// <summary>Creates an on-demand provider metadata reader for book details.</summary>
+    public static Func<IAudiobookDetailsProvider>? PlatformAudiobookDetailsProviderFactory { get; set; }
+
+    /// <summary>Opens a provider title in its official app.</summary>
+    public static Func<string, Task>? PlatformOpenAudibleTitleFactory { get; set; }
+
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
 
