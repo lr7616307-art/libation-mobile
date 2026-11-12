@@ -22,7 +22,7 @@ public partial class MainView
     public static Func<IAudiobookDetailsProvider>? PlatformAudiobookDetailsProviderFactory { get; set; }
 
     /// <summary>Creates an authorized Audible media source from the saved account identity.</summary>
-    public static Func<CancellationToken, Task<IAuthorizedAudioDownloadSource?>>? PlatformAudibleDownloadSourceFactory { get; set; }
+    public static Func<AudibleDownloadQuality, CancellationToken, Task<IAuthorizedAudioDownloadSource?>>? PlatformAudibleDownloadSourceFactory { get; set; }
 
     /// <summary>Legacy external title launcher, retained for non-download navigation only.</summary>
     public static Func<string, Task>? PlatformOpenAudibleTitleFactory { get; set; }
