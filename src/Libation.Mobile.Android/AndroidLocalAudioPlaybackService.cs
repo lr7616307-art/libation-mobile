@@ -2,6 +2,7 @@ using Android.App;
 using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer;
+using AndroidX.Media3.Exoplayer.Dash;
 using Android.OS;
 using Android.Graphics;
 using System.Security.Cryptography;
@@ -31,6 +32,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ExtraFilePath = "file_path";
     public const string ExtraManifestUri = "widevine_manifest_uri";
     public const string ExtraOfflineKeySetId = "widevine_offline_key_set_id";
+    public const string ExtraWidevineAccountId = "widevine_account_id";
+    public const string ExtraWidevineAsin = "widevine_asin";
+    public const string ExtraWidevineStreamKeys = "widevine_stream_keys";
     public const string ExtraTitle = "title";
     public const string ExtraArtworkPath = "artwork_path";
     public const string ExtraChapterPositions = "chapter_positions";
@@ -218,47 +222,78 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var manifestValue = intent.GetStringExtra(ExtraManifestUri);
         if (string.IsNullOrWhiteSpace(manifestValue) ||
             !Uri.TryCreate(manifestValue, UriKind.Absolute, out var manifestUri) ||
-            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            manifestUri.UserInfo.Length != 0)
             throw new InvalidDataException("A valid HTTPS Audible DASH manifest is required.");
+
+        var accountId = intent.GetStringExtra(ExtraWidevineAccountId);
+        var asin = intent.GetStringExtra(ExtraWidevineAsin);
+        if (string.IsNullOrWhiteSpace(accountId) || string.IsNullOrWhiteSpace(asin))
+            throw new InvalidDataException("The protected Audible account/title reference is missing.");
 
         var keySetId = intent.GetByteArrayExtra(ExtraOfflineKeySetId);
         if (keySetId is null || keySetId.Length is 0 or > 1024)
             throw new InvalidDataException("A saved Android Widevine offline key-set identifier is required.");
 
+        var streamKeyValues = intent.GetIntArrayExtra(ExtraWidevineStreamKeys);
+        if (streamKeyValues is null || streamKeyValues.Length is 0 or > 384 ||
+            streamKeyValues.Length % 3 != 0)
+            throw new InvalidDataException("The saved offline DASH audio selection is invalid.");
+
         StopPlayer();
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
             _title = "Audible audiobook";
-        _currentFilePath = null; // Protected remote media is never written as a local clear-audio path.
+        _currentFilePath = null; // Protected media is never represented as a clear local file.
         _isWidevinePlayback = true;
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
 
         StartForeground(NotificationId, BuildNotification());
 
-        MediaItem mediaItem;
+        MediaSource mediaSource;
         try
         {
+            var streamKeys = new Java.Util.ArrayList<StreamKey>();
+            for (var offset = 0; offset < streamKeyValues.Length; offset += 3)
+            {
+                var periodIndex = streamKeyValues[offset];
+                var groupIndex = streamKeyValues[offset + 1];
+                var trackIndex = streamKeyValues[offset + 2];
+                if (periodIndex < 0 || groupIndex < 0 || trackIndex < 0)
+                    throw new InvalidDataException("The saved offline DASH audio selection contains an invalid index.");
+                streamKeys.Add(new StreamKey(periodIndex, groupIndex, trackIndex));
+            }
+
             var drmConfiguration = new MediaItem.DrmConfiguration.Builder(WidevineUuid)
                 .SetKeySetId(keySetId)
                 .Build();
-            mediaItem = new MediaItem.Builder()
+            var mediaItem = new MediaItem.Builder()
                 .SetUri(global::Android.Net.Uri.Parse(manifestUri.AbsoluteUri))
                 .SetMimeType("application/dash+xml")
+                .SetStreamKeys(streamKeys)
                 .SetDrmConfiguration(drmConfiguration)
                 .Build();
+
+            var offlineStore = new AndroidWidevineDashOfflineStore(this);
+            var cacheDataSourceFactory = offlineStore.CreatePlaybackDataSourceFactory(
+                accountId, asin, manifestUri);
+            // Cache-only source: if any DASH manifest/segment is missing, playback
+            // fails rather than silently falling back to the network.
+            mediaSource = new DashMediaSource.Factory(cacheDataSourceFactory)
+                .CreateMediaSource(mediaItem);
         }
         finally
         {
             // Media3's DRM configuration copies the supplied key-set byte array.
-            // Clear the Intent-derived transient array after the immutable item is built.
             CryptographicOperations.ZeroMemory(keySetId);
             intent.RemoveExtra(ExtraOfflineKeySetId);
+            intent.RemoveExtra(ExtraWidevineStreamKeys);
         }
 
         _player = new ExoPlayerBuilder(this).Build();
         _player.AddListener(this);
-        _player.SetMediaItem(mediaItem);
+        _player.SetMediaSource(mediaSource);
         var position = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
         if (position > 0) _player.SeekTo(position);
         _player.Prepare();
@@ -272,9 +307,6 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (intent.GetBooleanExtra(ExtraAutoPlay, true))
             _player.Play();
 
-        // Remove the byte array from the service command as soon as Media3's
-        // immutable MediaItem has been built. It is not copied to recovery state.
-        intent.RemoveExtra(ExtraOfflineKeySetId);
         UpdateNotification();
         PublishPlaybackState();
     }
