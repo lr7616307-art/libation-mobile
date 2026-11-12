@@ -1,5 +1,6 @@
 using Android.Content;
 using Libation.Mobile.Core;
+using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.Android;
 
@@ -16,6 +17,13 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
 
         // Rehydrate the last session when the app is opened after a process death
         // or device restart. The saved play/pause state is respected.
+        var widevineSnapshot = WidevinePlaybackRecoveryStore.Load(AppContext);
+        if (widevineSnapshot is not null)
+        {
+            _ = RestoreWidevinePlaybackAsync(widevineSnapshot);
+            return;
+        }
+
         var snapshot = PlaybackRecoveryStore.Load(AppContext);
         if (snapshot is not null)
         {
@@ -24,6 +32,32 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
                 AppContext.StartForegroundService(intent);
             else
                 AppContext.StartService(intent);
+        }
+    }
+
+    private static async Task RestoreWidevinePlaybackAsync(WidevinePlaybackRecoverySnapshot snapshot)
+    {
+        try
+        {
+            var factory = MainView.PlatformWidevinePlaybackCoordinatorFactory;
+            if (factory is null)
+                return;
+
+            var coordinator = await factory(CancellationToken.None).ConfigureAwait(false);
+            if (coordinator is null)
+                return;
+
+            await coordinator.PlayAsync(
+                snapshot.Asin,
+                snapshot.Title,
+                snapshot.PositionMilliseconds,
+                snapshot.WasPlaying,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Keep the non-secret checkpoint so the next app launch can retry.
+            // The UI can still open and the DRM/cache failure is not logged.
         }
     }
 
