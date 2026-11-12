@@ -144,6 +144,7 @@ public partial class MainView : UserControl
         await ValidateSavedDownloadFolderBookmarkAsync();
         if (PlatformSignInViewModelFactory?.Invoke() is { } accountViewModel)
             await accountViewModel.LoadStatusAsync();
+        await AuditWidevineOfflineLibraryAsync(CancellationToken.None);
         UpdateAudibleAccountSummary();
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
@@ -928,7 +929,67 @@ public partial class MainView : UserControl
     internal async Task SyncLibraryAndUpdateAccountAsync()
     {
         await _viewModel.SyncLibraryAsync();
+        await AuditWidevineOfflineLibraryAsync(CancellationToken.None);
         UpdateAudibleAccountSummary();
+    }
+
+    /// <summary>
+    /// Reconciles local "offline available" labels with the saved Audible
+    /// Widevine key-set and the title-scoped encrypted DASH cache. A missing
+    /// account identity or transient audit failure never clears catalogue state.
+    /// </summary>
+    private async Task AuditWidevineOfflineLibraryAsync(CancellationToken cancellationToken)
+    {
+        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+            return;
+
+        var candidates = _viewModel.AudibleBooks
+            .Where(book => book.IsWidevineOfflineAvailable
+                && book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            .ToArray();
+        if (candidates.Length == 0)
+            return;
+
+        try
+        {
+            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
+            if (coordinator is null)
+                return;
+
+            var unavailableCount = 0;
+            foreach (var book in candidates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var asin = book.Id["provider:".Length..];
+                var hasLicense = await coordinator.HasOfflineLicenseAsync(asin, cancellationToken);
+                var hasCompleteMedia = hasLicense
+                    && await coordinator.HasOfflineMediaAsync(asin, cancellationToken);
+
+                if (hasCompleteMedia)
+                    continue;
+
+                await _viewModel.MarkWidevineOfflineRemovedAsync(book.Id, cancellationToken);
+                unavailableCount++;
+            }
+
+            if (unavailableCount > 0)
+            {
+                _viewModel.ReportAudioStatus(
+                    $"{unavailableCount} Audible offline title(s) need to be downloaded again. Open a title and tap Download offline to restore it.");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // The integrity check is best-effort; a transient storage/DRM failure
+            // must not interrupt login, catalogue sync or ordinary playback.
+            _viewModel.ReportAudioStatus(
+                "Could not verify every Audible offline copy. Their status will be checked again when you open a title.");
+        }
     }
 
     private void UpdateAudibleAccountSummary()
