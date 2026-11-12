@@ -3,6 +3,7 @@ using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer;
 using AndroidX.Media3.Exoplayer.Dash;
+using AndroidX.Media3.Exoplayer.Source;
 using Android.OS;
 using Android.Graphics;
 using System.Security.Cryptography;
