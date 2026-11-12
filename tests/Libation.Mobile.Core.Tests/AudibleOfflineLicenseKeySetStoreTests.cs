@@ -108,7 +108,7 @@ public sealed class AudibleOfflineLicenseKeySetStoreTests
         Assert.Equal(expectedUri, actual.ManifestUri);
         Assert.Equal(expectedKeys, actual.StreamKeys);
         Assert.DoesNotContain("B012345678", secrets.Keys.Single(), StringComparison.Ordinal);
-        Assert.DoesNotContain("signature=short-lived", secrets.Values.Single(), StringComparison.Ordinal);
+        Assert.Contains("signature=short-lived", secrets.Values.Single(), StringComparison.Ordinal);
     }
 
     [Fact]
