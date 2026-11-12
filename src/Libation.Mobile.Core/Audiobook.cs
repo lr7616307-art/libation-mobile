@@ -27,7 +27,9 @@ public sealed record Audiobook(
         ? string.Empty
         : !string.IsNullOrWhiteSpace(ProtectedAudioFileName)
             ? "Downloaded to VØRATH as a DRM-protected file"
-            : IsPlayableOnAudible == true
+            : !string.IsNullOrWhiteSpace(AudioFilePath)
+                ? "Downloaded to VØRATH and ready to play"
+                : IsPlayableOnAudible == true
                 ? (IsDownloadedOnAudible == true
                     ? "Audible reports this title downloaded"
                     : "Available to download in VØRATH")
