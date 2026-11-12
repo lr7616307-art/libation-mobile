@@ -158,6 +158,15 @@ jobs:
           size = apk.stat().st_size
           print(f"Installable APK size: {size:,} bytes ({size / 1048576:.2f} MiB)")
           print(f"Native ABIs: {sorted(abis)}")
+          with ZipFile(apk) as package:
+              largest = sorted(
+                  (info for info in package.infolist() if not info.is_dir()),
+                  key=lambda info: info.compress_size,
+                  reverse=True,
+              )[:12]
+          print("Largest compressed APK entries:")
+          for info in largest:
+              print(f"  {info.compress_size:>10,} bytes  {info.filename}")
           if abis != {"armeabi-v7a"}:
               raise SystemExit(f"Expected only armeabi-v7a, got {sorted(abis)}")
           if size > 25_000_000:
