@@ -29,6 +29,19 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         this.accountId = accountId;
     }
 
+    public async Task<bool> HasOfflineLicenseAsync(
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        var keySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
+            .ConfigureAwait(false);
+        if (keySetId is null)
+            return false;
+
+        CryptographicOperations.ZeroMemory(keySetId);
+        return true;
+    }
+
     /// <summary>
     /// Obtains an Audible-issued Widevine manifest, creates a platform offline
     /// challenge, supplies Audible's opaque response to MediaDrm, and persists
