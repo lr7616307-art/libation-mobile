@@ -37,6 +37,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         string asin,
         CancellationToken cancellationToken = default)
     {
+        await RecoverPromotableRenewalKeySetAsync(asin, cancellationToken).ConfigureAwait(false);
         var keySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
             .ConfigureAwait(false);
         if (keySetId is null)
@@ -64,6 +65,47 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         finally
         {
             CryptographicOperations.ZeroMemory(keySetId);
+        }
+    }
+
+    /// <summary>
+    /// Recovers a renewal that was accepted by MediaDrm but whose active
+    /// encrypted record was not promoted before process termination. Only a
+    /// platform-usable, non-expired staged key set is promoted. Unknown,
+    /// released, missing or expired staged state is retained for diagnosis and
+    /// never replaces the current active record.
+    /// </summary>
+    private async Task RecoverPromotableRenewalKeySetAsync(
+        string asin,
+        CancellationToken cancellationToken)
+    {
+        var pendingKeySetId = await keySetStore.LoadPendingRenewalKeySetAsync(
+            accountId, asin, cancellationToken).ConfigureAwait(false);
+        if (pendingKeySetId is null)
+            return;
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var drmSession = new AndroidWidevineOfflineSession();
+            if (drmSession.GetOfflineLicenseState(pendingKeySetId) != OfflineLicenseStateUsable)
+                return;
+
+            var duration = drmSession.GetOfflineLicenseDuration(pendingKeySetId);
+            if (duration.IsDefinitelyExpired)
+                return;
+
+            await keySetStore.PromotePendingRenewalKeySetAsync(
+                accountId, asin, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Java.Lang.IllegalArgumentException)
+        {
+            // The staged identifier is not present in Android's persistent DRM
+            // store. Keep both records intact; do not guess which is authoritative.
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(pendingKeySetId);
         }
     }
 
