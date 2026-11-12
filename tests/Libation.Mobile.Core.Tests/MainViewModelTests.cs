@@ -37,6 +37,30 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AudibleDownloadQuality_CyclesAndPersistsGlobalPreference()
+    {
+        using var directory = new TemporaryDirectory();
+        var settingsStore = new JsonDownloadSettingsStore(Path.Combine(directory.Path, "download-settings.json"));
+        var vm = new MainViewModel(
+            new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")),
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            downloadSettingsStore: settingsStore);
+
+        await vm.InitializeAsync();
+        Assert.Equal("High quality", vm.AudibleDownloadQualityLabel);
+
+        await vm.CycleAudibleDownloadQualityAsync();
+
+        Assert.Equal(AudibleDownloadQuality.Normal, (await settingsStore.GetAsync()).AudibleQuality);
+        Assert.Equal("Normal quality", vm.AudibleDownloadQualityLabel);
+
+        await vm.CycleAudibleDownloadQualityAsync();
+
+        Assert.Equal(AudibleDownloadQuality.High, (await settingsStore.GetAsync()).AudibleQuality);
+        Assert.Equal("High quality", vm.AudibleDownloadQualityLabel);
+    }
+
+    [Fact]
     public void ProbeWidevine_UsesPlatformDiagnosticAndRaisesNotification()
     {
         using var directory = new TemporaryDirectory();
