@@ -26,6 +26,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _downloadSettingsStatus = string.Empty;
     private DownloadQueueProgress? _activeDownloadProgress;
     private bool _isDownloadQueueRunning;
+    private bool _isProtectedAudibleOperationInProgress;
     private readonly Func<string>? _widevineDiagnosticFactory;
     private string _widevineDiagnostic = "Widevine check is available only in the Android app.";
     private bool _isSyncing;
@@ -87,6 +88,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool HasNoLocalAudioBooks => !HasLocalAudioBooks;
     public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "Your library is empty. Import an audiobook file to get started.";
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
+
+    public bool IsProtectedAudibleOperationInProgress => _isProtectedAudibleOperationInProgress;
+    public void SetProtectedAudibleOperationInProgress(bool isRunning)
+    {
+        if (_isProtectedAudibleOperationInProgress == isRunning) return;
+        _isProtectedAudibleOperationInProgress = isRunning;
+        OnPropertyChanged(nameof(IsProtectedAudibleOperationInProgress));
+    }
 
     public DownloadSettings CurrentDownloadSettings => _downloadSettings;
     public string DownloadDirectoryLabel => _downloadSettings.DirectoryLabel;
