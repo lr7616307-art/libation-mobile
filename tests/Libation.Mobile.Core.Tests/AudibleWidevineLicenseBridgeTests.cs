@@ -119,7 +119,23 @@ public sealed class AudibleWidevineLicenseBridgeTests
             {
                 StatusCode = "Granted",
                 DrmType = DrmType.Widevine,
-                LicenseResponse = manifest
+                LicenseResponse = manifest,
+                ContentMetadata = new ContentMetadata
+                {
+                    ChapterInfo = new ChapterInfo(),
+                    ContentReference = new ContentReference
+                    {
+                        Acr = "CR!renewal-reference",
+                        Asin = "B012345678",
+                        Codec = "mp4a.40.2",
+                        ContentFormat = "DASH",
+                        FileVersion = 7,
+                        Marketplace = "AN7V1F1VY261K",
+                        Sku = "AUDIBLE",
+                        Tempo = "normal",
+                        Version = "1"
+                    }
+                }
             }),
             (_, _, _) => Task.FromResult("license-response"),
             Path.Combine(Path.GetTempPath(), "vorath-widevine-tests"));
@@ -127,6 +143,8 @@ public sealed class AudibleWidevineLicenseBridgeTests
         var result = await source.ResolveWidevineAsync("B012345678");
 
         Assert.Equal(new Uri(manifest), result.ManifestUri);
+        Assert.Equal("CR!renewal-reference", result.Acr);
+        Assert.Equal(7, result.FileVersion);
     }
 
     [Fact]
