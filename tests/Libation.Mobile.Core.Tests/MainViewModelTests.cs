@@ -136,14 +136,14 @@ public sealed class MainViewModelTests
         var book = Assert.Single(vm.AudibleBooks);
         Assert.False(book.CanQueueDownload);
         Assert.False(book.CanDelete);
-        Assert.Equal("AVAILABLE IN AUDIBLE", book.AudibleAvailabilityShortLabel);
+        Assert.Equal("AVAILABLE", book.AudibleAvailabilityShortLabel);
 
         vm.OpenBookDetails(book.Id);
 
         Assert.True(vm.IsBookDetailsVisible);
         Assert.True(vm.IsDetailProviderBook);
         Assert.False(vm.CanEditDetailBook);
-        Assert.Equal("Available to download in Audible app", vm.DetailAudibleAvailabilityLabel);
+        Assert.Equal("Available to download in VØRATH", vm.DetailAudibleAvailabilityLabel);
         Assert.Equal("Audible product summary", vm.DetailBookDescription);
     }
 
@@ -636,7 +636,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task Enqueue_AudibleCatalogueEntryShowsOfficialHandoffAndDoesNotQueue()
+    public async Task Enqueue_AudibleCatalogueEntryIsAddedToTheVOrathQueue()
     {
         using var directory = new TemporaryDirectory();
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
@@ -649,13 +649,16 @@ public sealed class MainViewModelTests
         await vm.SyncLibraryAsync();
 
         var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
-        Assert.False(book.CanQueueDownload);
-        Assert.Equal("Open in Audible app", book.DownloadActionLabel);
+        Assert.False(book.CanQueueDownload); // Audible IDs cannot be sent to the generic direct-URL form.
+        Assert.Equal("⇩  Download", book.DownloadActionLabel);
 
         await vm.EnqueueAsync(book.Id);
 
-        Assert.Empty(await queue.GetItemsAsync());
-        Assert.Contains("official Audible app", vm.ErrorMessage);
+        var queued = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(book.Id, queued.AudiobookId);
+        Assert.Equal(DownloadStatus.Queued, queued.Status);
+        Assert.Empty(vm.ErrorMessage);
+        Assert.Contains("Audible download queue", vm.DownloadSettingsStatus);
     }
 
     [Fact]

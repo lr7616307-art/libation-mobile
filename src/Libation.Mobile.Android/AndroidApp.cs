@@ -49,6 +49,15 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
             () => new SavedIdentityAudibleBookDetailsProvider(snapshots);
         MainView.PlatformOpenAudibleTitleFactory =
             asin => AndroidAudibleBookLauncher.OpenAsync(this, asin, signInViewModel.Marketplace);
+        var audibleDownloadDirectory = Path.Combine(
+            global::System.Environment.GetFolderPath(global::System.Environment.SpecialFolder.LocalApplicationData),
+            "audible-downloads");
+        MainView.PlatformAudibleDownloadSourceFactory = async cancellationToken =>
+        {
+            var source = await AudibleAudioDownloadSource.FromSavedIdentityAsync(
+                snapshots, audibleDownloadDirectory, cancellationToken);
+            return (IAuthorizedAudioDownloadSource?)source;
+        };
         MainView.PlatformLocalAudioPlayerFactory = () => new AndroidLocalAudioPlayer();
         MainView.PlatformWidevineDiagnosticFactory = () =>
         {

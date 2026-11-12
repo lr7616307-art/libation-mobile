@@ -21,7 +21,10 @@ public partial class MainView
     /// <summary>Creates an on-demand provider metadata reader for book details.</summary>
     public static Func<IAudiobookDetailsProvider>? PlatformAudiobookDetailsProviderFactory { get; set; }
 
-    /// <summary>Opens a provider title in its official app.</summary>
+    /// <summary>Creates an authorized Audible media source from the saved account identity.</summary>
+    public static Func<CancellationToken, Task<IAuthorizedAudioDownloadSource?>>? PlatformAudibleDownloadSourceFactory { get; set; }
+
+    /// <summary>Legacy external title launcher, retained for non-download navigation only.</summary>
     public static Func<string, Task>? PlatformOpenAudibleTitleFactory { get; set; }
 
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>

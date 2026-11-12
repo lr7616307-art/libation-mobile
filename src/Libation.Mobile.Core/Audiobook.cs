@@ -25,19 +25,25 @@ public sealed record Audiobook(
     [JsonIgnore]
     public string AudibleAvailabilityLabel => !IsProviderCatalogueEntry
         ? string.Empty
-        : IsPlayableOnAudible == true
-            ? (IsDownloadedOnAudible == true
-                ? "Audible app reports this title downloaded"
-                : "Available to download in Audible app")
-            : IsPlayableOnAudible == false
-                ? "Not currently playable in Audible"
-                : "Availability not reported by Audible";
+        : !string.IsNullOrWhiteSpace(ProtectedAudioFileName)
+            ? "Downloaded to VØRATH as a DRM-protected file"
+            : !string.IsNullOrWhiteSpace(AudioFilePath)
+                ? "Downloaded to VØRATH and ready to play"
+                : IsPlayableOnAudible == true
+                ? (IsDownloadedOnAudible == true
+                    ? "Audible reports this title downloaded"
+                    : "Available to download in VØRATH")
+                : IsPlayableOnAudible == false
+                    ? "Not currently playable in Audible"
+                    : "Availability not reported by Audible";
 
     [JsonIgnore]
     public string AudibleAvailabilityShortLabel => !IsProviderCatalogueEntry
         ? string.Empty
-        : IsDownloadedOnAudible == true ? "IN AUDIBLE APP"
-        : IsPlayableOnAudible == true ? "AVAILABLE IN AUDIBLE"
+        : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "SAVED IN VØRATH"
+        : !string.IsNullOrWhiteSpace(AudioFilePath) ? "READY TO PLAY"
+        : IsDownloadedOnAudible == true ? "DOWNLOADED ON AUDIBLE"
+        : IsPlayableOnAudible == true ? "AVAILABLE"
         : IsPlayableOnAudible == false ? "UNAVAILABLE"
         : "STATUS UNKNOWN";
 
@@ -46,7 +52,9 @@ public sealed record Audiobook(
 
     [JsonIgnore]
     public string DownloadActionLabel => IsProviderCatalogueEntry
-        ? "Open in Audible app"
+        ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶  Play"
+            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "✓  Saved"
+            : "⇩  Download"
         : "Add to queue";
 
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>
@@ -70,8 +78,17 @@ public sealed record Audiobook(
     /// <summary>Local listening state: Not started, In progress, or Finished.</summary>
     public string ListeningStatus { get; init; } = "Not started";
 
-    /// <summary>Original imported file size in bytes, when available.</summary>
+    /// <summary>Original imported or downloaded file size in bytes, when available.</summary>
     public long FileSizeBytes { get; init; }
+
+    /// <summary>
+    /// Name and destination folder of an Audible file saved with provider DRM.
+    /// These fields describe an encrypted backup only; they are never used as
+    /// the local player's AudioFilePath.
+    /// </summary>
+    public string? ProtectedAudioFileName { get; init; }
+    public string? ProtectedAudioFolderName { get; init; }
+    public string? ProtectedAudioProtection { get; init; }
 
     /// <summary>Transient bulk-selection state; never persisted in the catalogue backup.</summary>
     [JsonIgnore]

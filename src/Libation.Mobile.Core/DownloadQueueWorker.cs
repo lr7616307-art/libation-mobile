@@ -17,8 +17,8 @@ public interface IAuthorizedAudioDownloadSource
 public interface IAudioDownloadCompletionHandler
 {
     /// <summary>
-    /// Publishes a fully downloaded staging file to the user's selected destination
-    /// and attaches a playable local copy to the VØRATH catalogue.
+    /// Publishes a fully downloaded, unprotected audio file to the user's selected
+    /// destination and attaches a playable local copy to the VØRATH catalogue.
     /// </summary>
     Task PublishAsync(
         DownloadQueueItem item,
@@ -26,7 +26,23 @@ public interface IAudioDownloadCompletionHandler
         CancellationToken cancellationToken = default);
 }
 
-public sealed record AuthorizedAudioDownload(Uri DownloadUri, string DestinationPath);
+/// <summary>
+/// Publishes provider-protected media without decrypting it or attaching it to the
+/// local player. Implementations must retain the provider's protection.
+/// </summary>
+public interface IProtectedAudioDownloadCompletionHandler
+{
+    Task PublishProtectedAsync(
+        DownloadQueueItem item,
+        string stagingFilePath,
+        AudioProtectionDescriptor protection,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record AuthorizedAudioDownload(Uri DownloadUri, string DestinationPath)
+{
+    public AudioProtectionDescriptor Protection { get; init; } = AudioProtectionDescriptor.Unprotected;
+}
 
 public sealed record DownloadQueueProgress(
     string AudiobookId,
@@ -109,12 +125,27 @@ public sealed class DownloadQueueWorker
                             item.AudiobookId, value.BytesReceived, value.TotalBytes, value.Percentage))),
                     cancellationToken);
 
-                if (_completionHandler is not null)
-                    await _completionHandler.PublishAsync(item, result.FilePath, cancellationToken);
+                if (target.Protection.RequiresProtectedMediaPipeline)
+                {
+                    if (_completionHandler is not IProtectedAudioDownloadCompletionHandler protectedPublisher)
+                        throw new NotSupportedException(
+                            "Audible granted protected media, but this build has no protected-file publisher.");
 
-                await _queue.UpdateStatusAsync(
-                    item.AudiobookId, DownloadStatus.Completed,
-                    cancellationToken: cancellationToken);
+                    await protectedPublisher.PublishProtectedAsync(
+                        item, result.FilePath, target.Protection, cancellationToken);
+                    await _queue.UpdateStatusAsync(
+                        item.AudiobookId, DownloadStatus.Protected,
+                        cancellationToken: cancellationToken);
+                }
+                else
+                {
+                    if (_completionHandler is not null)
+                        await _completionHandler.PublishAsync(item, result.FilePath, cancellationToken);
+
+                    await _queue.UpdateStatusAsync(
+                        item.AudiobookId, DownloadStatus.Completed,
+                        cancellationToken: cancellationToken);
+                }
                 return true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
