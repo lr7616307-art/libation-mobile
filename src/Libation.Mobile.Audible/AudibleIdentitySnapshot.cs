@@ -92,12 +92,12 @@ public static class AudibleIdentitySnapshotSerializer
             throw new InvalidDataException("Unsupported identity provider.");
         if (!string.Equals(snapshot.AudibleApiVersion, AudibleIdentitySnapshot.SupportedAudibleApiVersion, StringComparison.Ordinal))
             throw new InvalidDataException("Unsupported AudibleApi identity format version.");
-        // Existing installations may still have a valid iPhone-profile identity.
-        // Keep it readable so users can safely disconnect it and re-register with
-        // the Android profile; never treat the old profile as Widevine-capable.
+        // Existing Android-profile snapshots remain readable so users can switch
+        // registration profiles without losing the local catalogue or downloaded files.
+        // New logins use the LibriSync iPhone profile for ADRM/AAC-LC downloads.
         if (!string.Equals(snapshot.RegistrationProfileId, AudibleOAuthFlow.RegistrationProfileId, StringComparison.Ordinal)
-            && !string.Equals(snapshot.RegistrationProfileId, AudibleOAuthFlow.LegacyIPhoneRegistrationProfileId, StringComparison.Ordinal))
-            throw new InvalidDataException("The saved Audible identity uses an unsupported device-registration profile. Sign in again to register the Android profile.");
+            && !string.Equals(snapshot.RegistrationProfileId, AudibleOAuthFlow.LegacyAndroidRegistrationProfileId, StringComparison.Ordinal))
+            throw new InvalidDataException("The saved Audible identity uses an unsupported registration profile. Sign out of Audible and sign in again to register the current ADRM-capable profile.");
 
         RequireText(snapshot.LocaleName, nameof(snapshot.LocaleName));
         RequirePrefix(snapshot.AccessToken, "Atna|", nameof(snapshot.AccessToken));
