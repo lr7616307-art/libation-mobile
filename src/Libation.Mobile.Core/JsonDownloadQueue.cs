@@ -90,7 +90,7 @@ public sealed class JsonDownloadQueue : IDownloadQueue
             }
 
             var existing = items[index];
-            var status = existing.Status == DownloadStatus.Failed
+            var status = existing.Status is DownloadStatus.Failed or DownloadStatus.Completed
                 ? DownloadStatus.Queued
                 : existing.Status;
             items[index] = existing with
