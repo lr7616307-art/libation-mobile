@@ -1,4 +1,8 @@
 using Libation.Mobile.Audible;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Xunit;
 
 namespace Libation.Mobile.Core.Tests;
@@ -110,6 +114,53 @@ public sealed class AudibleOAuthFlowTests
         Assert.DoesNotContain("sdk_gphone", flow.DeviceInfo.Model, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("raven", flow.DeviceInfo.BuildFingerprint, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(29, int.Parse(flow.DeviceInfo.SdkVersion));
+    }
+
+    [Fact]
+    public void Create_EncodesActualHostFactsInFrcContext()
+    {
+        var info = TestDeviceInfo() with
+        {
+            Manufacturer = "Xiaomi",
+            Brand = "Redmi",
+            Model = "Redmi 9i",
+            Device = "dandelion",
+            Product = "dandelion_in",
+            BuildFingerprint = "redmi/dandelion_in/dandelion:10/test:user/release-keys",
+            OsRelease = "10",
+            SdkVersion = "29",
+            DeviceName = "Xiaomi Redmi 9i",
+            DeviceLanguage = "hi",
+            ScreenWidthPixels = 720,
+            ScreenHeightPixels = 1600
+        };
+        var flow = AudibleOAuthFlow.Create("in", info);
+        var bytes = Convert.FromBase64String(flow.FrcValue);
+        var iv = bytes.AsSpan(9, 16).ToArray();
+        var cipherText = bytes.AsSpan(25).ToArray();
+        var key = Rfc2898DeriveBytes.Pbkdf2(
+            flow.DeviceSerial.AsSpan(), "AES/CBC/PKCS7Padding"u8,
+            1000, HashAlgorithmName.SHA1, 16);
+
+        byte[] plain;
+        using (var aes = Aes.Create())
+        {
+            aes.Key = key;
+            plain = aes.DecryptCbc(cipherText, iv, PaddingMode.PKCS7);
+        }
+        CryptographicOperations.ZeroMemory(key);
+
+        using var compressed = new MemoryStream(plain);
+        using var gzip = new GZipStream(compressed, CompressionMode.Decompress);
+        using var json = JsonDocument.Parse(gzip);
+        var root = json.RootElement;
+
+        Assert.Equal(info.BuildFingerprint, root.GetProperty("DeviceOSVersion").GetString());
+        Assert.Equal(info.DeviceName, root.GetProperty("DeviceName").GetString());
+        Assert.Equal("720", root.GetProperty("ScreenWidthPixels").GetString());
+        Assert.Equal("1600", root.GetProperty("ScreenHeightPixels").GetString());
+        Assert.Equal("hi", root.GetProperty("DeviceLanguage").GetString());
+        Assert.Equal("Unknown", root.GetProperty("Carrier").GetString());
     }
 
     [Fact]
