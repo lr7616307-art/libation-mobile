@@ -12,8 +12,7 @@ namespace Libation.Mobile.Android;
 /// </summary>
 [Service(
     Name = "org.libationmobile.app.AndroidWidevineOfflineDownloadService",
-    Exported = false,
-    ForegroundServiceType = global::Android.Content.PM.ForegroundService.TypeDataSync)]
+    Exported = false)]
 public sealed class AndroidWidevineOfflineDownloadService : Service
 {
     private const string ChannelId = "vorath_widevine_downloads";
