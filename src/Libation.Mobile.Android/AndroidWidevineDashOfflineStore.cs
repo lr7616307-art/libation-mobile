@@ -8,6 +8,7 @@ using AndroidX.Media3.DataSource;
 using AndroidX.Media3.DataSource.Cache;
 using AndroidX.Media3.Database;
 using AndroidX.Media3.ExoPlayer.Dash.Offline;
+using AndroidX.Media3.ExoPlayer.Offline;
 
 namespace Libation.Mobile.Android;
 
@@ -29,6 +30,20 @@ public sealed class AndroidWidevineDashOfflineStore
 
     private readonly Context applicationContext;
 
+    private sealed class DashDownloadProgressListener(
+        IProgress<WidevineOfflineDownloadProgress> progress) : Java.Lang.Object, IDownloaderProgressListener
+    {
+        public void OnProgress(long contentLength, long bytesDownloaded, float percentDownloaded)
+        {
+            var total = contentLength >= 0 ? contentLength : (long?)null;
+            var percentage = float.IsFinite(percentDownloaded) && percentDownloaded >= 0f
+                ? Math.Clamp((double)percentDownloaded, 0d, 100d)
+                : (double?)null;
+            progress.Report(new WidevineOfflineDownloadProgress(
+                Math.Max(0, bytesDownloaded), total, percentage));
+        }
+    }
+
     public AndroidWidevineDashOfflineStore(Context context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -41,7 +56,8 @@ public sealed class AndroidWidevineDashOfflineStore
         string asin,
         Uri manifestUri,
         IReadOnlyList<AudibleWidevineStreamKey> streamKeys,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<WidevineOfflineDownloadProgress>? progress = null)
     {
         ValidateIdentity(accountId, asin);
         ValidateManifest(manifestUri, streamKeys);
@@ -69,6 +85,7 @@ public sealed class AndroidWidevineDashOfflineStore
         // The generated .NET binding exposes the public Java constructor, while
         // DashDownloader.Factory.create(MediaItem) is not projected as a method.
         var downloader = new DashDownloader(mediaItem, scopedCacheFactory);
+        var progressListener = progress is null ? null : new DashDownloadProgressListener(progress);
         using var registration = cancellationToken.Register(() =>
         {
             try { downloader.Cancel(); }
@@ -79,7 +96,7 @@ public sealed class AndroidWidevineDashOfflineStore
         {
             // DASH downloader is synchronous; run it away from the UI thread.
             // Media3 stores the provider-delivered CENC-encrypted segments as-is.
-            await Task.Run(() => downloader.Download(null), cancellationToken)
+            await Task.Run(() => downloader.Download(progressListener), cancellationToken)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
