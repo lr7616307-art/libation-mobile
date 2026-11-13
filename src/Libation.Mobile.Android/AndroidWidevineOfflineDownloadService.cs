@@ -131,6 +131,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
 
             if (await coordinator.HasOfflineMediaAsync(asin, cancellationToken).ConfigureAwait(false))
             {
+                await RecoveryStore.MarkCompletedAsync(asin, CancellationToken.None).ConfigureAwait(false);
                 MainView.PlatformWidevineOfflineDownloadCompletedAction?.Invoke(asin);
                 FinishWithNotification(
                     startId,
