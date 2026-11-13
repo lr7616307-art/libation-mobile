@@ -138,6 +138,42 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         }, cancellationToken);
     }
 
+    public async Task UpdateProgressAsync(
+        string audiobookId,
+        long bytesReceived,
+        long? totalBytes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
+        if (bytesReceived < 0 || totalBytes is < 0)
+            throw new ArgumentOutOfRangeException(nameof(bytesReceived));
+
+        await MutateAsync(items =>
+        {
+            var index = items.FindIndex(item =>
+                string.Equals(item.AudiobookId, audiobookId, StringComparison.Ordinal));
+            if (index < 0)
+                return;
+
+            var current = items[index];
+            // Ignore late progress callbacks after pause/completion/failure.
+            if (current.Status != DownloadStatus.Downloading)
+                return;
+
+            var updatedTotal = totalBytes is > 0 ? totalBytes : current.TotalBytes;
+            var updatedBytes = Math.Max(current.BytesReceived, bytesReceived);
+            if (updatedTotal is > 0)
+                updatedBytes = Math.Min(updatedBytes, updatedTotal.Value);
+
+            items[index] = current with
+            {
+                BytesReceived = updatedBytes,
+                TotalBytes = updatedTotal,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            };
+        }, cancellationToken);
+    }
+
     public async Task<bool> RemoveAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
@@ -214,9 +250,10 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         => current switch
         {
             DownloadStatus.Queued => next is DownloadStatus.Downloading or DownloadStatus.Failed,
-            DownloadStatus.Downloading => next is DownloadStatus.Completed or DownloadStatus.Protected or DownloadStatus.Failed or DownloadStatus.Queued,
+            DownloadStatus.Downloading => next is DownloadStatus.Completed or DownloadStatus.Protected or DownloadStatus.Failed or DownloadStatus.Queued or DownloadStatus.Paused,
+            DownloadStatus.Paused => next is DownloadStatus.Downloading or DownloadStatus.Queued or DownloadStatus.Failed,
             DownloadStatus.Failed => next == DownloadStatus.Queued,
-            DownloadStatus.Protected => false,
+            DownloadStatus.Protected => next == DownloadStatus.Downloading,
             DownloadStatus.Completed => false,
             _ => false
         };
