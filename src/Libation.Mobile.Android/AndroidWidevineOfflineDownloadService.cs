@@ -2,6 +2,7 @@ using Android.App;
 using Android.Content;
 using Android.OS;
 using Libation.Mobile.Core;
+using DownloadStatus = Libation.Mobile.Core.DownloadStatus;
 using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.Android;
