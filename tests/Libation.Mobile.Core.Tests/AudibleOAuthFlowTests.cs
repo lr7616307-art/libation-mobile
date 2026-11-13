@@ -90,7 +90,7 @@ public sealed class AudibleOAuthFlowTests
     }
 
     [Fact]
-    public void Create_UsesActualHostDeviceMetadataInsteadOfAnEmulatorTemplate()
+    public void Create_ValidatesAndRetainsHostMetadataForLocalDiagnostics()
     {
         var info = TestDeviceInfo() with
         {
@@ -117,7 +117,7 @@ public sealed class AudibleOAuthFlowTests
     }
 
     [Fact]
-    public void Create_EncodesActualHostFactsInFrcContext()
+    public void Create_EncodesAudibleApiCurrentAndroidFrcProfile()
     {
         var info = TestDeviceInfo() with
         {
@@ -155,12 +155,16 @@ public sealed class AudibleOAuthFlowTests
         using var json = JsonDocument.Parse(gzip);
         var root = json.RootElement;
 
-        Assert.Equal(info.BuildFingerprint, root.GetProperty("DeviceOSVersion").GetString());
-        Assert.Equal(info.DeviceName, root.GetProperty("DeviceName").GetString());
-        Assert.Equal("720", root.GetProperty("ScreenWidthPixels").GetString());
-        Assert.Equal("1600", root.GetProperty("ScreenHeightPixels").GetString());
-        Assert.Equal("hi", root.GetProperty("DeviceLanguage").GetString());
-        Assert.Equal("Unknown", root.GetProperty("Carrier").GetString());
+        Assert.Equal(AudibleOAuthFlow.AndroidOsVersion, root.GetProperty("DeviceOSVersion").GetString());
+        Assert.Equal(@"ranchu\\/Google\\/sdk_gphone64_x86_64", root.GetProperty("DeviceName").GetString());
+        Assert.Equal("1080", root.GetProperty("ScreenWidthPixels").GetString());
+        Assert.Equal("2400", root.GetProperty("ScreenHeightPixels").GetString());
+        Assert.Equal(AudibleApi.Localization.Get("in").Language, root.GetProperty("DeviceLanguage").GetString());
+        Assert.Equal("T-Mobile", root.GetProperty("Carrier").GetString());
+        Assert.Equal(flow.DeviceSerial, root.GetProperty("ThirdPartyDeviceId").GetString());
+        Assert.Equal(flow.DeviceSerial, root.GetProperty("FirstPartyDeviceId").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("IpAddress").GetString()));
+        Assert.DoesNotContain("Redmi", root.GetRawText(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
