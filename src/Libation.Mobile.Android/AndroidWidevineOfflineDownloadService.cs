@@ -180,6 +180,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         CancellationToken cancellationToken)
     {
         var advanceQueue = false;
+        var currentStage = "preparing the download";
         try
         {
             await RecoveryStore.MarkDownloadingAsync(asin, title, CancellationToken.None).ConfigureAwait(false);
@@ -203,11 +204,13 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                 ongoing: true,
                 actionLabel: "Pause");
 
+            currentStage = "restoring the Audible account session";
             var factory = CoordinatorFactory
                 ?? throw new InvalidOperationException("The Widevine offline service is not configured.");
             var coordinator = await factory(cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("Sign in to Audible again before downloading.");
 
+            currentStage = "checking the existing offline audio cache";
             if (await coordinator.HasOfflineMediaAsync(asin, cancellationToken).ConfigureAwait(false))
             {
                 await RecoveryStore.MarkCompletedAsync(asin, CancellationToken.None).ConfigureAwait(false);
@@ -223,8 +226,10 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                 return;
             }
 
+            currentStage = "checking the saved offline DRM licence";
             if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false))
             {
+                currentStage = "requesting an Audible offline DRM licence";
                 UpdateNotification(
                     "Requesting Audible-authorized Widevine offline licence…",
                     null,
@@ -270,6 +275,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             // Retry only transient transport errors. Media3's cache keeps completed
             // encrypted segments, and the coordinator obtains a fresh manifest on
             // each attempt, so the next pass resumes without requesting a new licence.
+            currentStage = "downloading encrypted DASH audio segments";
             var retryNumber = 0;
             while (true)
             {
@@ -296,6 +302,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                 }
             }
 
+            currentStage = "verifying the offline licence and all downloaded audio segments";
             cancellationToken.ThrowIfCancellationRequested();
             if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false) ||
                 !await coordinator.HasOfflineMediaAsync(asin, cancellationToken).ConfigureAwait(false))
@@ -343,7 +350,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         catch (Exception exception)
         {
             advanceQueue = true;
-            var safeMessage = SafeFailureMessage(exception);
+            var safeMessage = SafeFailureMessage(exception, currentStage);
             try { await RecoveryStore.MarkFailedAsync(asin, safeMessage, CancellationToken.None).ConfigureAwait(false); }
             catch (Exception persistenceException) { System.Diagnostics.Debug.WriteLine($"Could not persist Widevine failure state: {persistenceException.Message}"); }
             await UpdateQueueStatusAsync(asin, DownloadStatus.Failed, safeMessage).ConfigureAwait(false);
@@ -614,31 +621,44 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             && IsRetryableMediaFailure(exception.InnerException);
     }
 
-    private static string SafeFailureMessage(Exception exception)
+    private static string SafeFailureMessage(Exception exception, string stage)
     {
         // Prefer structured, allow-listed provider denial categories. Never surface
-        // Audible's raw exception message because it may contain account identifiers
-        // or other response details.
+        // Audible's raw response body, signed URLs, account identifiers or DRM data.
         var providerMessage = AudibleLicenseFailureClassifier.GetSafeUserMessage(exception);
         if (!string.IsNullOrWhiteSpace(providerMessage))
-            return providerMessage;
+            return providerMessage + $" Stage: {stage}.";
 
-        var message = exception.Message ?? string.Empty;
-        if (message.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("challenge", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("bearer", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("key-set", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("key set", StringComparison.OrdinalIgnoreCase))
-            return "The protected offline authorization could not be completed. Sensitive provider details were hidden.";
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is HttpRequestException requestException &&
+                requestException.StatusCode is { } statusCode)
+                return $"Download stopped during {stage} (HTTP {(int)statusCode}). " +
+                       "Verified encrypted segments are preserved; tap Retry.";
 
-        if (message.Contains("denied", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("did not grant", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("licence", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("license", StringComparison.OrdinalIgnoreCase) ||
-            exception is NotSupportedException)
-            return "Audible could not authorize this title for the Widevine offline playback route. Check title eligibility and the account's Android device registration.";
+            // Media3 reports HTTP errors as Java IOException subclasses. Report
+            // only the status number, never the exception message or request URL.
+            if (current.GetType().Name.Contains("InvalidResponseCodeException", StringComparison.Ordinal))
+            {
+                var message = current.Message ?? string.Empty;
+                for (var status = 400; status <= 599; status++)
+                {
+                    if (message.Contains(status.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            StringComparison.Ordinal))
+                        return $"Download stopped during {stage} (HTTP {status}). " +
+                               "Verified encrypted segments are preserved; tap Retry.";
+                }
+                return $"Download stopped during {stage} (HTTP response rejected). " +
+                       "Verified encrypted segments are preserved; tap Retry.";
+            }
+        }
 
-        return "Offline download failed. Any verified cached segments are preserved; tap Retry.";
+        var root = exception;
+        while (root.InnerException is not null)
+            root = root.InnerException;
+
+        return $"Download stopped during {stage} ({root.GetType().Name}). " +
+               "Verified encrypted segments are preserved; tap Retry.";
     }
 
     private void FinishWithNotification(
