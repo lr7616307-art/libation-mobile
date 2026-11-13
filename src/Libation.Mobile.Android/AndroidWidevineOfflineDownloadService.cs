@@ -145,7 +145,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         StartForeground(
             NotificationId,
             BuildNotification("Preparing Audible offline authorization…", null, true, true, "Pause"));
-        runTask = RunDownloadAsync(startId, activeAsin, activeTitle, runCancellation.Token);
+        runTask = RunDownloadAsync(startId, incomingAsin!, incomingTitle!, runCancellation.Token);
         return StartCommandResult.RedeliverIntent;
     }
 
@@ -272,11 +272,24 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             // the next foreground app launch can safely recover it.
             if (userRequestedPause)
                 await PersistPausedAsync(asin).ConfigureAwait(false);
-            FinishWithNotification(
-                startId,
-                "Paused. Downloaded DASH segments are preserved; tap Resume to continue.",
-                null,
-                actionLabel: "Resume");
+
+            if (resumeRequestedWhileStopping)
+            {
+                UpdateNotification(
+                    "Resuming Audible offline download…",
+                    null,
+                    indeterminate: true,
+                    ongoing: true,
+                    actionLabel: "Pause");
+            }
+            else
+            {
+                FinishWithNotification(
+                    startId,
+                    "Paused. Downloaded DASH segments are preserved; tap Resume to continue.",
+                    null,
+                    actionLabel: "Resume");
+            }
         }
         catch (Exception exception)
         {
