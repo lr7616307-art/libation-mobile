@@ -104,7 +104,8 @@ public sealed class DownloadQueueWorker
         try
         {
             var item = (await _queue.GetItemsAsync(cancellationToken))
-                .Where(x => x.Status == DownloadStatus.Queued)
+                .Where(x => x.Status == DownloadStatus.Queued &&
+                    !x.AudiobookId.StartsWith("provider:", StringComparison.Ordinal))
                 .OrderBy(x => x.AddedAtUtc)
                 .FirstOrDefault();
 
