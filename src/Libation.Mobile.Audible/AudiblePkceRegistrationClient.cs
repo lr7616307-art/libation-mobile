@@ -90,7 +90,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             throw new InvalidOperationException("The Audible authorization URL does not match the Android device registration or PKCE challenge.");
 
         var body = CreateAndroidRegistrationBody(
-            challenge, clientIdHex, cookieDomain);
+            challenge, authorizationCode, clientIdHex, cookieDomain);
 
         using var message = new HttpRequestMessage(
             HttpMethod.Post,
@@ -166,6 +166,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 
     private static JObject CreateAndroidRegistrationBody(
         AudibleOAuthChallenge challenge,
+        string authorizationCode,
         string clientIdHex,
         string cookieDomain)
     {
@@ -183,7 +184,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         };
         var authData = new JObject
         {
-            ["authorization_code"] = challenge.CodeChallenge.Length > 0 ? null : null,
+            ["authorization_code"] = authorizationCode,
             ["code_verifier"] = challenge.CodeVerifier,
             ["code_algorithm"] = "SHA-256",
             ["client_domain"] = "DeviceLegacy",
