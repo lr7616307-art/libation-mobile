@@ -208,8 +208,8 @@ public sealed class JsonDownloadQueueTests
 
         var item = Assert.Single(await queue.GetItemsAsync());
         Assert.Equal(7_000, item.BytesReceived);
-        Assert.Equal(7_000, item.TotalBytes);
-        Assert.Equal(100d, item.ProgressPercentage);
+        Assert.Equal(10_000, item.TotalBytes);
+        Assert.Equal(70d, item.ProgressPercentage);
     }
 
     [Fact]
