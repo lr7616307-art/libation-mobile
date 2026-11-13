@@ -221,6 +221,8 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             return;
 
         var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
+        var contentVersionKey = AudibleWidevineCacheIdentity.CreateContentVersionKey(
+            content.Acr, content.FileVersion);
         await keySetStore.SaveProviderLicenseReferenceAsync(
             accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
         var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
