@@ -24,6 +24,7 @@ jobs:
           echo "Pinned Git blob: $expected"
           echo "Downloaded Git blob: $actual"
           test "$actual" = "$expected"
+          cp "$RUNNER_TEMP/ffmpeg-kit.aar" "$GITHUB_WORKSPACE/ffmpeg-kit.aar"
       - name: Inspect archive architectures and FFmpeg payload
         shell: bash
         run: |
@@ -51,6 +52,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: LibriSync-FFmpeg-Android-AAR
-          path: \${{ runner.temp }}/ffmpeg-kit.aar
+          path: ffmpeg-kit.aar
           if-no-files-found: error
           retention-days: 7
