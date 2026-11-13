@@ -48,6 +48,15 @@ public partial class MainView
     /// <summary>Runs a non-invasive, platform-specific Widevine capability diagnostic.</summary>
     public static Func<string>? PlatformWidevineDiagnosticFactory { get; set; }
 
+    /// <summary>Shares the app's single durable queue instance with Android background services.</summary>
+    public static Func<IDownloadQueue>? PlatformDownloadQueueFactory { get; set; }
+
+    /// <summary>Pauses an active provider-authorized Audible Widevine download.</summary>
+    public static Action<string, string>? PlatformAudibleOfflineDownloadPauseAction { get; set; }
+
+    /// <summary>Raised by the foreground service after it persists a queue status or progress update.</summary>
+    public static Action? PlatformWidevineOfflineDownloadQueueChangedAction { get; set; }
+
     /// <summary>Creates an on-demand provider metadata reader for book details.</summary>
     public static Func<IAudiobookDetailsProvider>? PlatformAudiobookDetailsProviderFactory { get; set; }
 
