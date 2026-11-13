@@ -667,7 +667,7 @@ public sealed class MainViewModelTests
         var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
         var vm = new MainViewModel(repository, queue,
             new LibrarySyncService(new FakeCatalogProvider([
-                new RemoteAudiobook("audible-asin", "Audible title", "Author", "Narrator", "5h")
+                new RemoteAudiobook("B012345678", "Audible title", "Author", "Narrator", "5h")
             ]), repository));
         await vm.InitializeAsync();
         await vm.SyncLibraryAsync();
