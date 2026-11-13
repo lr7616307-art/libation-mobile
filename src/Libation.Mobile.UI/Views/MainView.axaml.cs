@@ -1678,7 +1678,8 @@ public partial class MainView : UserControl
             return;
 
         var queued = (await _downloadQueue.GetItemsAsync())
-            .Any(item => item.Status == DownloadStatus.Queued);
+            .Any(item => item.Status == DownloadStatus.Queued &&
+                !item.AudiobookId.StartsWith("provider:", StringComparison.Ordinal));
         if (!queued)
         {
             _viewModel.ReportDownloadSettingsStatus("There are no pending downloads.");
