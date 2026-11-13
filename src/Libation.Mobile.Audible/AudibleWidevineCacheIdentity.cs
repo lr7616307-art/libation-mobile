@@ -39,6 +39,40 @@ public static class AudibleWidevineCacheIdentity
                 character is >= '0' and <= '9' or >= 'a' and <= 'f');
     }
 
+    /// <summary>
+    /// Builds a bounded, non-secret Media3 cache scope for one Audible content
+    /// version. The title prefix remains stable so every version can be removed
+    /// together without confusing one title/account with another.
+    /// </summary>
+    public static string CreateCacheScope(string titleScope, string contentVersionKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(titleScope);
+        if (titleScope.Length > 128 || titleScope.Contains(':'))
+            throw new ArgumentException("The protected cache title scope is invalid.", nameof(titleScope));
+        if (!IsValidContentVersionKey(contentVersionKey))
+            throw new ArgumentException("The Audible cache content-version key is invalid.", nameof(contentVersionKey));
+
+        // ReconcileCacheIndex caps scopes at 128 characters and disallows ':'.
+        // Retain 192 bits from the version digest while keeping the stable title
+        // prefix available for title-wide cleanup.
+        var versionSuffix = string.Equals(
+            contentVersionKey, UnversionedContentKey, StringComparison.Ordinal)
+            ? "u"
+            : "v-" + contentVersionKey[2..50];
+        var scope = titleScope + "-" + versionSuffix;
+        if (scope.Length > 128)
+            throw new ArgumentOutOfRangeException(nameof(titleScope), "The versioned cache scope exceeds its supported length.");
+        return scope;
+    }
+
+    public static bool IsTitleCacheScope(string titleScope, string candidate)
+    {
+        if (string.IsNullOrWhiteSpace(titleScope) || string.IsNullOrWhiteSpace(candidate))
+            return false;
+        return string.Equals(candidate, titleScope, StringComparison.Ordinal)
+            || candidate.StartsWith(titleScope + "-", StringComparison.Ordinal);
+    }
+
     public static string CreateResourceFingerprint(Uri resourceUri, string contentVersionKey)
     {
         ArgumentNullException.ThrowIfNull(resourceUri);
