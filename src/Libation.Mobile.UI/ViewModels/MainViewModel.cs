@@ -1406,6 +1406,62 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task RefreshDownloadQueueAsync(CancellationToken cancellationToken = default)
         => await ReloadQueueAsync(cancellationToken);
 
+    public async Task MarkAudibleLocalFileAvailableAsync(
+        string audiobookId,
+        string audioFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(audiobookId) || string.IsNullOrWhiteSpace(audioFilePath))
+            return;
+
+        var normalizedPath = Path.GetFullPath(audioFilePath);
+        if (!File.Exists(normalizedPath))
+            throw new FileNotFoundException("The downloaded Audible audio file does not exist.", normalizedPath);
+
+        var fileSize = new FileInfo(normalizedPath).Length;
+        if (fileSize <= 0)
+            throw new InvalidDataException("The downloaded Audible audio file is empty.");
+
+        var book = _allBooks.FirstOrDefault(item =>
+            string.Equals(item.Id, audiobookId, StringComparison.Ordinal));
+        if (book is null || !book.IsProviderCatalogueEntry)
+            return;
+
+        await _repository.UpsertAsync(
+            book with
+            {
+                AudioFilePath = normalizedPath,
+                FileSizeBytes = fileSize,
+                IsWidevineOfflineAvailable = false,
+                ProtectedAudioFileName = null,
+                ProtectedAudioFolderName = null,
+                ProtectedAudioProtection = null
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        _allBooks = await _repository.GetBooksAsync(cancellationToken).ConfigureAwait(false);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+
+        if (_detailBook is not null &&
+            string.Equals(_detailBook.Id, audiobookId, StringComparison.Ordinal))
+        {
+            _detailBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailFileSizeLabel));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(HasPlayableDetailAudio));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+        }
+
+        if (SelectedBook?.Id == audiobookId)
+            SelectedBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+
+        AudioImportStatus = "Audible download complete. The audiobook is ready to play offline.";
+        ErrorMessage = string.Empty;
+    }
+
     public async Task MarkWidevineOfflineAvailableAsync(
         string audiobookId,
         CancellationToken cancellationToken = default)
