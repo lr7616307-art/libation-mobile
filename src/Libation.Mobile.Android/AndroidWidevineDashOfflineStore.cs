@@ -297,7 +297,8 @@ public sealed class AndroidWidevineDashOfflineStore
             // write and the durable title index update.
             foreach (var cacheKey in GetCacheKeys(cache))
             {
-                if (cacheKey.StartsWith(scope + ":", StringComparison.Ordinal))
+                if (cacheKey.StartsWith(scope + ":", StringComparison.Ordinal) ||
+                    cacheKey.StartsWith(scope + "-", StringComparison.Ordinal))
                     keysToRemove.Add(cacheKey);
             }
 
@@ -551,11 +552,21 @@ public sealed class AndroidWidevineDashOfflineStore
     }
 
     private static string GetContentScope(string titleScope, string contentVersionKey)
-        => titleScope + ":" + contentVersionKey;
+    {
+        // ReconcileCacheIndex deliberately disallows ':' in a scope and caps
+        // it at 128 characters. Retain a 192-bit version suffix while keeping
+        // the account/title prefix available for complete title removal.
+        var versionSuffix = string.Equals(
+            contentVersionKey, AudibleWidevineCacheIdentity.UnversionedContentKey,
+            StringComparison.Ordinal)
+            ? "u"
+            : "v-" + contentVersionKey[2..50];
+        return titleScope + "-" + versionSuffix;
+    }
 
     private static bool IsTitleCacheScope(string titleScope, string candidate)
         => string.Equals(candidate, titleScope, StringComparison.Ordinal)
-            || candidate.StartsWith(titleScope + ":", StringComparison.Ordinal);
+            || candidate.StartsWith(titleScope + "-", StringComparison.Ordinal);
 
     private static void ValidateContentVersionKey(string contentVersionKey)
     {
