@@ -52,6 +52,23 @@ public sealed class AudibleWidevineCacheScopeTests
     }
 
     [Fact]
+    public void IsContentCacheKey_MatchesOnlyTheExactVersionScope()
+    {
+        var firstVersion = AudibleWidevineCacheIdentity.CreateCacheScope(
+            TitleScope, AudibleWidevineCacheIdentity.CreateContentVersionKey("CR!book", 1));
+        var secondVersion = AudibleWidevineCacheIdentity.CreateCacheScope(
+            TitleScope, AudibleWidevineCacheIdentity.CreateContentVersionKey("CR!book", 2));
+
+        Assert.True(AudibleWidevineCacheIdentity.IsContentCacheKey(
+            firstVersion, firstVersion + ":segment:abc"));
+        Assert.False(AudibleWidevineCacheIdentity.IsContentCacheKey(
+            firstVersion, secondVersion + ":segment:abc"));
+        Assert.False(AudibleWidevineCacheIdentity.IsContentCacheKey(
+            firstVersion, firstVersion + "x:segment:abc"));
+        Assert.False(AudibleWidevineCacheIdentity.IsContentCacheKey(firstVersion, ""));
+    }
+
+    [Fact]
     public void IsTitleCacheScope_MatchesOnlyExactTitlePrefixAndVersionDelimiter()
     {
         var first = AudibleWidevineCacheIdentity.CreateCacheScope(
