@@ -1,6 +1,7 @@
 using AudibleApi;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Security.Cryptography;
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text;
