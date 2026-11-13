@@ -1,4 +1,6 @@
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
+using System.Text;
 using System.Net;
 using Newtonsoft.Json.Linq;
 using AudibleApi;
@@ -7,6 +9,30 @@ using AudibleApi.Common;
 using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Audible;
+
+/// <summary>Audible ADRM media type selected by the provider-issued voucher.</summary>
+public enum AudibleAdrmMediaKind
+{
+    Mpeg,
+    Aax,
+    Aaxc
+}
+
+/// <summary>
+/// A provider-issued Audible offline URL and the matching voucher material.
+/// Keys are transient in-memory values; only the non-reversible fingerprint is
+/// written beside an interrupted .part file to ensure a later licence matches.
+/// </summary>
+public sealed record AudibleAdrmDownloadPlan(
+    Uri DownloadUri,
+    AudibleAdrmMediaKind MediaKind,
+    string Extension,
+    string? AudibleKeyHex,
+    string? AudibleIvHex,
+    string? ActivationBytes)
+{
+    public required string ResumeFingerprint { get; init; }
+}
 
 /// <summary>
 /// A provider-authorized Widevine DASH manifest reference. This is not a downloaded
@@ -32,6 +58,8 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
     private readonly Func<string, DownloadQuality, DrmType, CancellationToken, Task<ContentLicense>> _requestLicense;
     private readonly Func<string, string, CancellationToken, Task<string>> _requestWidevineLicense;
     private readonly Func<JObject, CancellationToken, Task<string>>? _requestWidevineLicenseRefresh;
+    private readonly Func<string, CancellationToken, Task<string>>? _requestLegacyAaxUrl;
+    private readonly Func<CancellationToken, Task<string>>? _requestActivationBytes;
     private readonly bool _widevineLicenseExchangeEnabled;
     private readonly string _downloadDirectory;
 
@@ -48,6 +76,16 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             : DownloadQuality.High;
         _requestLicense = (asin, requestedQuality, drmType, _) =>
             api.GetDownloadLicenseAsync(asin, requestedQuality, ChapterTitlesType.Tree, drmType);
+        _requestLegacyAaxUrl = (asin, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            return api.DownloadAaxWorkaroundAsync(asin);
+        };
+        _requestActivationBytes = token =>
+        {
+            token.ThrowIfCancellationRequested();
+            return api.GetActivationBytesAsync();
+        };
         // Use AudibleApi's public authenticated transport directly. Its
         // WidevineDrmLicense convenience method logs exceptions with the full
         // JSON request body, which can contain the DRM challenge. This path
@@ -72,11 +110,15 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         Func<string, string, CancellationToken, Task<string>> requestWidevineLicense,
         string downloadDirectory,
         AudibleDownloadQuality quality = AudibleDownloadQuality.High,
-        Func<JObject, CancellationToken, Task<string>>? requestWidevineLicenseRefresh = null)
+        Func<JObject, CancellationToken, Task<string>>? requestWidevineLicenseRefresh = null,
+        Func<string, CancellationToken, Task<string>>? requestLegacyAaxUrl = null,
+        Func<CancellationToken, Task<string>>? requestActivationBytes = null)
     {
         _requestLicense = requestLicense ?? throw new ArgumentNullException(nameof(requestLicense));
         _requestWidevineLicense = requestWidevineLicense ?? throw new ArgumentNullException(nameof(requestWidevineLicense));
         _requestWidevineLicenseRefresh = requestWidevineLicenseRefresh;
+        _requestLegacyAaxUrl = requestLegacyAaxUrl;
+        _requestActivationBytes = requestActivationBytes;
         _widevineLicenseExchangeEnabled = true;
         _downloadDirectory = NormalizeDownloadDirectory(downloadDirectory);
         _quality = quality == AudibleDownloadQuality.Normal ? DownloadQuality.Normal : DownloadQuality.High;
@@ -113,6 +155,198 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         string audiobookId,
         CancellationToken cancellationToken = default)
         => ResolveWithDrmAsync(audiobookId, DrmType.Adrm, cancellationToken);
+
+    /// <summary>
+    /// Uses LibriSync's Audible download path: request an ADRM/AAC-LC licence,
+    /// obtain the Audible voucher and offline URL, or fall back to Audible's
+    /// documented legacy AAX URL when the ADRM endpoint returns a licence denial.
+    /// No Widevine/CDM or unlicensed decryption fallback is used.
+    /// </summary>
+    public async Task<AudibleAdrmDownloadPlan> ResolveAdrmDownloadPlanAsync(
+        string audiobookId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateAsin(audiobookId);
+
+        ContentLicense? license = null;
+        try
+        {
+            license = await _requestLicense(audiobookId, _quality, DrmType.Adrm, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ContentLicenseDeniedException)
+        {
+            return await ResolveLegacyAaxFallbackAsync(audiobookId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        if (license is null)
+            throw new InvalidDataException("Audible returned an empty ADRM licence response.");
+
+        if (string.Equals(license.StatusCode, "Denied", StringComparison.OrdinalIgnoreCase))
+            return await ResolveLegacyAaxFallbackAsync(audiobookId, cancellationToken)
+                .ConfigureAwait(false);
+
+        if (!string.Equals(license.StatusCode, "Granted", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Audible did not grant an ADRM download licence for this audiobook.");
+
+        var offlineUrl = license.ContentMetadata?.ContentUrl?.OfflineUrl;
+        var downloadUri = RequireAudibleHttpsUrl(offlineUrl);
+        var drmType = license.DrmType.ToString();
+
+        if (string.Equals(drmType, "Mpeg", StringComparison.OrdinalIgnoreCase))
+            return CreatePlan(audiobookId, downloadUri, AudibleAdrmMediaKind.Mpeg, ".mp3", null, null, null);
+
+        if (!string.Equals(drmType, "Adrm", StringComparison.OrdinalIgnoreCase))
+            throw new NotSupportedException(
+                "Audible did not issue an ADRM/AAC-LC licence. VØRATH will not try the unrelated Widevine stream path.");
+
+        var voucher = license.Voucher
+            ?? throw new InvalidDataException("Audible granted ADRM but returned no decrypted voucher.");
+
+        var keyText = voucher.Key;
+        if (string.IsNullOrWhiteSpace(keyText))
+            throw new InvalidDataException("Audible's ADRM voucher does not contain a content key.");
+
+        // The legacy AAX voucher carries four activation bytes as eight hex
+        // characters. AAXC uses two Base64-encoded 16-byte values.
+        if (keyText.Length == 8 && keyText.All(Uri.IsHexDigit) &&
+            string.IsNullOrWhiteSpace(voucher.Iv))
+        {
+            return CreatePlan(audiobookId, downloadUri, AudibleAdrmMediaKind.Aax, ".aax", null, null, keyText.ToLowerInvariant());
+        }
+
+        var key = DecodeVoucherValue(keyText, "key");
+        var iv = string.IsNullOrWhiteSpace(voucher.Iv)
+            ? Array.Empty<byte>()
+            : DecodeVoucherValue(voucher.Iv, "IV");
+
+        if (key.Length == 4 && iv.Length == 0)
+        {
+            return CreatePlan(
+                audiobookId, downloadUri, AudibleAdrmMediaKind.Aax, ".aax",
+                null, null, Convert.ToHexString(key).ToLowerInvariant());
+        }
+
+        if (key.Length != 16 || iv.Length != 16)
+        {
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(iv);
+            throw new InvalidDataException("Audible returned an unsupported ADRM voucher key/IV size.");
+        }
+
+        try
+        {
+            return CreatePlan(
+                audiobookId,
+                downloadUri,
+                AudibleAdrmMediaKind.Aaxc,
+                ".aaxc",
+                Convert.ToHexString(key).ToLowerInvariant(),
+                Convert.ToHexString(iv).ToLowerInvariant(),
+                null);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(iv);
+        }
+    }
+
+    private async Task<AudibleAdrmDownloadPlan> ResolveLegacyAaxFallbackAsync(
+        string audiobookId,
+        CancellationToken cancellationToken)
+    {
+        var urlRequest = _requestLegacyAaxUrl
+            ?? throw new ContentLicenseDeniedException(
+                "Audible denied the ADRM licence and the legacy AAX URL transport is not configured.");
+        var activationRequest = _requestActivationBytes
+            ?? throw new ContentLicenseDeniedException(
+                "Audible denied the ADRM licence and the legacy AAX activation-byte transport is not configured.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var url = await urlRequest(audiobookId, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        var activationBytes = await activationRequest(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(activationBytes) ||
+            activationBytes.Length != 8 ||
+            activationBytes.Any(character => !Uri.IsHexDigit(character)))
+            throw new InvalidDataException("Audible returned invalid AAX activation bytes.");
+
+        return CreatePlan(
+            audiobookId,
+            RequireAudibleHttpsUrl(url),
+            AudibleAdrmMediaKind.Aax,
+            ".aax",
+            null,
+            null,
+            activationBytes.ToLowerInvariant());
+    }
+
+    private static AudibleAdrmDownloadPlan CreatePlan(
+        string asin,
+        Uri downloadUri,
+        AudibleAdrmMediaKind mediaKind,
+        string extension,
+        string? keyHex,
+        string? ivHex,
+        string? activationBytes)
+    {
+        // Bind resume state to the exact title and voucher, without persisting
+        // the voucher's decryption material or the signed download URL.
+        var fingerprintInput = string.Join("\\n",
+            asin.ToUpperInvariant(),
+            mediaKind.ToString(),
+            keyHex ?? string.Empty,
+            ivHex ?? string.Empty,
+            activationBytes ?? string.Empty);
+        var fingerprint = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(fingerprintInput))).ToLowerInvariant();
+
+        return new AudibleAdrmDownloadPlan(
+            downloadUri, mediaKind, extension, keyHex, ivHex, activationBytes)
+        {
+            ResumeFingerprint = fingerprint
+        };
+    }
+
+    private static Uri RequireAudibleHttpsUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            !Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            !string.IsNullOrEmpty(uri.UserInfo))
+            throw new InvalidDataException("Audible returned no valid HTTPS offline download URL.");
+        return uri;
+    }
+
+    private static byte[] DecodeVoucherValue(string value, string field)
+    {
+        try
+        {
+            var decoded = Convert.FromBase64String(value);
+            if (decoded.Length is 4 or 16)
+                return decoded;
+        }
+        catch (FormatException)
+        {
+            // Accept hex only as a defensive compatibility path; the official
+            // AudibleApi voucher parser normally supplies Base64.
+        }
+
+        if (value.Length % 2 == 0 && value.All(Uri.IsHexDigit))
+        {
+            try { return Convert.FromHexString(value); }
+            catch (FormatException) { }
+        }
+
+        throw new InvalidDataException($"Audible's ADRM voucher {field} is not valid Base64/hex key material.");
+    }
 
     /// <summary>
     /// Requests a Widevine content licence specifically. AudibleApi may downgrade
