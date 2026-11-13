@@ -100,7 +100,7 @@ public sealed class AudibleWidevineManifestParserTests
         var xml = CreateManifest(
             Convert.ToBase64String(CreatePssh(0, [0x01])), "video/mp4");
 
-        Assert.Throws<InvalidDataException>(() => AudibleWidevineManifestParser.Parse(xml));
+        Assert.Throws<NotSupportedException>(() => AudibleWidevineManifestParser.Parse(xml));
     }
 
     [Fact]
