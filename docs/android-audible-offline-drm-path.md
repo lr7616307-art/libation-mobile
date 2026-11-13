@@ -150,6 +150,15 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Unit tests cover rotating signature parameters, stable track-selection parameters, ACR/file-version changes, missing metadata and unsafe URLs.
 - This is a cache-consistency improvement only. It cannot make Audible grant a Widevine licence, and device-level offline playback still requires validation with an entitled title.
 
+## Pass 31 — cache-quota failure isolation
+
+- A quota failure during a new DASH transfer now removes only the cache for the exact attempted Audible content-version scope.
+- Previously completed cache versions for the same account/title, and all other offline titles, remain untouched.
+- Explicit title removal still enumerates and removes every version scope, including legacy unversioned title scopes and cache resources written before an index update completed.
+- Version-scope creation and title-prefix matching are moved into a pure helper and covered by tests for the 128-character scope limit, delimiter safety, version separation and cross-title isolation.
+- The preflight quota check remains fail-closed: when the app-private cache is already at its 8 GiB ceiling, it refuses a new transfer without deleting existing content.
+- This protects already cached data from a failed or oversized new version. It does not change Audible licence authorization or prove a physical-device download/playback.
+
 ## Remaining implementation — not yet verified
 
 1. Implement and validate Audible's server-confirmed KEY_TYPE_RELEASE exchange and documented licence renewal/revocation semantics before claiming provider-side licence release.
