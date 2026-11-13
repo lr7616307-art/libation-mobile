@@ -123,7 +123,7 @@ public sealed class AudibleLoginActivity : Activity
                 || !(string.Equals(authorizationUri.Host, cookieDomain, StringComparison.OrdinalIgnoreCase) || authorizationUri.Host.EndsWith("." + cookieDomain, StringComparison.OrdinalIgnoreCase))
                 || cookie.Value is null
                 || cookie.Value.Contains(';')
-                || cookie.Value.Contains('\\n')
+                || cookie.Value.Contains('\n')
                 || (cookie.Path != "/ap" && cookie.Path != "/"))
             {
                 FinishLogin(null);
