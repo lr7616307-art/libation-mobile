@@ -261,10 +261,10 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         CancellationToken cancellationToken)
     {
         var urlRequest = _requestLegacyAaxUrl
-            ?? throw new ContentLicenseDeniedException(
+            ?? throw new NotSupportedException(
                 "Audible denied the ADRM licence and the legacy AAX URL transport is not configured.");
         var activationRequest = _requestActivationBytes
-            ?? throw new ContentLicenseDeniedException(
+            ?? throw new NotSupportedException(
                 "Audible denied the ADRM licence and the legacy AAX activation-byte transport is not configured.");
 
         cancellationToken.ThrowIfCancellationRequested();
