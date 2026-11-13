@@ -44,10 +44,6 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         var locale = Localization.Get(challenge.Marketplace);
         var expectedLoginHost = locale.LoginUri().Host;
         var expectedCallbackHost = locale.AudibleLoginUri().Host;
-        var loginHost = locale.LoginUri().Host;
-        var cookieDomain = "." + (loginHost.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
-            ? loginHost[4..]
-            : loginHost);
         if (!AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
             throw new InvalidOperationException("The Audible callback does not match the selected marketplace.");
 
@@ -96,7 +92,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             throw new InvalidOperationException("The Audible authorization URL does not match the Android device registration or PKCE challenge.");
 
         var body = CreateAndroidRegistrationBody(
-            challenge, authorizationCode, clientIdHex, cookieDomain);
+            challenge, authorizationCode, clientIdHex);
 
         using var message = new HttpRequestMessage(
             HttpMethod.Post,
@@ -185,8 +181,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
     private static JObject CreateAndroidRegistrationBody(
         AudibleOAuthChallenge challenge,
         string authorizationCode,
-        string clientIdHex,
-        string cookieDomain)
+        string clientIdHex)
     {
         var registrationData = new JObject
         {
