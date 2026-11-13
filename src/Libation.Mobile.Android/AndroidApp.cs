@@ -82,6 +82,10 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
             return new AndroidWidevineOfflinePlaybackCoordinator(
                 source, manifestClient, keySetStore, savedIdentity.AmazonAccountId);
         };
+        AndroidWidevineOfflineDownloadService.CoordinatorFactory =
+            MainView.PlatformWidevinePlaybackCoordinatorFactory;
+        MainView.PlatformAudibleOfflineDownloadStartAction =
+            (asin, title) => AndroidWidevineOfflineDownloadService.Start(this, asin, title);
         signInViewModel.SetBeforeDisconnectCleanup(async cancellationToken =>
         {
             if (MainView.PlatformWidevinePlaybackCoordinatorFactory is null)
