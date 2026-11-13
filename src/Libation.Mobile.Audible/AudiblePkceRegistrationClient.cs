@@ -43,11 +43,12 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             throw new InvalidOperationException("The OAuth marketplace is invalid.");
 
         var locale = Localization.Get(challenge.Marketplace);
-        var expectedLoginHost = locale.AudibleLoginUri().Host;
-        var registrationHost = locale.RegistrationUri().Host;
-        var cookieDomain = locale.LoginUri().Host;
-        if (cookieDomain.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
-            cookieDomain = cookieDomain[4..];
+        if (!AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
+            throw new InvalidOperationException("The Audible callback does not match the selected marketplace.");
+        var expectedLoginHost = challenge.CallbackUri.Host;
+        var topDomain = expectedLoginHost["www.audible.".Length..];
+        var amazonDomain = "amazon." + topDomain;
+        var cookieDomain = amazonDomain;
 
         if (!challenge.AuthorizationUri.IsAbsoluteUri
             || !challenge.CallbackUri.IsAbsoluteUri
@@ -94,7 +95,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 
         using var message = new HttpRequestMessage(
             HttpMethod.Post,
-            new Uri(locale.RegistrationUri(), "/auth/register"))
+            new Uri("https://api." + amazonDomain + "/auth/register"))
         {
             Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json")
         };
