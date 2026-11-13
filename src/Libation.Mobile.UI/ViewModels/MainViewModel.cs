@@ -1331,7 +1331,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         try
         {
-            await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken);
+            if (audiobookId.StartsWith("provider:", StringComparison.Ordinal))
+            {
+                var providerTitle = _allBooks.FirstOrDefault(book => book.Id == audiobookId)?.Title
+                    ?? "Audible audiobook";
+                await _downloadQueue.EnqueueProviderAsync(audiobookId, providerTitle, cancellationToken);
+            }
+            else
+            {
+                await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken);
+            }
             await ReloadQueueAsync(cancellationToken);
             ErrorMessage = string.Empty;
             DownloadSettingsStatus = audiobookId.StartsWith("provider:", StringComparison.Ordinal)
