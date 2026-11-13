@@ -45,14 +45,13 @@ public static class AudibleOAuthFlow
     private const string AppVersion = "2090263407";
     private const string AppVersionName = "26.34.07";
     private const string SoftwareVersion = "130050002";
-    private const string DeviceModel = "sdk_gphone64_x86_64";
-    private const string OsVersion = @"google\/raven\/raven:14\/UPB5.230623.003\/10615560:user\/release-keys";
-    private const string DeviceName = @"ranchu\/Google\/" + DeviceModel;
     private const string MapVersion = "MAPAndroidLib-1.3.57073.0";
 
-    public static AudibleOAuthChallenge Create(string marketplace)
+    public static AudibleOAuthChallenge Create(string marketplace, AudibleAndroidDeviceInfo deviceInfo)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(marketplace);
+        ArgumentNullException.ThrowIfNull(deviceInfo);
+        deviceInfo.Validate();
         var code = marketplace.Trim().ToLowerInvariant();
         if (!Markets.TryGetValue(code, out _))
             throw new ArgumentException("The selected Audible marketplace is not supported.", nameof(marketplace));
@@ -64,7 +63,7 @@ public static class AudibleOAuthFlow
         var serialAndType = serial + "#" + AndroidDeviceType;
         var clientIdHex = Convert.ToHexString(Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
         var callback = new Uri(locale.AudibleLoginUri(), "/ap/maplanding");
-        var frc = CreateAndroidFrc(serial, locale);
+        var frc = CreateAndroidFrc(serial, locale, deviceInfo);
         var loginHost = locale.LoginUri().Host;
         var cookieDomain = "." + (loginHost.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
             ? loginHost[4..]
@@ -117,7 +116,8 @@ public static class AudibleOAuthFlow
             verifier,
             codeChallenge,
             frc,
-            cookies);
+            cookies,
+            deviceInfo);
     }
 
     public static bool IsMarketplaceCallback(string marketplace, Uri callbackUri)
@@ -192,24 +192,27 @@ public static class AudibleOAuthFlow
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(mapMd.ToString(Formatting.None)));
     }
 
-    private static string CreateAndroidFrc(string serial, Locale locale)
+    private static string CreateAndroidFrc(
+        string serial,
+        Locale locale,
+        AudibleAndroidDeviceInfo hostDevice)
     {
-        var deviceInfo = new JObject
+        var registrationContext = new JObject
         {
             ["ApplicationName"] = AppName,
             ["ApplicationVersion"] = AppVersion,
-            ["DeviceOSVersion"] = OsVersion,
-            ["DeviceName"] = DeviceName,
-            ["ScreenWidthPixels"] = "1080",
+            ["DeviceOSVersion"] = hostDevice.BuildFingerprint,
+            ["DeviceName"] = hostDevice.DeviceName,
+            ["ScreenWidthPixels"] = hostDevice.ScreenWidthPixels.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["ThirdPartyDeviceId"] = serial,
             ["FirstPartyDeviceId"] = serial,
-            ["ScreenHeightPixels"] = "2400",
-            ["DeviceLanguage"] = locale.Language,
+            ["ScreenHeightPixels"] = hostDevice.ScreenHeightPixels.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["DeviceLanguage"] = hostDevice.DeviceLanguage,
             ["TimeZone"] = FormatOffset(DateTimeOffset.Now.Offset),
-            ["Carrier"] = "T-Mobile",
+            ["Carrier"] = "Unknown",
             ["IpAddress"] = GetLocalIpAddress()
         };
-        return EncodeFrc(serial, deviceInfo.ToString(Formatting.None));
+        return EncodeFrc(serial, registrationContext.ToString(Formatting.None));
     }
 
     private static string GetLocalIpAddress()
@@ -286,4 +289,5 @@ public sealed record AudibleOAuthChallenge(
     string CodeVerifier,
     string CodeChallenge,
     string FrcValue,
-    IReadOnlyList<ExternalSignInCookie> SignInCookies);
+    IReadOnlyList<ExternalSignInCookie> SignInCookies,
+    AudibleAndroidDeviceInfo DeviceInfo);
