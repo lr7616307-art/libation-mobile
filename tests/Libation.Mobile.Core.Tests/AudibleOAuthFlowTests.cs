@@ -90,7 +90,7 @@ public sealed class AudibleOAuthFlowTests
     }
 
     [Fact]
-    public void Create_UsesActualHostDeviceMetadataInsteadOfAnEmulatorTemplate()
+    public void Create_KeepsHostMetadataButUsesCanonicalAudibleAndroidRegistrationProfile()
     {
         var info = TestDeviceInfo() with
         {
@@ -110,14 +110,17 @@ public sealed class AudibleOAuthFlowTests
 
         var flow = AudibleOAuthFlow.Create("in", info);
 
+        // Physical host facts remain available to the app, but are deliberately
+        // not mixed into Audible's virtual CurrentAndroid registration profile.
         Assert.Equal(info, flow.DeviceInfo);
-        Assert.DoesNotContain("sdk_gphone", flow.DeviceInfo.Model, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("raven", flow.DeviceInfo.BuildFingerprint, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(29, int.Parse(flow.DeviceInfo.SdkVersion));
+        Assert.Equal(AudibleOAuthFlow.AndroidDeviceModel, AudibleOAuthFlow.AndroidDeviceProduct);
+        Assert.Contains("Android 14", AudibleOAuthFlow.AndroidUserAgent);
+        Assert.Contains("sdk_gphone64_x86_64", AudibleOAuthFlow.AndroidDeviceModel);
+        Assert.Equal(20, flow.DeviceSerial.Length);
     }
 
     [Fact]
-    public void Create_EncodesActualHostFactsInFrcContext()
+    public void Create_EncodesCanonicalCurrentAndroidProfileInFrcContext()
     {
         var info = TestDeviceInfo() with
         {
@@ -155,12 +158,16 @@ public sealed class AudibleOAuthFlowTests
         using var json = JsonDocument.Parse(gzip);
         var root = json.RootElement;
 
-        Assert.Equal(info.BuildFingerprint, root.GetProperty("DeviceOSVersion").GetString());
-        Assert.Equal(info.DeviceName, root.GetProperty("DeviceName").GetString());
-        Assert.Equal("720", root.GetProperty("ScreenWidthPixels").GetString());
-        Assert.Equal("1600", root.GetProperty("ScreenHeightPixels").GetString());
-        Assert.Equal("hi", root.GetProperty("DeviceLanguage").GetString());
-        Assert.Equal("Unknown", root.GetProperty("Carrier").GetString());
+        Assert.Equal("com.audible.application", root.GetProperty("ApplicationName").GetString());
+        Assert.Equal(AudibleOAuthFlow.AndroidOsVersion, root.GetProperty("DeviceOSVersion").GetString());
+        Assert.Equal(AudibleOAuthFlow.AndroidFrcDeviceName, root.GetProperty("DeviceName").GetString());
+        Assert.Equal("1080", root.GetProperty("ScreenWidthPixels").GetString());
+        Assert.Equal("2400", root.GetProperty("ScreenHeightPixels").GetString());
+        Assert.Equal(AudibleApi.Localization.Get("in").Language, root.GetProperty("DeviceLanguage").GetString());
+        Assert.Equal("T-Mobile", root.GetProperty("Carrier").GetString());
+        Assert.Equal(flow.DeviceSerial, root.GetProperty("FirstPartyDeviceId").GetString());
+        Assert.Equal(flow.DeviceSerial, root.GetProperty("ThirdPartyDeviceId").GetString());
+        Assert.True(root.TryGetProperty("IpAddress", out _));
     }
 
     [Fact]

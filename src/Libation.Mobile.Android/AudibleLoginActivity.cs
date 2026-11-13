@@ -101,6 +101,7 @@ public sealed class AudibleLoginActivity : Activity
 
         _webView = new WebView(this);
         _webView.Settings.JavaScriptEnabled = true;
+        _webView.Settings.UserAgentString = AudibleOAuthFlow.AndroidUserAgent;
         _webView.Settings.DomStorageEnabled = true;
         _webView.Settings.AllowFileAccess = false;
         _webView.Settings.AllowContentAccess = false;
