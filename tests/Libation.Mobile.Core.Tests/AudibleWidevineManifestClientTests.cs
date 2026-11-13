@@ -16,6 +16,10 @@ public sealed class AudibleWidevineManifestClientTests
         {
             Assert.Equal(HttpMethod.Get, request.Method);
             Assert.Equal("https", request.RequestUri?.Scheme);
+            Assert.Equal(
+                AudibleAudioDownloadSource.AndroidDownloadUserAgent,
+                request.Headers.UserAgent.ToString());
+            Assert.True(request.Headers.CacheControl?.NoCache);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(xml, Encoding.UTF8, "application/dash+xml")
