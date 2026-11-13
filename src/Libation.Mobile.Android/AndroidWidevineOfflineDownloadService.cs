@@ -142,8 +142,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         {
             // A title can be enqueued while the previous task is unwinding.
             // The queue pump will re-read the durable queue after this transition.
-            if (!userRequestedPause)
-                queuedStartReceivedWhileTransitioning = true;
+            queuedStartReceivedWhileTransitioning = true;
             return StartCommandResult.NotSticky;
         }
 
@@ -152,6 +151,9 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             if (userRequestedPause &&
                 string.Equals(incomingAsin, activeAsin, StringComparison.OrdinalIgnoreCase))
                 resumeRequestedWhileStopping = true;
+            else if (userRequestedPause)
+                queuedStartReceivedWhileTransitioning = true;
+
             // A different Audible title remains safely queued. Do not overwrite
             // activeAsin/title while the service is still processing the first.
             return StartCommandResult.NotSticky;
@@ -358,7 +360,9 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             {
                 var shouldResume = resumeRequestedWhileStopping &&
                     string.Equals(activeAsin, asin, StringComparison.OrdinalIgnoreCase);
-                var shouldPumpQueue = advanceQueue || queuedStartReceivedWhileTransitioning;
+                var explicitQueuedStart = queuedStartReceivedWhileTransitioning;
+                var shouldPumpQueue = advanceQueue || explicitQueuedStart;
+                var mayAdvanceQueue = !userRequestedPause || explicitQueuedStart;
                 resumeRequestedWhileStopping = false;
                 queuedStartReceivedWhileTransitioning = false;
                 runTask = null;
@@ -376,14 +380,24 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                         BuildNotification("Resuming Audible offline download…", null, true, true, "Pause"));
                     runTask = RunDownloadAsync(startId, asin, title, runCancellation.Token);
                 }
-                else if (shouldPumpQueue && !userRequestedPause &&
-                    await StartNextQueuedProviderDownloadAsync(startId).ConfigureAwait(false))
-                {
-                    // The next Audible item is now running in this same foreground service.
-                }
                 else
                 {
-                    StopSelf();
+                    var startedNext = false;
+                    if (shouldPumpQueue && mayAdvanceQueue)
+                    {
+                        startedNext = await StartNextQueuedProviderDownloadAsync(startId).ConfigureAwait(false);
+                        // A Start intent may arrive while the first queue snapshot is
+                        // being read. Its item was already persisted by the UI, so read
+                        // the queue once more before deciding the service is idle.
+                        if (!startedNext && queuedStartReceivedWhileTransitioning)
+                        {
+                            queuedStartReceivedWhileTransitioning = false;
+                            startedNext = await StartNextQueuedProviderDownloadAsync(startId).ConfigureAwait(false);
+                        }
+                    }
+
+                    if (!startedNext)
+                        StopSelf();
                 }
             }
             catch (Exception exception)
