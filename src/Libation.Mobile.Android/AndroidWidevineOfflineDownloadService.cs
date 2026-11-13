@@ -589,20 +589,19 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
 
         var status = FindHttpStatusCode(exception);
         var statusText = status is { } code ? $", HTTP {code}" : string.Empty;
-        var causeText = DescribeSafeExceptionChain(exception);
-        return $"Offline download failed at {stage} ({exceptionType}{statusText}; cause: {causeText}). " +
+        var detail = DescribeSafeException(exception);
+        return $"Offline download failed at {stage} ({exceptionType}{statusText}). {detail} " +
                "Verified encrypted segments are preserved; tap Retry.";
     }
 
-    // A platform HttpClient/Media3 failure is sometimes wrapped in a generic
-    // System.Exception by the Android binding. Include only exception type names
-    // and numeric HTTP status codes so the real failing boundary is visible
-    // without exposing signed URLs, tokens, cookies, manifests or DRM messages.
-    private static string DescribeSafeExceptionChain(Exception exception)
+    // Show the exception message and HResult so a generic Android/.NET exception
+    // is still diagnosable. Signed URLs, request query strings, credentials and
+    // DRM material are redacted before anything reaches the notification.
+    private static string DescribeSafeException(Exception exception)
     {
         var parts = new List<string>();
         var depth = 0;
-        for (Exception? current = exception.InnerException;
+        for (Exception? current = exception;
              current is not null && depth < 4;
              current = current.InnerException, depth++)
         {
@@ -610,13 +609,43 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             if (name.Length > 48 || name.Any(character => !char.IsAsciiLetterOrDigit(character)))
                 name = "PlatformException";
 
-            var status = current is HttpRequestException request && request.StatusCode is { } code
-                ? $" HTTP {(int)code}"
-                : string.Empty;
-            parts.Add(name + status);
+            var message = current.Message ?? string.Empty;
+            message = System.Text.RegularExpressions.Regex.Replace(
+                message,
+                @"https?://[^\s""'<>]+",
+                "[URL]",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+                System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+            message = System.Text.RegularExpressions.Regex.Replace(
+                message,
+                @"(?i)(authorization|cookie|access[_-]?token|refresh[_-]?token|licenseChallenge)\s*[:=]\s*[^,;\s]+",
+                "$1=[redacted]");
+            message = new string(message.Where(character => !char.IsControl(character)).Take(180).ToArray()).Trim();
+            if (string.IsNullOrWhiteSpace(message))
+                message = "no message";
+
+            parts.Add($"{name} 0x{current.HResult:X8}: {message}");
         }
 
-        return parts.Count == 0 ? "none" : string.Join(" -> ", parts);
+        var frames = new System.Diagnostics.StackTrace(exception, false).GetFrames();
+        var methods = frames?
+            .Select(frame => frame.GetMethod())
+            .Where(method => method is not null)
+            .Take(2)
+            .Select(method =>
+            {
+                var typeName = method!.DeclaringType?.Name ?? "UnknownType";
+                if (typeName.Length > 48 || typeName.Any(character => !char.IsAsciiLetterOrDigit(character)))
+                    typeName = "PlatformType";
+                var methodName = method.Name;
+                if (methodName.Length > 48 || methodName.Any(character => !char.IsAsciiLetterOrDigit(character)))
+                    methodName = "PlatformMethod";
+                return typeName + "." + methodName;
+            })
+            .ToArray() ?? [];
+
+        var stack = methods.Length == 0 ? string.Empty : " at " + string.Join(" <- ", methods);
+        return "Diagnostic: " + string.Join(" <- ", parts) + stack + ".";
     }
 
     private static int? FindHttpStatusCode(Exception exception)

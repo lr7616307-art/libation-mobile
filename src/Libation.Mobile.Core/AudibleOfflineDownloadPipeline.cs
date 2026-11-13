@@ -33,6 +33,7 @@ public interface IAudibleOfflineDownloadBackend
     Task DownloadOfflineMediaWithProgressAsync(
         string asin,
         IProgress<WidevineOfflineDownloadProgress>? progress,
+        IProgress<AudibleOfflineDownloadStage>? stageProgress,
         CancellationToken cancellationToken = default);
 }
 
@@ -82,7 +83,7 @@ public sealed class AudibleOfflineDownloadPipeline
                 try
                 {
                     await backend.DownloadOfflineMediaWithProgressAsync(
-                        asin, transferProgress, cancellationToken).ConfigureAwait(false);
+                        asin, transferProgress, stageProgress, cancellationToken).ConfigureAwait(false);
                     break;
                 }
                 catch (Exception exception) when (

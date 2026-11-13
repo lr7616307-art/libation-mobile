@@ -33,6 +33,7 @@ public sealed class AudibleOfflineDownloadPipelineTests
         Assert.Equal(1, backend.TransferCalls);
         Assert.Contains(stages.Values, item => item.Stage == "authorizing");
         Assert.Contains(stages.Values, item => item.Stage == "transferring");
+        Assert.Contains(stages.Values, item => item.Stage == "test-transfer");
         Assert.Contains(stages.Values, item => item.Stage == "verifying");
         Assert.Equal("completed", stages.Values[^1].Stage);
         Assert.Single(transfer.Values);
@@ -108,9 +109,12 @@ public sealed class AudibleOfflineDownloadPipelineTests
         public Task DownloadOfflineMediaWithProgressAsync(
             string asin,
             IProgress<WidevineOfflineDownloadProgress>? progress,
+            IProgress<AudibleOfflineDownloadStage>? stageProgress,
             CancellationToken cancellationToken = default)
         {
             TransferCalls++;
+            stageProgress?.Report(new AudibleOfflineDownloadStage(
+                "test-transfer", "Test transfer stage."));
             if (TransferFailuresRemaining > 0)
             {
                 TransferFailuresRemaining--;
