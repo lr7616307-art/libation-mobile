@@ -26,7 +26,8 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
 
     private static AndroidWidevineOfflineDownloadService? currentService;
 
-    public static bool IsDownloadActive => currentService?.runTask is { IsCompleted: false };
+    public static bool IsDownloadActive => currentService is { } service &&
+        (service.isTransitioning || service.runTask is { IsCompleted: false });
 
     private CancellationTokenSource? runCancellation;
     private Task? runTask;
@@ -34,6 +35,8 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     private string? activeTitle;
     private bool userRequestedPause;
     private bool resumeRequestedWhileStopping;
+    private bool isTransitioning;
+    private bool queuedStartReceivedWhileTransitioning;
     private JsonWidevineOfflineDownloadStateStore? recoveryStore;
     private const string RecoveryFileName = "vorath-widevine-download-recovery-v1.json";
 
@@ -91,6 +94,9 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
 
         if (intent?.Action == ActionPause)
         {
+            if (isTransitioning)
+                return StartCommandResult.NotSticky;
+
             // Never let a Pause action for a queued second title cancel the title
             // currently using the singleton foreground service.
             if (runTask is { IsCompleted: false } &&
@@ -132,6 +138,15 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             return StartCommandResult.NotSticky;
         }
 
+        if (isTransitioning)
+        {
+            // A title can be enqueued while the previous task is unwinding.
+            // The queue pump will re-read the durable queue after this transition.
+            if (!userRequestedPause)
+                queuedStartReceivedWhileTransitioning = true;
+            return StartCommandResult.NotSticky;
+        }
+
         if (runTask is { IsCompleted: false })
         {
             if (userRequestedPause &&
@@ -161,6 +176,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         string title,
         CancellationToken cancellationToken)
     {
+        var advanceQueue = false;
         try
         {
             await RecoveryStore.MarkDownloadingAsync(asin, title, CancellationToken.None).ConfigureAwait(false);
@@ -194,11 +210,13 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                 await RecoveryStore.MarkCompletedAsync(asin, CancellationToken.None).ConfigureAwait(false);
                 await UpdateQueueStatusAsync(asin, DownloadStatus.Protected).ConfigureAwait(false);
                 MainView.PlatformWidevineOfflineDownloadCompletedAction?.Invoke(asin);
+                advanceQueue = true;
                 FinishWithNotification(
                     startId,
                     "This audiobook is already verified for offline playback in VØRATH.",
                     100,
-                    actionLabel: null);
+                    actionLabel: null,
+                    stopService: false);
                 return;
             }
 
@@ -284,11 +302,13 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             await RecoveryStore.MarkCompletedAsync(asin, CancellationToken.None).ConfigureAwait(false);
             await UpdateQueueStatusAsync(asin, DownloadStatus.Protected).ConfigureAwait(false);
             MainView.PlatformWidevineOfflineDownloadCompletedAction?.Invoke(asin);
+            advanceQueue = true;
             FinishWithNotification(
                 startId,
                 "Offline download verified. Open this title in VØRATH to play it.",
                 100,
-                actionLabel: null);
+                actionLabel: null,
+                stopService: false);
         }
         catch (System.OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -313,11 +333,13 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                     startId,
                     "Paused. Downloaded DASH segments are preserved; tap Resume to continue.",
                     null,
-                    actionLabel: "Resume");
+                    actionLabel: "Resume",
+                    stopService: false);
             }
         }
         catch (Exception exception)
         {
+            advanceQueue = true;
             var safeMessage = SafeFailureMessage(exception);
             try { await RecoveryStore.MarkFailedAsync(asin, safeMessage, CancellationToken.None).ConfigureAwait(false); }
             catch (Exception persistenceException) { System.Diagnostics.Debug.WriteLine($"Could not persist Widevine failure state: {persistenceException.Message}"); }
@@ -326,29 +348,85 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                 startId,
                 safeMessage,
                 null,
-                actionLabel: "Retry");
+                actionLabel: "Retry",
+                stopService: false);
         }
         finally
         {
-            var shouldResume = resumeRequestedWhileStopping &&
-                string.Equals(activeAsin, asin, StringComparison.OrdinalIgnoreCase);
-            resumeRequestedWhileStopping = false;
-            runTask = null;
-            runCancellation?.Dispose();
-            runCancellation = null;
-
-            // A very fast Resume tap can arrive before cancellation has unwound.
-            // Queue it here instead of dropping the user's action.
-            if (shouldResume && IsValidAsin(asin))
+            isTransitioning = true;
+            try
             {
-                userRequestedPause = false;
-                runCancellation = new CancellationTokenSource();
-                StartForeground(
-                    NotificationId,
-                    BuildNotification("Resuming Audible offline download…", null, true, true, "Pause"));
-                runTask = RunDownloadAsync(startId, asin, title, runCancellation.Token);
+                var shouldResume = resumeRequestedWhileStopping &&
+                    string.Equals(activeAsin, asin, StringComparison.OrdinalIgnoreCase);
+                var shouldPumpQueue = advanceQueue || queuedStartReceivedWhileTransitioning;
+                resumeRequestedWhileStopping = false;
+                queuedStartReceivedWhileTransitioning = false;
+                runTask = null;
+                runCancellation?.Dispose();
+                runCancellation = null;
+
+                // A very fast Resume tap can arrive before cancellation has unwound.
+                // Queue it here instead of dropping the user's action.
+                if (shouldResume && IsValidAsin(asin))
+                {
+                    userRequestedPause = false;
+                    runCancellation = new CancellationTokenSource();
+                    StartForeground(
+                        NotificationId,
+                        BuildNotification("Resuming Audible offline download…", null, true, true, "Pause"));
+                    runTask = RunDownloadAsync(startId, asin, title, runCancellation.Token);
+                }
+                else if (shouldPumpQueue && !userRequestedPause &&
+                    await StartNextQueuedProviderDownloadAsync(startId).ConfigureAwait(false))
+                {
+                    // The next Audible item is now running in this same foreground service.
+                }
+                else
+                {
+                    StopSelf();
+                }
+            }
+            catch (Exception exception)
+            {
+                System.Diagnostics.Debug.WriteLine($"Could not advance the Audible queue: {exception.Message}");
+                StopSelf();
+            }
+            finally
+            {
+                isTransitioning = false;
             }
         }
+    }
+
+    private async Task<bool> StartNextQueuedProviderDownloadAsync(int startId)
+    {
+        var queue = DownloadQueueFactory?.Invoke();
+        if (queue is null)
+            return false;
+
+        var items = await queue.GetItemsAsync(CancellationToken.None).ConfigureAwait(false);
+        var next = AudibleProviderQueueScheduler.SelectNext(
+            items,
+            string.IsNullOrWhiteSpace(activeAsin) ? null : "provider:" + activeAsin);
+        if (next is null)
+            return false;
+
+        var asin = next.AudiobookId["provider:".Length..];
+        if (!IsValidAsin(asin))
+            return false;
+
+        activeAsin = asin;
+        activeTitle = string.IsNullOrWhiteSpace(next.DisplayTitle)
+            ? "Audible audiobook"
+            : next.DisplayTitle.Trim();
+        userRequestedPause = false;
+        resumeRequestedWhileStopping = false;
+        runCancellation = new CancellationTokenSource();
+        StartForeground(
+            NotificationId,
+            BuildNotification("Preparing next queued Audible download…", null, true, true, "Pause"));
+        runTask = RunDownloadAsync(startId, asin, activeTitle, runCancellation.Token);
+        return true;
     }
 
     public static void RecoverInterrupted(Context context)
@@ -372,7 +450,29 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             var state = await new JsonWidevineOfflineDownloadStateStore(path)
                 .GetAsync(CancellationToken.None).ConfigureAwait(false);
             if (state?.ShouldAutoRecover == true)
+            {
                 Start(context, state.Asin, state.Title);
+                return;
+            }
+
+            // An explicit Pause blocks automatic queue advancement. Otherwise,
+            // recover a queued item if the process died between two transfers.
+            if (state?.Status == WidevineOfflineDownloadStatus.Paused)
+                return;
+
+            var queue = DownloadQueueFactory?.Invoke();
+            if (queue is null)
+                return;
+            var next = AudibleProviderQueueScheduler.SelectNext(
+                await queue.GetItemsAsync(CancellationToken.None).ConfigureAwait(false));
+            if (next is not null)
+            {
+                var asin = next.AudiobookId["provider:".Length..];
+                if (IsValidAsin(asin))
+                    Start(context, asin, string.IsNullOrWhiteSpace(next.DisplayTitle)
+                        ? "Audible audiobook"
+                        : next.DisplayTitle);
+            }
         }
         catch (Exception exception)
         {
@@ -523,13 +623,15 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         int startId,
         string message,
         int? percentage,
-        string? actionLabel)
+        string? actionLabel,
+        bool stopService = true)
     {
         UpdateNotification(message, percentage, indeterminate: false, ongoing: false, actionLabel);
         StopForeground(StopForegroundFlags.Detach);
-        // Pause/resume starts a newer service startId. StopSelf(startId) with
-        // the original run's ID would leave the detached service alive.
-        StopSelf();
+        // The queue pump keeps the same service alive across serialized items.
+        // Terminal paths outside the pump still stop the detached service.
+        if (stopService)
+            StopSelf();
     }
 
     private void UpdateNotification(
