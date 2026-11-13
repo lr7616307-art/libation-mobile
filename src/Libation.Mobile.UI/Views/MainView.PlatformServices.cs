@@ -46,8 +46,8 @@ public partial class MainView
     /// <summary>Starts an Audible-authorized background offline download in Android's foreground service.</summary>
     public static Action<string, string>? PlatformAudibleOfflineDownloadStartAction { get; set; }
 
-    /// <summary>Refreshes the local catalogue after the foreground Audible download completes.</summary>
-    public static Action<string>? PlatformAudibleDownloadCompletedAction { get; set; }
+    /// <summary>Stores the playable local file after the foreground Audible download completes.</summary>
+    public static Action<string, string>? PlatformAudibleDownloadCompletedAction { get; set; }
 
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
