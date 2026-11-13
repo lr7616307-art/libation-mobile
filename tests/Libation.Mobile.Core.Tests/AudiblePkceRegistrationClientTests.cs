@@ -40,7 +40,7 @@ public sealed class AudiblePkceRegistrationClientTests
         Assert.Equal("DeviceLegacy", auth.GetProperty("client_domain").GetString());
         Assert.Equal(challenge.CodeVerifier, auth.GetProperty("code_verifier").GetString());
         var expectedClientId = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(
-            challenge.DeviceSerial + "#" + AudibleOAuthFlow.AndroidDeviceType)).ToLowerInvariant();
+            challenge.DeviceSerial + "#" + AudibleOAuthFlow.IPhoneDeviceType)).ToLowerInvariant();
         Assert.Equal(expectedClientId, auth.GetProperty("client_id").GetString());
         Assert.Equal("DeviceLegacy", auth.GetProperty("client_domain").GetString());
 
@@ -121,7 +121,7 @@ public sealed class AudiblePkceRegistrationClientTests
           "mac_dms":{"device_private_key":__KEY__,"adp_token":__ADP__},
           "website_cookies":[{"Name":"session","Value":"cookie-one"},{"Name":"session","Value":"cookie-two"}],
           "store_authentication_cookie":{"cookie":"store-cookie"}},
-          "extensions":{"device_info":{"device_name":"Audible for iPhone","device_serial_number":"__SERIAL__","device_type":"A10KISP2GWF0E4"},
+          "extensions":{"device_info":{"device_name":"Audible for iPhone","device_serial_number":"__SERIAL__","device_type":"A2CZJZGLK2JJVM"},
           "customer_info":{"user_id":"amazon-user-123"}}}}}
         """.Replace("__KEY__", JsonSerializer.Serialize(privateKey), StringComparison.Ordinal)
           .Replace("__ADP__", JsonSerializer.Serialize(adp), StringComparison.Ordinal)
@@ -139,9 +139,9 @@ public sealed class AudiblePkceRegistrationClientTests
         Assert.Equal(privateKey, snapshot.PrivateKey);
         Assert.Equal(adp, snapshot.AdpToken);
         Assert.Equal(challenge.DeviceSerial, snapshot.DeviceSerialNumber);
-        Assert.Equal(AudibleOAuthFlow.AndroidDeviceType, snapshot.DeviceType);
+        Assert.Equal(AudibleOAuthFlow.IPhoneDeviceType, snapshot.DeviceType);
         Assert.Equal("amazon-user-123", snapshot.AmazonAccountId);
-        Assert.Equal("Audible for Android", snapshot.DeviceName);
+        Assert.Equal("Audible for iPhone", snapshot.DeviceName);
         Assert.Equal("store-cookie", snapshot.StoreAuthenticationCookie);
         Assert.Equal(new[] { "cookie-one", "cookie-two" }, snapshot.Cookies.Select(cookie => cookie.Value));
 
@@ -157,7 +157,7 @@ public sealed class AudiblePkceRegistrationClientTests
     {
         var challenge = AudibleOAuthFlow.Create("in");
         var handler = new CapturingHandler(
-            """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600},"mac_dms":{"device_private_key":"private-key","adp_token":"{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}"}},"extensions":{"device_info":{"device_type":"A10KISP2GWF0E4","device_serial_number":"__SERIAL__"},"customer_info":{"user_id":"user"}}}}}"""
+            """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600},"mac_dms":{"device_private_key":"private-key","adp_token":"{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}"}},"extensions":{"device_info":{"device_type":"A2CZJZGLK2JJVM","device_serial_number":"__SERIAL__"},"customer_info":{"user_id":"user"}}}}}"""
                 .Replace("__SERIAL__", challenge.DeviceSerial, StringComparison.Ordinal),
             HttpStatusCode.OK);
         using var http = new HttpClient(handler);
@@ -173,7 +173,7 @@ public sealed class AudiblePkceRegistrationClientTests
     public async Task RegisterAsync_RejectsIncompleteSuccessfulResponse()
     {
         var challenge = AudibleOAuthFlow.Create("in");
-        var response = """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600}},"extensions":{"device_info":{"device_type":"A10KISP2GWF0E4","device_serial_number":"__SERIAL__"},"customer_info":{}}}}}"""
+        var response = """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600}},"extensions":{"device_info":{"device_type":"A2CZJZGLK2JJVM","device_serial_number":"__SERIAL__"},"customer_info":{}}}}}"""
             .Replace("__SERIAL__", challenge.DeviceSerial, StringComparison.Ordinal);
         var handler = new CapturingHandler(response, HttpStatusCode.OK);
         using var http = new HttpClient(handler);
