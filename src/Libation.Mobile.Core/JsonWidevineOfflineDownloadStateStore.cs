@@ -75,14 +75,17 @@ public sealed class JsonWidevineOfflineDownloadStateStore
         ValidateIdentity(asin, title);
         return MutateAsync(current =>
         {
-            var sameTitle = current is not null &&
-                string.Equals(current.Asin, asin, StringComparison.OrdinalIgnoreCase);
+            var sameResumableTransfer = current is not null &&
+                string.Equals(current.Asin, asin, StringComparison.OrdinalIgnoreCase) &&
+                current.Status is WidevineOfflineDownloadStatus.Downloading
+                    or WidevineOfflineDownloadStatus.Paused
+                    or WidevineOfflineDownloadStatus.Failed;
             return new WidevineOfflineDownloadState(
                 asin.ToUpperInvariant(),
                 title.Trim(),
                 WidevineOfflineDownloadStatus.Downloading,
-                sameTitle ? current!.BytesDownloaded : 0,
-                sameTitle ? current!.ContentLength : null,
+                sameResumableTransfer ? current!.BytesDownloaded : 0,
+                sameResumableTransfer ? current!.ContentLength : null,
                 DateTimeOffset.UtcNow);
         }, cancellationToken);
     }
