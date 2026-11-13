@@ -198,6 +198,106 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # PRs targeting Pass 41 can restore the existing branch-scoped test key.
+  # Publish an installable ARMv7 APK only when that exact signing identity matches.
+  build_pass41_compatible_test_apk:
+    if: github.event_name == 'pull_request' && github.base_ref == 'feat/pass-41-safe-widevine-grant-diagnostics'
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      TEST_STORE_PASSWORD: vorath-ci-test-store
+      TEST_KEY_PASSWORD: vorath-ci-test-key
+      EXPECTED_TEST_CERT_SHA256: e368eca572190ae93da5a9fb8fefd99146674d95f4c231243cf17dc2b24ae5a2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Restore existing Pass 41 test signing key
+        id: test-key-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/vorath-ci-test.jks
+          key: vorath-ci-test-key-v1-${{ github.event.pull_request.base.ref }}
+      - name: Require the existing installed-app signing identity
+        env:
+          CACHE_HIT: ${{ steps.test-key-cache.outputs.cache-hit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$CACHE_HIT" != "true" || ! -s "$RUNNER_TEMP/vorath-ci-test.jks" ]]; then
+            echo "::error::Could not restore the Pass 41 signing key. Refusing to publish an incompatible APK."
+            exit 1
+          fi
+          keytool -list -storetype JKS -keystore "$RUNNER_TEMP/vorath-ci-test.jks" \
+            -alias vorath-test -storepass "$TEST_STORE_PASSWORD" \
+            -keypass "$TEST_KEY_PASSWORD" >/dev/null
+      - name: Install Android workload
+        run: dotnet workload install android
+      - name: Restore Android project
+        run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
+      - name: Build installable ARMv7 test APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj \
+            -c Release -r android-arm --no-restore \
+            -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false \
+            -p:AndroidPackageFormat=apk -p:ApplicationVersion="$version_code" \
+            -p:AndroidKeyStore=true \
+            -p:AndroidSigningKeyStore="$RUNNER_TEMP/vorath-ci-test.jks" \
+            -p:AndroidSigningStorePass="$TEST_STORE_PASSWORD" \
+            -p:AndroidSigningKeyAlias=vorath-test \
+            -p:AndroidSigningKeyPass="$TEST_KEY_PASSWORD"
+          output="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish"
+          mapfile -t apks < <(find "$output" -maxdepth 1 -type f -name '*-Signed.apk')
+          if (( ${#apks[@]} != 1 )); then
+            echo "::error::Expected one signed ARMv7 APK; found ${#apks[@]}."
+            exit 1
+          fi
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+          apksigner="$(find "$sdk/build-tools" -type f -name apksigner | sort | tail -n 1)"
+          test -n "$apksigner"
+          cert_output="$("$apksigner" verify --print-certs "${apks[0]}" 2>&1)"
+          printf '%s\n' "$cert_output"
+          if ! printf '%s' "$cert_output" | grep -Fqi "$EXPECTED_TEST_CERT_SHA256"; then
+            echo "::error::The APK is not signed by the existing Pass 41 test certificate."
+            exit 1
+          fi
+          python3 - "${apks[0]}" <<'PY'
+          import sys
+          from pathlib import Path
+          from zipfile import ZipFile
+          apk = Path(sys.argv[1])
+          with ZipFile(apk) as package:
+              abis = {
+                  name.split("/")[1]
+                  for name in package.namelist()
+                  if name.startswith("lib/") and len(name.split("/")) > 2
+              }
+          size = apk.stat().st_size
+          print(f"Installable APK size: {size:,} bytes ({size / 1048576:.2f} MiB)")
+          print(f"Native ABIs: {sorted(abis)}")
+          if abis != {"armeabi-v7a"}:
+              raise SystemExit(f"Expected only armeabi-v7a, got {sorted(abis)}")
+          if size > 24_000_000:
+              raise SystemExit(f"APK exceeds 24,000,000-byte size budget: {size:,}")
+          PY
+      - name: Upload installable ARMv7 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VORATH-ARMv7-Test-APK
+          path: src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish/*-Signed.apk
+          if-no-files-found: error
+          retention-days: 30
+
   # The Pass 8 PR targets Pass 7, so its pull_request run can restore the
   # Pass 7 branch-scoped test keystore. Build both pre- and post-optimization
   # APKs with that same identity so updates remain install-compatible.
