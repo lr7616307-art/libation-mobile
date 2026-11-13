@@ -106,9 +106,12 @@ public sealed class AndroidWidevineDashOfflineStore
 
             if (cache.CacheSpace > MaximumCachedBytes)
             {
-                RemoveTitle(accountId, asin);
+                // The quota failure belongs to this attempted content version.
+                // Preserve every other completed version for this title and all
+                // offline titles in the library.
+                RemoveContentVersion(accountId, asin, contentVersionKey);
                 throw new IOException(
-                    "The protected Audible download would exceed VØRATH's 8 GiB offline cache limit. The incomplete title cache was removed.");
+                    "The protected Audible download would exceed VØRATH's 8 GiB offline cache limit. Only this incomplete content-version cache was removed; existing offline versions were preserved.");
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
