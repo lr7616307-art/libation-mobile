@@ -188,7 +188,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/vorath-ci-test.jks
-          key: vorath-ci-test-key-v1-${{ github.ref_name }}
+          key: vorath-ci-test-key-v1-${{ github.event.pull_request.base.ref }}
       - name: Upload installable ARMv7 APK
         uses: actions/upload-artifact@v4
         with:
