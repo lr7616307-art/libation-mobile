@@ -63,7 +63,7 @@ public static class AudibleOAuthFlow
         var serialAndType = serial + "#" + AndroidDeviceType;
         var clientIdHex = Convert.ToHexString(Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
         var callback = new Uri(locale.AudibleLoginUri(), "/ap/maplanding");
-        var frc = CreateAndroidFrc(serial, locale, deviceInfo);
+        var frc = CreateAndroidFrc(serial, deviceInfo);
         var loginHost = locale.LoginUri().Host;
         var cookieDomain = "." + (loginHost.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
             ? loginHost[4..]
@@ -194,7 +194,6 @@ public static class AudibleOAuthFlow
 
     private static string CreateAndroidFrc(
         string serial,
-        Locale locale,
         AudibleAndroidDeviceInfo hostDevice)
     {
         var registrationContext = new JObject
