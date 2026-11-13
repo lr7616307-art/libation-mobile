@@ -219,7 +219,7 @@ from accidentally being routed through the generic downloader. Android's foregro
 Widevine service remains responsible for Audible authorization, encrypted DASH segment
 recovery, and offline licence verification.
 
-Progress writes are throttled and monotonic. Late callbacks received after Pause or
+Progress writes are throttled and monotonic, including when a provider later reports a smaller content length. Late callbacks received after Pause or
 completion are ignored. A paused row retains its latest persisted byte count and transitions
 back to Downloading when resumed. Queue presentation failures do not cancel the protected
 media transfer.
