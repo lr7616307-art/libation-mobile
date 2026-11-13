@@ -73,14 +73,24 @@ public static class AudibleWidevineManifestParser
                 .Where(element => string.Equals(element.Name.LocalName, "AdaptationSet", StringComparison.Ordinal))
                 .ToArray();
 
-            // Audible audiobooks are audio-only. Refuse a manifest with video or
-            // multiple adaptation groups rather than downloading the wrong track
-            // or wasting the user's storage on unrelated representations.
-            if (adaptationSets.Length != 1)
-                throw new NotSupportedException(
-                    "The Audible DASH manifest does not contain exactly one audio adaptation set per period.");
+            // Real DASH manifests may include subtitle, image or other adaptation
+            // sets alongside the audiobook audio. Ignore those groups, but retain
+            // the original group index because Media3 StreamKey indexes the full
+            // Period adaptation-set list, not a filtered audio-only list.
+            var audioGroups = adaptationSets
+                .Select((element, groupIndex) => (Element: element, GroupIndex: groupIndex))
+                .Where(item => IsAudioAdaptationSet(item.Element))
+                .ToArray();
 
-            var adaptationSet = adaptationSets[0];
+            if (audioGroups.Length == 0)
+                throw new NotSupportedException(
+                    "The Audible DASH period does not contain a supported audio adaptation set.");
+
+            // Audible audiobook manifests normally expose one audio group. If a
+            // manifest includes alternatives, prefer the provider-marked default
+            // or main role; otherwise preserve the provider's first audio group.
+            var selectedAudioGroup = SelectAudioAdaptationSet(audioGroups);
+            var adaptationSet = selectedAudioGroup.Element;
             var mimeType = FindAudioMimeType(adaptationSet);
             if (string.IsNullOrEmpty(selectedMimeType))
                 selectedMimeType = mimeType;
@@ -96,7 +106,8 @@ public static class AudibleWidevineManifestParser
                     "An Audible DASH audio adaptation set has no supported representations.");
 
             var selectedRepresentationIndex = SelectHighestBandwidthRepresentation(representations);
-            streamKeys.Add(new AudibleWidevineStreamKey(periodIndex, 0, selectedRepresentationIndex));
+            streamKeys.Add(new AudibleWidevineStreamKey(
+                periodIndex, selectedAudioGroup.GroupIndex, selectedRepresentationIndex));
 
             if (selectedWidevineProtection is null)
             {
@@ -123,6 +134,36 @@ public static class AudibleWidevineManifestParser
 
         var initializationData = DecodeAndValidatePssh(psshElement.Value);
         return new AudibleWidevineManifestInfo(initializationData, selectedMimeType, streamKeys);
+    }
+
+    private static bool IsAudioAdaptationSet(XElement adaptationSet)
+    {
+        var mimeType = (string?)adaptationSet.Attribute("mimeType");
+        if (IsAudioMimeType(mimeType))
+            return true;
+
+        if (string.Equals(
+                (string?)adaptationSet.Attribute("contentType"),
+                "audio",
+                StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return adaptationSet.Elements()
+            .Where(element => string.Equals(element.Name.LocalName, "Representation", StringComparison.Ordinal))
+            .Any(element => IsAudioMimeType((string?)element.Attribute("mimeType")));
+    }
+
+    private static (XElement Element, int GroupIndex) SelectAudioAdaptationSet(
+        IReadOnlyList<(XElement Element, int GroupIndex)> audioGroups)
+    {
+        var preferred = audioGroups.FirstOrDefault(item =>
+            string.Equals((string?)item.Element.Attribute("default"), "1", StringComparison.Ordinal) ||
+            string.Equals((string?)item.Element.Attribute("selectionPriority"), "1", StringComparison.Ordinal) ||
+            item.Element.Elements().Any(role =>
+                string.Equals(role.Name.LocalName, "Role", StringComparison.Ordinal) &&
+                string.Equals((string?)role.Attribute("value"), "main", StringComparison.OrdinalIgnoreCase)));
+
+        return preferred.Element is not null ? preferred : audioGroups[0];
     }
 
     private static int SelectHighestBandwidthRepresentation(IReadOnlyList<XElement> representations)
