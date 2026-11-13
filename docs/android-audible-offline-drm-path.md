@@ -131,6 +131,15 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Add Android MediaDrm release primitives using `KEY_TYPE_RELEASE`, the stored key-set ID as request/response scope, and the provider response. Android marks the key set RELEASED when the release challenge is generated; it is unusable until the provider response is accepted.
 - These primitives are deliberately not wired to automatic renewal, playback fallback, title removal or account disconnect. The renewal response has not yet been proven to create a replacement key-set ID for Audible, and the community-observed refresh endpoint has not been proven to accept Android's release challenge. Never remove the old key-set record/cache or clear account state merely because an HTTP 200 response was received.
 - Android's release flow requires a provider response to `provideKeyResponse(keySetId, response)`; direct `removeOfflineLicense` remains only the exceptional local cleanup path. See the Android API reference and the community-observed Audible refresh schema.
+## Pass 29 — transient transfer retry and cache reuse
+
+- Add two bounded automatic retries for transient HTTP transport failures and Media3 Java I/O failures during the DASH media stage, with 1-second then 2-second backoff.
+- Retry only the media/manifest operation after the offline licence has been acquired. The coordinator checks the saved Android key set and Media3 cache again; it does not deliberately request a second offline licence just because a network transfer failed.
+- Each retry resolves a fresh provider manifest while retaining successfully cached encrypted DASH resources. The normal cache-range audit remains the gate before an offline-complete marker can be written.
+- Do not automatically retry cancellation, invalid media, unsupported manifests, local file-access failures, or permanent HTTP statuses such as 401, 403 and 404. The notification continues to expose Pause during the backoff; cancelling the delay follows the same pause/resume path as cancelling an active transfer.
+- Add regression tests for transient/permanent HTTP status classification, wrapped transport exceptions, cancellation and the bounded backoff schedule.
+- This is source/CI validation only. It does not establish that Audible grants Widevine for a particular title/device or that the phone can play the result offline.
+
 ## Remaining implementation — not yet verified
 
 1. Implement and validate Audible's server-confirmed KEY_TYPE_RELEASE exchange and documented licence renewal/revocation semantics before claiming provider-side licence release.
