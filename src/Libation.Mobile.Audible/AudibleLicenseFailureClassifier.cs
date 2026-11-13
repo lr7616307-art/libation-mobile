@@ -26,6 +26,13 @@ public static class AudibleLicenseFailureClassifier
 
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
+            if (current is AudibleAndroidRegistrationRequiredException)
+            {
+                return "This Audible account was saved with an older or mismatched device registration. " +
+                       "Open Accounts and choose Refresh Android registration, then sign in once. " +
+                       "This is a one-time account registration refresh, not approval for each audiobook.";
+            }
+
             if (current is AudibleWidevineNotAvailableException)
             {
                 return "Audible returned a content format other than Widevine for this title/device. " +

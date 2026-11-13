@@ -103,6 +103,28 @@ internal static class AudibleSignInPanel
         add.Bind(Button.IsEnabledProperty, new Binding(nameof(viewModel.CanAddAccount)));
         add.Click += (_, _) => addAccount();
 
+        var refreshRegistration = new Button
+        {
+            Content = "Refresh Android registration",
+            MinHeight = 46,
+            Background = new SolidColorBrush(Color.Parse("#174B55"))
+        };
+        refreshRegistration.Bind(Button.IsVisibleProperty,
+            new Binding(nameof(viewModel.RequiresAndroidRegistrationRefresh)));
+        refreshRegistration.Bind(Button.IsEnabledProperty,
+            new Binding(nameof(viewModel.CanRefreshAndroidRegistration)));
+        refreshRegistration.Click += async (_, _) => await viewModel.BeginSignInAsync();
+
+        var refreshRegistrationNote = new TextBlock
+        {
+            Text = "Use this once when VØRATH reports an outdated Audible device profile. It refreshes the account registration; it is not an approval request for each audiobook.",
+            FontSize = 11,
+            Opacity = 0.75,
+            TextWrapping = TextWrapping.Wrap
+        };
+        refreshRegistrationNote.Bind(TextBlock.IsVisibleProperty,
+            new Binding(nameof(viewModel.RequiresAndroidRegistrationRefresh)));
+
         var multiAccountNotice = new TextBlock
         {
             Text = "This build currently supports one active Audible account. Multi-account profiles and switching are not enabled yet.",
@@ -132,7 +154,7 @@ internal static class AudibleSignInPanel
         var content = new StackPanel
         {
             Spacing = 10,
-            Children = { card, add, multiAccountNotice, sync, disconnect, status }
+            Children = { card, add, refreshRegistration, refreshRegistrationNote, multiAccountNotice, sync, disconnect, status }
         };
 
         var panel = new Border

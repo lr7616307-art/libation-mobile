@@ -257,3 +257,11 @@ The UI no longer treats a successful Android service start as proof that protect
 
 This handshake validates service/player startup sequencing at compile time only. It does not substitute for a real-device test with an Audible-authorized offline licence and fully cached title.
 
+## Pass 38 — saved Android registration preflight
+
+Before a protected Audible download starts, VØRATH now checks that the encrypted saved identity records both the current Android registration profile ID and the exact Android device type expected by the pinned AudibleApi version. A legacy iPhone profile or a profile/device-type mismatch is rejected before AudibleApi can silently downgrade the requested Widevine licence to ADRM.
+
+The Accounts page exposes a one-time **Refresh Android registration** action only for a connected identity that fails this check. It uses the existing in-app sign-in and registration flow to replace the saved encrypted identity. It does not disconnect the account or run the offline-copy cleanup path. This is account registration, not an approval request for each audiobook.
+
+The preflight is a local metadata compatibility check. It does not guarantee that Audible grants a licence for a particular title or that protected playback works on a physical device. Provider authorization and real-device offline playback remain required validation steps.
+
