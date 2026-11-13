@@ -202,3 +202,24 @@ The recovery record is metadata only. It does not claim the device has received 
 Audible licence or that offline playback is available; the service must still verify both the
 offline licence and the complete cached media before reporting success. If the record is
 malformed, recovery is skipped and the app remains usable.
+
+
+## Pass 33 — synchronized Audible download queue
+
+The Android foreground Widevine service and the visible application share one
+`JsonDownloadQueue` instance. Audible entries are inserted into that same durable
+queue before the service begins authorization. The service updates status to Downloading,
+Paused, Failed, or Downloaded (protected) and stores byte progress in the queue record.
+The app reflects these values in each row with a progress bar and a per-title Pause/Resume
+control; the notification actions use the same service entry points.
+
+Audible `provider:` queue entries are deliberately excluded from the ordinary HTTP
+download worker and its interrupted-job recovery. This prevents a protected Audible title
+from accidentally being routed through the generic downloader. Android's foreground
+Widevine service remains responsible for Audible authorization, encrypted DASH segment
+recovery, and offline licence verification.
+
+Progress writes are throttled and monotonic, including when a provider later reports a smaller content length. Late callbacks received after Pause or
+completion are ignored. A paused row retains its latest persisted byte count and transitions
+back to Downloading when resumed. Queue presentation failures do not cancel the protected
+media transfer.

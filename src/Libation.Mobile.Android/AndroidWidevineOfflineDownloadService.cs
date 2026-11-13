@@ -2,6 +2,7 @@ using Android.App;
 using Android.Content;
 using Android.OS;
 using Libation.Mobile.Core;
+using DownloadStatus = Libation.Mobile.Core.DownloadStatus;
 using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.Android;
@@ -28,6 +29,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     private string? activeAsin;
     private string? activeTitle;
     private bool userRequestedPause;
+    private bool resumeRequestedWhileStopping;
     private JsonWidevineOfflineDownloadStateStore? recoveryStore;
     private const string RecoveryFileName = "vorath-widevine-download-recovery-v1.json";
 
@@ -36,6 +38,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             Path.Combine(FilesDir!.AbsolutePath!, RecoveryFileName));
 
     public static Func<CancellationToken, Task<IAudibleWidevinePlaybackCoordinator?>>? CoordinatorFactory { get; set; }
+    public static Func<JsonDownloadQueue?>? DownloadQueueFactory { get; set; }
 
     public static void Start(Context context, string asin, string title)
     {
@@ -55,6 +58,21 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             context.StartService(intent);
     }
 
+    public static void Pause(Context context, string asin, string title)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(asin);
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        if (!IsValidAsin(asin))
+            throw new ArgumentException("The Audible audiobook identifier is invalid.", nameof(asin));
+
+        var intent = new Intent(context, typeof(AndroidWidevineOfflineDownloadService));
+        intent.SetAction(ActionPause);
+        intent.PutExtra(ExtraAsin, asin);
+        intent.PutExtra(ExtraTitle, title);
+        context.StartService(intent);
+    }
+
     public override void OnCreate()
     {
         base.OnCreate();
@@ -65,11 +83,17 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     {
         var incomingAsin = intent?.GetStringExtra(ExtraAsin);
         var incomingTitle = intent?.GetStringExtra(ExtraTitle);
-        if (!string.IsNullOrWhiteSpace(incomingAsin)) activeAsin = incomingAsin;
-        if (!string.IsNullOrWhiteSpace(incomingTitle)) activeTitle = incomingTitle;
 
         if (intent?.Action == ActionPause)
         {
+            // Never let a Pause action for a queued second title cancel the title
+            // currently using the singleton foreground service.
+            if (runTask is { IsCompleted: false } &&
+                !string.Equals(incomingAsin, activeAsin, StringComparison.OrdinalIgnoreCase))
+                return StartCommandResult.NotSticky;
+
+            if (!string.IsNullOrWhiteSpace(incomingAsin)) activeAsin = incomingAsin;
+            if (!string.IsNullOrWhiteSpace(incomingTitle)) activeTitle = incomingTitle;
             userRequestedPause = true;
             UpdateNotification(
                 "Pausing offline download…",
@@ -92,7 +116,8 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             return StartCommandResult.NotSticky;
         }
 
-        if (intent?.Action != ActionStart || !IsValidAsin(activeAsin) || string.IsNullOrWhiteSpace(activeTitle))
+        if (intent?.Action != ActionStart || !IsValidAsin(incomingAsin) ||
+            string.IsNullOrWhiteSpace(incomingTitle))
         {
             StartForeground(
                 NotificationId,
@@ -103,15 +128,25 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         }
 
         if (runTask is { IsCompleted: false })
+        {
+            if (userRequestedPause &&
+                string.Equals(incomingAsin, activeAsin, StringComparison.OrdinalIgnoreCase))
+                resumeRequestedWhileStopping = true;
+            // A different Audible title remains safely queued. Do not overwrite
+            // activeAsin/title while the service is still processing the first.
             return StartCommandResult.NotSticky;
+        }
 
+        activeAsin = incomingAsin;
+        activeTitle = incomingTitle;
         userRequestedPause = false;
+        resumeRequestedWhileStopping = false;
         runCancellation?.Dispose();
         runCancellation = new CancellationTokenSource();
         StartForeground(
             NotificationId,
             BuildNotification("Preparing Audible offline authorization…", null, true, true, "Pause"));
-        runTask = RunDownloadAsync(startId, activeAsin!, activeTitle!, runCancellation.Token);
+        runTask = RunDownloadAsync(startId, incomingAsin!, incomingTitle!, runCancellation.Token);
         return StartCommandResult.RedeliverIntent;
     }
 
@@ -124,6 +159,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         try
         {
             await RecoveryStore.MarkDownloadingAsync(asin, title, CancellationToken.None).ConfigureAwait(false);
+            await UpdateQueueStatusAsync(asin, DownloadStatus.Downloading).ConfigureAwait(false);
             var factory = CoordinatorFactory
                 ?? throw new InvalidOperationException("The Widevine offline service is not configured.");
             var coordinator = await factory(cancellationToken).ConfigureAwait(false)
@@ -132,6 +168,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             if (await coordinator.HasOfflineMediaAsync(asin, cancellationToken).ConfigureAwait(false))
             {
                 await RecoveryStore.MarkCompletedAsync(asin, CancellationToken.None).ConfigureAwait(false);
+                await UpdateQueueStatusAsync(asin, DownloadStatus.Protected).ConfigureAwait(false);
                 MainView.PlatformWidevineOfflineDownloadCompletedAction?.Invoke(asin);
                 FinishWithNotification(
                     startId,
@@ -221,6 +258,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                     "Android could not verify both the offline licence and the complete cached audiobook.");
 
             await RecoveryStore.MarkCompletedAsync(asin, CancellationToken.None).ConfigureAwait(false);
+            await UpdateQueueStatusAsync(asin, DownloadStatus.Protected).ConfigureAwait(false);
             MainView.PlatformWidevineOfflineDownloadCompletedAction?.Invoke(asin);
             FinishWithNotification(
                 startId,
@@ -235,17 +273,31 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             // the next foreground app launch can safely recover it.
             if (userRequestedPause)
                 await PersistPausedAsync(asin).ConfigureAwait(false);
-            FinishWithNotification(
-                startId,
-                "Paused. Downloaded DASH segments are preserved; tap Resume to continue.",
-                null,
-                actionLabel: "Resume");
+
+            if (resumeRequestedWhileStopping)
+            {
+                UpdateNotification(
+                    "Resuming Audible offline download…",
+                    null,
+                    indeterminate: true,
+                    ongoing: true,
+                    actionLabel: "Pause");
+            }
+            else
+            {
+                FinishWithNotification(
+                    startId,
+                    "Paused. Downloaded DASH segments are preserved; tap Resume to continue.",
+                    null,
+                    actionLabel: "Resume");
+            }
         }
         catch (Exception exception)
         {
             var safeMessage = SafeFailureMessage(exception);
             try { await RecoveryStore.MarkFailedAsync(asin, safeMessage, CancellationToken.None).ConfigureAwait(false); }
             catch (Exception persistenceException) { System.Diagnostics.Debug.WriteLine($"Could not persist Widevine failure state: {persistenceException.Message}"); }
+            await UpdateQueueStatusAsync(asin, DownloadStatus.Failed, safeMessage).ConfigureAwait(false);
             FinishWithNotification(
                 startId,
                 safeMessage,
@@ -254,9 +306,24 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         }
         finally
         {
+            var shouldResume = resumeRequestedWhileStopping &&
+                string.Equals(activeAsin, asin, StringComparison.OrdinalIgnoreCase);
+            resumeRequestedWhileStopping = false;
             runTask = null;
             runCancellation?.Dispose();
             runCancellation = null;
+
+            // A very fast Resume tap can arrive before cancellation has unwound.
+            // Queue it here instead of dropping the user's action.
+            if (shouldResume && IsValidAsin(asin))
+            {
+                userRequestedPause = false;
+                runCancellation = new CancellationTokenSource();
+                StartForeground(
+                    NotificationId,
+                    BuildNotification("Resuming Audible offline download…", null, true, true, "Pause"));
+                runTask = RunDownloadAsync(startId, asin, title, runCancellation.Token);
+            }
         }
     }
 
@@ -290,6 +357,13 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         {
             await RecoveryStore.MarkProgressAsync(
                 asin, value.BytesDownloaded, value.ContentLength, CancellationToken.None).ConfigureAwait(false);
+            var queue = DownloadQueueFactory?.Invoke();
+            if (queue is not null)
+            {
+                await queue.UpdateProgressAsync(
+                    "provider:" + asin, value.BytesDownloaded, value.ContentLength, CancellationToken.None).ConfigureAwait(false);
+                MainView.PlatformWidevineOfflineDownloadQueueChangedAction?.Invoke();
+            }
         }
         catch (Exception exception)
         {
@@ -302,6 +376,51 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         if (string.IsNullOrWhiteSpace(asin)) return;
         try { await RecoveryStore.MarkPausedAsync(asin, CancellationToken.None).ConfigureAwait(false); }
         catch (Exception exception) { System.Diagnostics.Debug.WriteLine($"Could not persist Widevine pause state: {exception.Message}"); }
+        await UpdateQueueStatusAsync(asin, DownloadStatus.Paused).ConfigureAwait(false);
+    }
+
+    private async Task UpdateQueueStatusAsync(
+        string asin,
+        DownloadStatus status,
+        string? errorMessage = null)
+    {
+        try
+        {
+            var queue = DownloadQueueFactory?.Invoke();
+            if (queue is null)
+                return;
+
+            var audiobookId = "provider:" + asin;
+            var item = (await queue.GetItemsAsync(CancellationToken.None))
+                .FirstOrDefault(candidate => string.Equals(
+                    candidate.AudiobookId, audiobookId, StringComparison.Ordinal));
+            if (item is null)
+            {
+                await queue.EnqueueAsync(audiobookId, CancellationToken.None);
+                item = (await queue.GetItemsAsync(CancellationToken.None))
+                    .First(candidate => string.Equals(
+                        candidate.AudiobookId, audiobookId, StringComparison.Ordinal));
+            }
+
+            if (item.Status == DownloadStatus.Failed && status == DownloadStatus.Downloading)
+            {
+                await queue.EnqueueAsync(audiobookId, CancellationToken.None);
+                item = (await queue.GetItemsAsync(CancellationToken.None))
+                    .First(candidate => string.Equals(
+                        candidate.AudiobookId, audiobookId, StringComparison.Ordinal));
+            }
+
+            if (item.Status != status)
+                await queue.UpdateStatusAsync(
+                    audiobookId, status, errorMessage, CancellationToken.None);
+
+            MainView.PlatformWidevineOfflineDownloadQueueChangedAction?.Invoke();
+        }
+        catch (Exception exception)
+        {
+            // The download must not be cancelled because a queue presentation update failed.
+            System.Diagnostics.Debug.WriteLine($"Could not update Audible queue state: {exception.Message}");
+        }
     }
 
     private static bool IsRetryableMediaFailure(Exception exception)

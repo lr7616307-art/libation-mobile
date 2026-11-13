@@ -698,16 +698,16 @@ public sealed class MainViewModelTests
             new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")), queue);
         await vm.InitializeAsync();
 
-        Assert.Equal("0 queued · 0 downloading · 0 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("0 queued · 0 downloading · 0 paused · 0 completed · 0 failed", vm.QueueSummaryLabel);
 
         await vm.EnqueueAsync("book-1");
-        Assert.Equal("1 queued · 0 downloading · 0 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("1 queued · 0 downloading · 0 paused · 0 completed · 0 failed", vm.QueueSummaryLabel);
 
         await queue.UpdateStatusAsync("book-1", DownloadStatus.Downloading);
         await queue.UpdateStatusAsync("book-1", DownloadStatus.Completed);
         await vm.ReloadAsync();
 
-        Assert.Equal("0 queued · 0 downloading · 1 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("0 queued · 0 downloading · 0 paused · 1 completed · 0 failed", vm.QueueSummaryLabel);
     }
 
     [Fact]

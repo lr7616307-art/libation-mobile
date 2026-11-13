@@ -23,6 +23,15 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
     {
         base.OnCreate();
 
+        // The foreground Widevine service and the Avalonia UI must mutate the
+        // exact same queue instance and file, so status/progress cannot race.
+        var queuePath = Path.Combine(
+            global::System.Environment.GetFolderPath(global::System.Environment.SpecialFolder.LocalApplicationData),
+            "download-queue.json");
+        var sharedDownloadQueue = new JsonDownloadQueue(queuePath);
+        MainView.PlatformDownloadQueueFactory = () => sharedDownloadQueue;
+        AndroidWidevineOfflineDownloadService.DownloadQueueFactory = () => sharedDownloadQueue;
+
         // Keep Android-only dependencies in the Android host. Both the complete
         // Audible identity and the minimum account session use encrypted storage.
         var secrets = new AndroidSecretStore(this);
@@ -86,6 +95,8 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
             MainView.PlatformWidevinePlaybackCoordinatorFactory;
         MainView.PlatformAudibleOfflineDownloadStartAction =
             (asin, title) => AndroidWidevineOfflineDownloadService.Start(this, asin, title);
+        MainView.PlatformAudibleOfflineDownloadPauseAction =
+            (asin, title) => AndroidWidevineOfflineDownloadService.Pause(this, asin, title);
         signInViewModel.SetBeforeDisconnectCleanup(async cancellationToken =>
         {
             if (MainView.PlatformWidevinePlaybackCoordinatorFactory is null)

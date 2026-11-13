@@ -129,11 +129,59 @@ public sealed class JsonDownloadQueue : IDownloadQueue
             if (status == DownloadStatus.Failed && normalizedError is null)
                 throw new ArgumentException("A failed item must include a short error message.", nameof(errorMessage));
 
+            var restartingProtectedCopy =
+                status == DownloadStatus.Downloading &&
+                current.Status == DownloadStatus.Protected;
+
             items[index] = current with
             {
                 Status = status,
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
-                ErrorMessage = normalizedError
+                ErrorMessage = normalizedError,
+                BytesReceived = restartingProtectedCopy ? 0 : current.BytesReceived,
+                TotalBytes = restartingProtectedCopy ? null : current.TotalBytes
+            };
+        }, cancellationToken);
+    }
+
+    public async Task UpdateProgressAsync(
+        string audiobookId,
+        long bytesReceived,
+        long? totalBytes,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
+        if (bytesReceived < 0 || totalBytes is < 0)
+            throw new ArgumentOutOfRangeException(nameof(bytesReceived));
+
+        await MutateAsync(items =>
+        {
+            var index = items.FindIndex(item =>
+                string.Equals(item.AudiobookId, audiobookId, StringComparison.Ordinal));
+            if (index < 0)
+                return;
+
+            var current = items[index];
+            // Ignore late progress callbacks after pause/completion/failure.
+            if (current.Status != DownloadStatus.Downloading)
+                return;
+
+            var updatedTotal = totalBytes is > 0
+                ? current.TotalBytes is > 0
+                    ? Math.Max(current.TotalBytes.Value, totalBytes.Value)
+                    : totalBytes
+                : current.TotalBytes;
+            var updatedBytes = Math.Max(current.BytesReceived, bytesReceived);
+            // Never reduce the already persisted byte count to match a later,
+            // smaller provider length report. Expand the known total instead.
+            if (updatedTotal is > 0 && updatedBytes > updatedTotal.Value)
+                updatedTotal = updatedBytes;
+
+            items[index] = current with
+            {
+                BytesReceived = updatedBytes,
+                TotalBytes = updatedTotal,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
             };
         }, cancellationToken);
     }
@@ -213,10 +261,11 @@ public sealed class JsonDownloadQueue : IDownloadQueue
     private static bool IsAllowedTransition(DownloadStatus current, DownloadStatus next)
         => current switch
         {
-            DownloadStatus.Queued => next is DownloadStatus.Downloading or DownloadStatus.Failed,
-            DownloadStatus.Downloading => next is DownloadStatus.Completed or DownloadStatus.Protected or DownloadStatus.Failed or DownloadStatus.Queued,
+            DownloadStatus.Queued => next is DownloadStatus.Downloading or DownloadStatus.Failed or DownloadStatus.Protected,
+            DownloadStatus.Downloading => next is DownloadStatus.Completed or DownloadStatus.Protected or DownloadStatus.Failed or DownloadStatus.Queued or DownloadStatus.Paused,
+            DownloadStatus.Paused => next is DownloadStatus.Downloading or DownloadStatus.Queued or DownloadStatus.Failed,
             DownloadStatus.Failed => next == DownloadStatus.Queued,
-            DownloadStatus.Protected => false,
+            DownloadStatus.Protected => next == DownloadStatus.Downloading,
             DownloadStatus.Completed => false,
             _ => false
         };

@@ -82,8 +82,13 @@ public sealed class DownloadQueueWorker
     {
         var items = await _queue.GetItemsAsync(cancellationToken);
         var recovered = 0;
-        foreach (var item in items.Where(x => x.Status == DownloadStatus.Downloading))
+        foreach (var item in items.Where(x =>
+            x.Status == DownloadStatus.Downloading &&
+            !x.AudiobookId.StartsWith("provider:", StringComparison.Ordinal)))
         {
+            // Audible Widevine downloads belong to Android's foreground service.
+            // Requeueing them here would send them through the ordinary HTTP worker
+            // and could discard the provider-specific recovery path.
             await _queue.UpdateStatusAsync(
                 item.AudiobookId, DownloadStatus.Queued, cancellationToken: cancellationToken);
             recovered++;
@@ -99,7 +104,8 @@ public sealed class DownloadQueueWorker
         try
         {
             var item = (await _queue.GetItemsAsync(cancellationToken))
-                .Where(x => x.Status == DownloadStatus.Queued)
+                .Where(x => x.Status == DownloadStatus.Queued &&
+                    !x.AudiobookId.StartsWith("provider:", StringComparison.Ordinal))
                 .OrderBy(x => x.AddedAtUtc)
                 .FirstOrDefault();
 
