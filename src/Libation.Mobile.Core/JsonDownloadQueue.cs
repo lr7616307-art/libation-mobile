@@ -129,11 +129,17 @@ public sealed class JsonDownloadQueue : IDownloadQueue
             if (status == DownloadStatus.Failed && normalizedError is null)
                 throw new ArgumentException("A failed item must include a short error message.", nameof(errorMessage));
 
+            var restartingProtectedCopy =
+                status == DownloadStatus.Downloading &&
+                current.Status == DownloadStatus.Protected;
+
             items[index] = current with
             {
                 Status = status,
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
-                ErrorMessage = normalizedError
+                ErrorMessage = normalizedError,
+                BytesReceived = restartingProtectedCopy ? 0 : current.BytesReceived,
+                TotalBytes = restartingProtectedCopy ? null : current.TotalBytes
             };
         }, cancellationToken);
     }
