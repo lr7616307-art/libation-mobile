@@ -97,6 +97,37 @@ public sealed class AudibleAccountAuthenticatorTests
         Assert.Equal(0, secrets.SetCalls);
     }
 
+    [Fact]
+    public async Task BeginSignIn_ReusesStableInstallationScopedDeviceSerial()
+    {
+        const string stableSerial = "0123456789abcdef0123";
+        var clock = new FixedClock(new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc));
+        var authenticator = new AudibleAccountAuthenticator(
+            new AudibleIdentitySnapshotStore(new InMemorySecretStore()),
+            new AudiblePkceRegistrationClient(new HttpClient()),
+            new AudibleTokenRefreshClient(new HttpClient(), clock),
+            clock,
+            TestDeviceInfo,
+            () => stableSerial);
+
+        var first = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "in"));
+        var second = await authenticator.BeginSignInAsync(new AccountSignInRequest("test", "in"));
+        var firstClientId = HttpUtility.ParseQueryString(first.AuthorizationUri.Query)["openid.oa2.client_id"]!;
+        var secondClientId = HttpUtility.ParseQueryString(second.AuthorizationUri.Query)["openid.oa2.client_id"]!;
+
+        Assert.Equal(stableSerial, DecodeClientSerial(firstClientId));
+        Assert.Equal(stableSerial, DecodeClientSerial(secondClientId));
+        Assert.NotEqual(
+            HttpUtility.ParseQueryString(first.AuthorizationUri.Query)["openid.oa2.code_challenge"],
+            HttpUtility.ParseQueryString(second.AuthorizationUri.Query)["openid.oa2.code_challenge"]);
+    }
+
+    private static string DecodeClientSerial(string clientId)
+    {
+        var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromHexString(clientId["device:".Length..]));
+        return decoded[..decoded.IndexOf('#')];
+    }
+
     private static AudibleAccountAuthenticator CreateAuthenticator(InMemorySecretStore secrets)
     {
         var clock = new FixedClock(new DateTime(2026, 11, 10, 12, 0, 0, DateTimeKind.Utc));
