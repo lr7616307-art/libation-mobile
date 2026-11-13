@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Libation.Mobile.Audible;
-using Libation.Mobile.UI.Views;
+using Libation.Mobile.Core;
 using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.DataSource;
