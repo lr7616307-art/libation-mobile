@@ -99,6 +99,14 @@ public sealed class AndroidWidevineDashOfflineStore
         {
             throw;
         }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // Media3 may surface downloader.Cancel() as an I/O failure instead
+            // of OperationCanceledException. Normalize both paths so the
+            // notification reliably exposes Resume rather than Retry.
+            cancellationToken.ThrowIfCancellationRequested();
+            throw;
+        }
     }
 
     private sealed class DashProgressListener(IProgress<AudioDownloadProgress> progress)
