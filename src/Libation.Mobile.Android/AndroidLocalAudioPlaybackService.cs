@@ -301,6 +301,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         var contentVersionKey = intent.GetStringExtra(ExtraWidevineContentVersionKey);
         if (!AudibleWidevineCacheIdentity.IsValidContentVersionKey(contentVersionKey))
             throw new InvalidDataException("The saved Audible content-version cache reference is invalid.");
+        intent.RemoveExtra(ExtraWidevineContentVersionKey);
 
         StopPlayer();
         _title = intent.GetStringExtra(ExtraTitle);
