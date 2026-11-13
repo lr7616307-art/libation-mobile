@@ -40,18 +40,24 @@ public sealed class AudibleWidevineManifestParserTests
     }
 
     [Fact]
-    public void Parse_RejectsMultipleAdaptationSetsInsteadOfDownloadingNonAudioTracks()
+    public void Parse_IgnoresNonAudioAdaptationSetsAndPreservesOriginalGroupIndex()
     {
         var pssh = CreatePssh(version: 0, [0x01]);
         var xml = CreateManifest(Convert.ToBase64String(pssh), "audio/mp4")
             .Replace(
+                "<Period>",
+                "<Period><AdaptationSet mimeType=\\"application/ttml+xml\\" contentType=\\"text\\"><Representation mimeType=\\"application/ttml+xml\\" /></AdaptationSet>",
+                StringComparison.Ordinal)
+            .Replace(
                 "</Period>",
-                "<AdaptationSet mimeType=\"video/mp4\"><Representation mimeType=\"video/mp4\" /></AdaptationSet></Period>",
+                "<AdaptationSet mimeType=\\"video/mp4\\"><Representation mimeType=\\"video/mp4\\" /></AdaptationSet></Period>",
                 StringComparison.Ordinal);
 
-        Assert.Throws<NotSupportedException>(() => AudibleWidevineManifestParser.Parse(xml));
-    }
+        var result = AudibleWidevineManifestParser.Parse(xml);
 
+        Assert.Equal([new AudibleWidevineStreamKey(0, 1, 0)], result.AudioStreamKeys);
+        Assert.Equal("audio/mp4", result.MimeType);
+    }
     [Fact]
     public void Parse_PrefersAudioRepresentationMimeType()
     {
