@@ -173,6 +173,71 @@ public sealed class JsonDownloadQueueTests
             () => queue.UpdateStatusAsync("missing", DownloadStatus.Downloading));
     }
 
+
+    [Fact]
+    public async Task UpdateProgress_PersistsMonotonicProgressAcrossQueueInstances()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(path);
+        await queue.EnqueueAsync("provider:B012345678");
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync("provider:B012345678", 7_000, 10_000);
+
+        // A late callback from an earlier segment must not move the visible progress backwards.
+        await queue.UpdateProgressAsync("provider:B012345678", 2_000, 10_000);
+
+        var item = Assert.Single(await new JsonDownloadQueue(path).GetItemsAsync());
+        Assert.Equal(7_000, item.BytesReceived);
+        Assert.Equal(10_000, item.TotalBytes);
+        Assert.Equal(70d, item.ProgressPercentage);
+        Assert.True(item.HasProgress);
+        Assert.Equal("70% · 6.8 KB of 9.8 KB", item.ProgressLabel);
+    }
+
+    [Fact]
+    public async Task PauseAndResumeTransitionsAreDurable()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "queue.json");
+        var queue = new JsonDownloadQueue(path);
+        await queue.EnqueueAsync("provider:B012345678");
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync("provider:B012345678", 5_000, 10_000);
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Paused);
+
+        var paused = Assert.Single(await new JsonDownloadQueue(path).GetItemsAsync());
+        Assert.Equal(DownloadStatus.Paused, paused.Status);
+        Assert.Equal(5_000, paused.BytesReceived);
+        Assert.True(paused.CanToggleAudibleDownload);
+        Assert.Equal("Resume", paused.DownloadActionLabel);
+        Assert.True(paused.CanRemove);
+
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
+        var resumed = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Downloading, resumed.Status);
+        Assert.Equal(5_000, resumed.BytesReceived);
+        Assert.Equal("Pause", resumed.DownloadActionLabel);
+        Assert.False(resumed.CanRemove);
+    }
+
+    [Fact]
+    public async Task ProgressUpdatesAreIgnoredAfterTheItemIsPaused()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("provider:B012345678");
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync("provider:B012345678", 5_000, 10_000);
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Paused);
+
+        await queue.UpdateProgressAsync("provider:B012345678", 8_000, 10_000);
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(5_000, item.BytesReceived);
+        Assert.Equal(DownloadStatus.Paused, item.Status);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
