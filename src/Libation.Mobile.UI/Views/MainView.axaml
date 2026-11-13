@@ -225,6 +225,8 @@
                             Click="DownloadAudibleBookFromDetailClicked"/>
                     <TextBlock Text="{Binding DownloadSettingsStatus}"
                                FontSize="11" Opacity="0.78" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding AudioImportStatus}" FontSize="12"
+                               Foreground="#F0C6A8" TextWrapping="Wrap"/>
                     <Button Content="▶  Play audiobook in VØRATH" HorizontalAlignment="Stretch"
                             IsVisible="{Binding HasPlayableDetailAudio}" Click="PlayDetailBookClicked"/>
                     <TextBlock Text="{Binding DetailProtectedDownloadLabel}"
@@ -316,6 +318,8 @@
             </Grid>
             <TextBox PlaceholderText="Search Audible titles or authors" Text="{Binding AudibleSearchText, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock Text="{Binding SyncStatus}" FontSize="12" TextWrapping="Wrap" Opacity="0.8"/>
+            <TextBlock Text="{Binding AudioImportStatus}" FontSize="12"
+                       Foreground="#F0C6A8" TextWrapping="Wrap"/>
             <Button Content="Cancel current Audible operation"
                     IsVisible="{Binding IsProtectedAudibleOperationInProgress}"
                     HorizontalAlignment="Stretch"
