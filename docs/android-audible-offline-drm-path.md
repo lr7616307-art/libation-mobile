@@ -244,3 +244,10 @@ The activity's resume callback may run many times while the foreground service i
 still executing. Recovery now checks the live service instance first and skips
 re-dispatch while a transfer is active, preventing a lifecycle callback from
 mistaking a pending Pause transition for process death and accidentally resuming it.
+
+## Pass 35 — serialized Audible queue execution
+
+Audible provider entries now persist their display title with the queue record. The Android foreground Widevine service drains eligible `provider:` queue entries in insertion order, running only one protected transfer at a time. A completed or failed item advances to the next queued Audible item; failed rows remain visible and retryable. An explicit Pause does not automatically advance the queue. If the app process is killed between two items, foreground recovery starts the next queued item unless the last persisted transfer was explicitly paused.
+
+The scheduler excludes local HTTP jobs, failed/paused/completed items, and the just-finished title. The ordinary HTTP queue worker continues to ignore `provider:` jobs. This stage covers persistent queue metadata and serialized service orchestration; it does not assert that Audible will authorize a particular title/device or that a physical handset has completed an offline download and playback test.
+
