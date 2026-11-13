@@ -201,13 +201,13 @@ jobs:
   # Pass 7 branch-scoped test keystore. Build both pre- and post-optimization
   # APKs with that same identity so updates remain install-compatible.
   build_compatible_pair:
-    if: github.event_name == 'pull_request' && github.base_ref == 'feat/pass-7-audible-download-quality'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/pass-8-widevine-license-bridge'
     needs: test
     runs-on: ubuntu-latest
     env:
       TEST_STORE_PASSWORD: vorath-ci-test-store
       TEST_KEY_PASSWORD: vorath-ci-test-key
-      EXPECTED_TEST_CERT_SHA256: d642fdba3bc514c126c24627594de6a608d7162481be731664be2f38dab7929c
+      EXPECTED_TEST_CERT_SHA256: 4fdd02d2628fa78c4a2b9af791e70128da5558abc626942a9a657ec8b69469c5
     steps:
       - uses: actions/checkout@v4
       - name: Install .NET
@@ -219,20 +219,20 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - name: Restore Pass 7 base-branch signing key
+      - name: Restore existing Pass 8 branch signing key
         id: test-key-cache
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/vorath-ci-test.jks
-          key: vorath-ci-test-key-v1-${{ github.base_ref }}
-      - name: Require the existing Pass 7 signing identity
+          key: vorath-ci-test-key-v1-${{ github.ref_name }}
+      - name: Require the existing Pass 8 installed signing identity
         env:
           CACHE_HIT: ${{ steps.test-key-cache.outputs.cache-hit }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$CACHE_HIT" != "true" || ! -s "$RUNNER_TEMP/vorath-ci-test.jks" ]]; then
-            echo "::error::Could not restore the Pass 7 test signing key from the PR base branch. Refusing to create an incompatible signing identity."
+            echo "::error::Could not restore the Pass 8 test signing key from the current Pass 8 branch. Refusing to create an incompatible signing identity."
             exit 1
           fi
           keytool -list -storetype JKS -keystore "$RUNNER_TEMP/vorath-ci-test.jks" \
@@ -271,7 +271,7 @@ jobs:
           cert_output="$("$apksigner" verify --print-certs "${apks[0]}" 2>&1)"
           printf '%s\n' "$cert_output"
           if ! printf '%s' "$cert_output" | grep -Fqi "$EXPECTED_TEST_CERT_SHA256"; then
-            echo "::error::Optimized APK was not signed by the existing Pass 7 certificate."
+            echo "::error::Optimized APK was not signed by the existing Pass 8 installed certificate."
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/vorath-apks"
