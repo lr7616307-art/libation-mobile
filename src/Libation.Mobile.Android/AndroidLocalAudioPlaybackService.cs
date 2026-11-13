@@ -67,6 +67,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static event Action? PlaybackStateChanged;
+    public static event Action<string>? WidevinePlaybackReady;
+    public static event Action<string, string>? WidevinePlaybackFailed;
     public static bool HasActivePlayer => Current?._player is not null;
     public static bool IsPlaying => Current?._player?.IsPlaying ?? false;
     public static string? CurrentFilePath => Current?._currentFilePath;
@@ -154,6 +156,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
+        var requestedAction = intent?.Action;
+        var requestedAsin = intent?.GetStringExtra(ExtraWidevineAsin);
         try
         {
             switch (intent?.Action)
@@ -224,6 +228,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             // position. A later app launch can retry recovery.
             // A failed command must not discard the last known-good resume point.
             // This also protects the previous audiobook when a new Play request is invalid.
+            if (requestedAction == ActionPlayWidevineDash && IsValidAsin(requestedAsin))
+                PublishWidevinePlaybackFailed(
+                    requestedAsin!,
+                    "Android could not prepare the protected Audible offline stream. Check the saved offline licence and cached audio, then retry.");
+
             StopPlayback(clearRecovery: false);
             StopSelf(startId);
         }
@@ -383,6 +392,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     // lifecycle synchronized with the actual decoder state.
     public void OnPlaybackStateChanged(int playbackState)
     {
+        if (playbackState == 3 && _isWidevinePlayback && IsValidAsin(_widevineAsin))
+            PublishWidevinePlaybackReady(_widevineAsin!);
+
         if (playbackState == 4) // Player.STATE_ENDED
         {
             StopPlayback();
@@ -403,6 +415,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public void OnPlayerError(PlaybackException? error)
     {
+        if (_isWidevinePlayback && IsValidAsin(_widevineAsin))
+            PublishWidevinePlaybackFailed(
+                _widevineAsin!,
+                "Android could not read or decode the protected offline audio. Check the saved licence and cached segments, then retry.");
+
         // Decoder or source errors should stop playback, but must not erase the
         // last recoverable position. Capture the best available position before
         // releasing ExoPlayer so the user can retry after reopening the app.
@@ -693,6 +710,23 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         try { PlaybackStateChanged?.Invoke(); }
         catch (Exception) { /* UI observers must never interrupt playback or notification updates. */ }
     }
+
+    private static void PublishWidevinePlaybackReady(string asin)
+    {
+        try { WidevinePlaybackReady?.Invoke(asin); }
+        catch (Exception) { /* Playback observers must never interrupt the Android player. */ }
+    }
+
+    private static void PublishWidevinePlaybackFailed(string asin, string safeMessage)
+    {
+        try { WidevinePlaybackFailed?.Invoke(asin, safeMessage); }
+        catch (Exception) { /* Playback observers must never interrupt the Android player. */ }
+    }
+
+    private static bool IsValidAsin(string? asin) =>
+        !string.IsNullOrWhiteSpace(asin) &&
+        asin.Length == 10 &&
+        asin.All(char.IsAsciiLetterOrDigit);
 
     private void UpdateNotification()
     {
