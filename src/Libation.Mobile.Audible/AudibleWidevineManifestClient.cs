@@ -31,6 +31,10 @@ public sealed class AudibleWidevineManifestClient(HttpClient httpClient)
         cancellationToken.ThrowIfCancellationRequested();
 
         using var request = new HttpRequestMessage(HttpMethod.Get, manifestUri);
+        // Audible signs the manifest URL for its Android player profile. Keep the
+        // same provider User-Agent used during Android registration for both the
+        // MPD and the subsequent Media3 segment requests.
+        request.Headers.TryAddWithoutValidation("User-Agent", AudibleApi.Resources.User_Agent);
         request.Headers.Accept.ParseAdd("application/dash+xml");
         request.Headers.Accept.ParseAdd("application/xml");
         request.Headers.Accept.ParseAdd("text/xml");
