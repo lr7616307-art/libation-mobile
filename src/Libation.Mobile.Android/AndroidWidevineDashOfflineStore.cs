@@ -8,6 +8,7 @@ using AndroidX.Media3.DataSource;
 using AndroidX.Media3.DataSource.Cache;
 using AndroidX.Media3.Database;
 using AndroidX.Media3.ExoPlayer.Dash.Offline;
+using AndroidX.Media3.ExoPlayer.Offline;
 
 namespace Libation.Mobile.Android;
 
@@ -41,6 +42,7 @@ public sealed class AndroidWidevineDashOfflineStore
         string asin,
         Uri manifestUri,
         IReadOnlyList<AudibleWidevineStreamKey> streamKeys,
+        IProgress<AudioDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ValidateIdentity(accountId, asin);
@@ -78,8 +80,10 @@ public sealed class AndroidWidevineDashOfflineStore
         try
         {
             // DASH downloader is synchronous; run it away from the UI thread.
-            // Media3 stores the provider-delivered CENC-encrypted segments as-is.
-            await Task.Run(() => downloader.Download(null), cancellationToken)
+            // Media3 reports its actual byte and percentage progress across streams.
+            // Provider-encrypted segments remain encrypted in the private cache.
+            var progressListener = progress is null ? null : new DashProgressListener(progress);
+            await Task.Run(() => downloader.Download(progressListener), cancellationToken)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -93,6 +97,17 @@ public sealed class AndroidWidevineDashOfflineStore
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+    }
+
+    private sealed class DashProgressListener(IProgress<AudioDownloadProgress> progress)
+        : Java.Lang.Object, IDownloaderProgressListener
+    {
+        public void OnProgress(long contentLength, long bytesDownloaded, float percentDownloaded)
+        {
+            progress.Report(new AudioDownloadProgress(
+                Math.Max(0, bytesDownloaded),
+                contentLength > 0 ? contentLength : null));
         }
     }
 
