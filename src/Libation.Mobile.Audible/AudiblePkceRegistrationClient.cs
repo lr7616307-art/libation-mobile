@@ -108,10 +108,22 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 
         using var response = await httpClient.SendAsync(message, cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException(
-                "Audible Android device registration failed with HTTP " + (int)response.StatusCode + ".",
-                null,
-                response.StatusCode);
+        {
+            // Amazon's 400 response contains a structured error code/message.
+            // Surface only those non-secret fields; never include the request
+            // body, authorization code, cookies, FRC, or response token data.
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var providerError = ReadSafeProviderError(responseBody);
+            var messageText = $"Audible Android device registration failed with HTTP {(int)response.StatusCode}";
+            if (!string.IsNullOrWhiteSpace(providerError.Code))
+                messageText += $" ({providerError.Code})";
+            if (!string.IsNullOrWhiteSpace(providerError.Message))
+                messageText += $": {providerError.Message}";
+            else
+                messageText += ".";
+            throw new HttpRequestException(messageText, null, response.StatusCode);
+        }
 
         var payload = await response.Content.ReadFromJsonAsync<RegistrationEnvelope>(
             JsonOptions, cancellationToken).ConfigureAwait(false)
@@ -183,10 +195,10 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             ["device_serial"] = challenge.DeviceSerial,
             ["app_name"] = AppName,
             ["app_version"] = AppVersion,
-            ["device_model"] = challenge.DeviceInfo.Model,
-            ["os_version"] = challenge.DeviceInfo.SdkVersion,
+            ["device_model"] = AudibleOAuthFlow.AndroidDeviceModel,
+            ["os_version"] = AudibleOAuthFlow.AndroidOsVersion,
             ["software_version"] = SoftwareVersion,
-            ["device_name"] = challenge.DeviceInfo.DeviceName
+            ["device_name"] = "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android"
         };
         var authData = new JObject
         {
@@ -198,12 +210,13 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             ["use_global_authentication"] = "true"
         };
 
+        var localeLoginHost = Localization.Get(challenge.Marketplace).LoginUri().Host;
         var root = new JObject
         {
             ["requested_token_type"] = new JArray("bearer", "mac_dms", "store_authentication_cookie", "website_cookies"),
             ["cookies"] = new JObject
             {
-                ["domain"] = cookieDomain,
+                ["domain"] = localeLoginHost,
                 ["website_cookies"] = new JArray()
             },
             ["user_context_map"] = new JObject { ["frc"] = challenge.FrcValue },
@@ -215,14 +228,10 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 ["device_os_family"] = "android",
                 ["device_type"] = DeviceType,
                 ["device_serial"] = challenge.DeviceSerial,
-                ["manufacturer"] = challenge.DeviceInfo.Manufacturer,
-                ["brand"] = challenge.DeviceInfo.Brand,
-                ["model"] = challenge.DeviceInfo.Model,
-                ["device"] = challenge.DeviceInfo.Device,
-                ["os_version"] = challenge.DeviceInfo.SdkVersion,
-                ["os_release"] = challenge.DeviceInfo.OsRelease,
-                ["build_fingerprint"] = challenge.DeviceInfo.BuildFingerprint,
-                ["product"] = challenge.DeviceInfo.Product
+                ["manufacturer"] = AudibleOAuthFlow.AndroidManufacturer,
+                ["model"] = AudibleOAuthFlow.AndroidDeviceModel,
+                ["os_version"] = AudibleOAuthFlow.AndroidOsVersionNumber,
+                ["product"] = AudibleOAuthFlow.AndroidDeviceProduct
             }
         };
         return root;
@@ -282,6 +291,39 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
     private sealed class RegisteredCustomer
     {
         [JsonPropertyName("user_id")] public string? UserId { get; init; }
+    }
+
+    private static (string? Code, string? Message) ReadSafeProviderError(string responseBody)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            var error = document.RootElement
+                .GetProperty("response")
+                .GetProperty("error");
+            var code = error.TryGetProperty("code", out var codeElement)
+                ? SafeDiagnosticText(codeElement.ToString(), 64)
+                : null;
+            var message = error.TryGetProperty("message", out var messageElement)
+                ? SafeDiagnosticText(messageElement.ToString(), 200)
+                : null;
+            return (code, message);
+        }
+        catch (JsonException) { return (null, null); }
+        catch (InvalidOperationException) { return (null, null); }
+        catch (KeyNotFoundException) { return (null, null); }
+    }
+
+    private static string? SafeDiagnosticText(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var safe = new string(value
+            .Where(character => char.IsAsciiLetterOrDigit(character)
+                || character is ' ' or '.' or ',' or ':' or '-' or '_' or '(' or ')')
+            .Take(maxLength)
+            .ToArray());
+        return string.IsNullOrWhiteSpace(safe) ? null : safe;
     }
 
     private static string Base64Url(byte[] bytes)
