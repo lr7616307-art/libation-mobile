@@ -41,7 +41,7 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
 
     public static Func<CancellationToken, Task<AudibleAudioDownloadSource?>>? SourceFactory { get; set; }
     public static string DownloadDirectory { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "audible-downloads");
+        System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), "audible-downloads");
 
     public static void Start(Context context, string asin, string title)
     {
