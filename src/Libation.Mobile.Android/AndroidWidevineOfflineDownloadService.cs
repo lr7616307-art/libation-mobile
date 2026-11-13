@@ -217,8 +217,8 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             var transferProgress = new InlineProgress<WidevineOfflineDownloadProgress>(value =>
             {
                 var detail = value.ContentLength is > 0
-                    ? $\"{FormatBytes(value.BytesDownloaded)} of {FormatBytes(value.ContentLength.Value)}\"
-                    : $\"{FormatBytes(value.BytesDownloaded)} received\";
+                    ? $"{FormatBytes(value.BytesDownloaded)} of {FormatBytes(value.ContentLength.Value)}"
+                    : $"{FormatBytes(value.BytesDownloaded)} received";
                 UpdateNotification(
                     detail,
                     value.Percentage is { } percentage ? (int)Math.Clamp(percentage, 0d, 100d) : null,
