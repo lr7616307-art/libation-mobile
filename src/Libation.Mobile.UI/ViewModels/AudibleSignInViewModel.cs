@@ -155,7 +155,7 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         {
             try
             {
-                required = !await _isCurrentAndroidRegistration(cancellationToken).ConfigureAwait(false);
+                required = !await _isCurrentAndroidRegistration(cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
