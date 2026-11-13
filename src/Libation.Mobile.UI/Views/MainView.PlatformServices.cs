@@ -4,22 +4,11 @@ using Libation.Mobile.UI.ViewModels;
 
 namespace Libation.Mobile.UI.Views;
 
-public sealed record WidevineOfflineDownloadProgress(
-    long BytesDownloaded,
-    long? ContentLength,
-    double? Percentage);
-
-public interface IAudibleWidevinePlaybackCoordinator
+public interface IAudibleWidevinePlaybackCoordinator : IAudibleOfflineDownloadBackend
 {
-    Task<bool> HasOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task<AudibleWidevineRenewalProbeResult> ProbeOfflineLicenseRenewalAsync(string asin, CancellationToken cancellationToken = default);
-    Task<bool> HasOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
     Task AcquireOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task DownloadOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
-    Task DownloadOfflineMediaWithProgressAsync(
-        string asin,
-        IProgress<WidevineOfflineDownloadProgress>? progress,
-        CancellationToken cancellationToken = default);
     Task PlayAsync(string asin, string title, long startPositionMilliseconds = 0, bool autoPlay = true, CancellationToken cancellationToken = default);
     Task RemoveOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task RemoveAllOfflineLicensesAsync(CancellationToken cancellationToken = default);
