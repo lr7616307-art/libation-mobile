@@ -46,7 +46,10 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         var locale = Localization.Get(challenge.Marketplace);
         var expectedLoginHost = locale.LoginUri().Host;
         var expectedCallbackHost = locale.AudibleLoginUri().Host;
-        var cookieDomain = locale.LoginUri().Host;
+        var loginHost = locale.LoginUri().Host;
+        var cookieDomain = "." + (loginHost.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+            ? loginHost[4..]
+            : loginHost);
         if (!AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
             throw new InvalidOperationException("The Audible callback does not match the selected marketplace.");
 
