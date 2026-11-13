@@ -108,6 +108,7 @@ public sealed class AudibleOfflineDownloadPipelineTests
         public Task DownloadOfflineMediaWithProgressAsync(
             string asin,
             IProgress<WidevineOfflineDownloadProgress>? progress,
+            IProgress<AudibleOfflineDownloadStage>? stageProgress,
             CancellationToken cancellationToken = default)
         {
             TransferCalls++;
