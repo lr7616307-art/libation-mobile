@@ -48,7 +48,13 @@ public sealed class AudiblePkceRegistrationClientTests
         var deviceMetadata = root.GetProperty("device_metadata");
         Assert.Equal("android", deviceMetadata.GetProperty("device_os_family").GetString());
         Assert.Equal("Test Manufacturer", deviceMetadata.GetProperty("manufacturer").GetString());
+        Assert.Equal("Test Brand", deviceMetadata.GetProperty("brand").GetString());
+        Assert.Equal("Test Model", deviceMetadata.GetProperty("model").GetString());
+        Assert.Equal("test-device", deviceMetadata.GetProperty("device").GetString());
         Assert.Equal("34", deviceMetadata.GetProperty("os_version").GetString());
+        Assert.Equal("14", deviceMetadata.GetProperty("os_release").GetString());
+        Assert.Equal("test/test/test:14/UP1A.1/test:user/release-keys",
+            deviceMetadata.GetProperty("build_fingerprint").GetString());
         Assert.Equal("test-product", deviceMetadata.GetProperty("product").GetString());
 
         var frc = root.GetProperty("user_context_map").GetProperty("frc").GetString();
