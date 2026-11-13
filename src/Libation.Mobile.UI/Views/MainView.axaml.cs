@@ -82,6 +82,22 @@ public partial class MainView : UserControl
             ?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         AttachPlaybackStateNotifications();
         _activeView = new WeakReference<MainView>(this);
+        PlatformAudibleDownloadCompletedAction = asin =>
+        {
+            var audiobookId = "provider:" + asin;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    await _viewModel.MarkWidevineOfflineAvailableAsync(audiobookId);
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Could not refresh Audible offline status: {exception.GetType().Name}");
+                }
+            });
+        };
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -1053,7 +1069,21 @@ public partial class MainView : UserControl
 
     private async Task RunProtectedAudibleOperationAsync(Audiobook book, bool startPlayback)
     {
-        if (startPlayback && _localAudioPlayer is null)
+        if (!book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            return;
+
+        var asin = book.Id["provider:".Length..];
+
+        // Audible media transfers are owned by Android's foreground service.
+        // That service keeps working when VØRATH is backgrounded and supplies
+        // progress, Pause and Resume actions through the Android notification.
+        if (!startPlayback)
+        {
+            StartAudibleOfflineDownload(asin, book.Title);
+            return;
+        }
+
+        if (_localAudioPlayer is null)
         {
             _viewModel.ReportAudioStatus("Protected Audible playback is unavailable on this platform. The offline download itself does not require the player.");
             return;
@@ -1061,13 +1091,13 @@ public partial class MainView : UserControl
 
         if (PlatformWidevinePlaybackCoordinatorFactory is null)
         {
-            _viewModel.ReportAudioStatus("The Android Widevine download service is not available in this build.");
+            _viewModel.ReportAudioStatus("The Android Widevine playback service is not available in this build.");
             return;
         }
 
         if (_protectedAudibleOperationCts is not null)
         {
-            _viewModel.ReportAudioStatus("Another Audible offline operation is already running. Cancel it before starting another.");
+            _viewModel.ReportAudioStatus("Another Audible offline playback operation is already running.");
             return;
         }
 
@@ -1079,48 +1109,29 @@ public partial class MainView : UserControl
 
         try
         {
-            _viewModel.ReportAudioStatus("Starting VØRATH offline download. Checking your saved Audible session…");
-            phase = "restoring your Audible account session";
-            _viewModel.ReportAudioStatus("Checking your saved Audible account session…");
+            _viewModel.ReportAudioStatus("Checking the saved Audible offline licence…");
             var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
             if (coordinator is null)
             {
-                _viewModel.ReportAudioStatus("Sign in to Audible again before downloading this protected audiobook.");
+                _viewModel.ReportAudioStatus("Sign in to Audible again before playing this protected audiobook.");
                 return;
             }
 
-            var asin = book.Id["provider:".Length..];
             phase = "checking the offline licence";
-            _viewModel.ReportAudioStatus("Checking whether this title already has a valid offline licence…");
             if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken))
             {
-                _viewModel.ReportAudioStatus("Requesting an Audible-authorized Widevine offline licence…");
-                phase = "requesting the Audible offline licence";
-                _viewModel.ReportAudioStatus("Audible is being asked to authorize offline playback for this title…");
-                await coordinator.AcquireOfflineLicenseAsync(asin, cancellationToken);
+                StartAudibleOfflineDownload(asin, book.Title);
+                return;
             }
 
             phase = "checking saved encrypted audio";
-            _viewModel.ReportAudioStatus("Checking VØRATH's protected offline audio cache…");
             if (!await coordinator.HasOfflineMediaAsync(asin, cancellationToken))
             {
-                _viewModel.ReportAudioStatus("Downloading Audible's encrypted audio into VØRATH. You can cancel here.");
-                phase = "downloading encrypted Audible audio";
-                _viewModel.ReportAudioStatus("Downloading encrypted Audible audio. Keep VØRATH open; this can take several minutes…");
-                await coordinator.DownloadOfflineMediaAsync(asin, cancellationToken);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            phase = "saving the offline status";
-            _viewModel.ReportAudioStatus("Download data received. Verifying and saving the offline status…");
-            await _viewModel.MarkWidevineOfflineAvailableAsync(book.Id, cancellationToken);
-
-            if (!startPlayback)
-            {
-                _viewModel.ReportAudioStatus("Download complete. This audiobook is saved in VØRATH and ready for offline playback.");
+                StartAudibleOfflineDownload(asin, book.Title);
                 return;
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             phase = "starting offline playback";
             await coordinator.PlayAsync(
                 asin,
@@ -1139,11 +1150,11 @@ public partial class MainView : UserControl
         }
         catch (NotSupportedException ex)
         {
-            _viewModel.ReportAudioStatus("Audible offline download is not supported for this title/device: " + ex.Message);
+            _viewModel.ReportAudioStatus("Audible offline playback is not supported for this title/device: " + ex.Message);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _viewModel.ReportAudioStatus("Audible offline operation cancelled. Partial encrypted segments are retained for retry.");
+            _viewModel.ReportAudioStatus("Audible playback operation cancelled.");
         }
         catch (Exception ex)
         {
@@ -1158,7 +1169,7 @@ public partial class MainView : UserControl
             if (ex is HttpRequestException { StatusCode: { } statusCode })
                 detail = $"HTTP {(int)statusCode} ({statusCode}): {detail}";
             if (detail.Length > 500) detail = detail[..500];
-            _viewModel.ReportAudioStatus($"Audible download failed while {phase}: {detail}");
+            _viewModel.ReportAudioStatus($"Audible playback failed while {phase}: {detail}");
         }
         finally
         {
@@ -1166,6 +1177,27 @@ public partial class MainView : UserControl
                 _protectedAudibleOperationCts = null;
             _viewModel.SetProtectedAudibleOperationInProgress(false);
             operationCts.Dispose();
+        }
+    }
+
+    private void StartAudibleOfflineDownload(string asin, string title)
+    {
+        var startAction = PlatformAudibleOfflineDownloadStartAction;
+        if (startAction is null)
+        {
+            _viewModel.ReportAudioStatus("The Android foreground download service is unavailable in this build.");
+            return;
+        }
+
+        try
+        {
+            startAction(asin, title);
+            _viewModel.ReportAudioStatus(
+                "Audible download started. Follow live progress in the Android notification. Pause and Resume are available there.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("VØRATH could not start the Audible background download. Your existing offline data was left untouched.");
         }
     }
 
