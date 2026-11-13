@@ -161,7 +161,7 @@ public sealed class AudibleWidevineLicenseBridgeTests
             (_, _, _) => Task.FromResult("license-response"),
             Path.Combine(Path.GetTempPath(), "vorath-widevine-tests"));
 
-        await Assert.ThrowsAsync<NotSupportedException>(() =>
+        await Assert.ThrowsAsync<AudibleWidevineNotAvailableException>(() =>
             source.ResolveWidevineAsync("B012345678"));
     }
 
