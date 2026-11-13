@@ -13,7 +13,7 @@ public sealed class AudiblePkceRegistrationClientTests
     {
         var handler = new CapturingHandler("{\"error\":\"test\"}", HttpStatusCode.BadRequest);
         using var http = new HttpClient(handler);
-        var challenge = AudibleOAuthFlow.Create("in");
+        var challenge = AudibleOAuthFlow.Create("in", TestDeviceInfo());
         var client = new AudiblePkceRegistrationClient(http);
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
@@ -26,13 +26,13 @@ public sealed class AudiblePkceRegistrationClientTests
         Assert.Equal("DeviceLegacy", root.GetProperty("registration_data").GetProperty("domain").GetString());
         Assert.Equal("2090263407", root.GetProperty("registration_data").GetProperty("app_version").GetString());
         Assert.Equal("130050002", root.GetProperty("registration_data").GetProperty("software_version").GetString());
-        Assert.Equal(@"google\/raven\/raven:14\/UPB5.230623.003\/10615560:user\/release-keys",
+        Assert.Equal("34",
             root.GetProperty("registration_data").GetProperty("os_version").GetString());
         Assert.Equal(AudibleOAuthFlow.AndroidDeviceType,
             root.GetProperty("registration_data").GetProperty("device_type").GetString());
-        Assert.Equal("%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android",
+        Assert.Equal("Test Android Device",
             root.GetProperty("registration_data").GetProperty("device_name").GetString());
-        Assert.Equal("sdk_gphone64_x86_64", root.GetProperty("registration_data").GetProperty("device_model").GetString());
+        Assert.Equal("Test Model", root.GetProperty("registration_data").GetProperty("device_model").GetString());
         Assert.Equal("com.audible.application", root.GetProperty("registration_data").GetProperty("app_name").GetString());
         Assert.Equal(challenge.DeviceSerial, root.GetProperty("registration_data").GetProperty("device_serial").GetString());
         Assert.Equal("authorization-code-test", root.GetProperty("auth_data").GetProperty("authorization_code").GetString());
@@ -47,9 +47,15 @@ public sealed class AudiblePkceRegistrationClientTests
 
         var deviceMetadata = root.GetProperty("device_metadata");
         Assert.Equal("android", deviceMetadata.GetProperty("device_os_family").GetString());
-        Assert.Equal("Google", deviceMetadata.GetProperty("manufacturer").GetString());
+        Assert.Equal("Test Manufacturer", deviceMetadata.GetProperty("manufacturer").GetString());
+        Assert.Equal("Test Brand", deviceMetadata.GetProperty("brand").GetString());
+        Assert.Equal("Test Model", deviceMetadata.GetProperty("model").GetString());
+        Assert.Equal("test-device", deviceMetadata.GetProperty("device").GetString());
         Assert.Equal("34", deviceMetadata.GetProperty("os_version").GetString());
-        Assert.Equal("sdk_gphone64_x86_64", deviceMetadata.GetProperty("product").GetString());
+        Assert.Equal("14", deviceMetadata.GetProperty("os_release").GetString());
+        Assert.Equal("test/test/test:14/UP1A.1/test:user/release-keys",
+            deviceMetadata.GetProperty("build_fingerprint").GetString());
+        Assert.Equal("test-product", deviceMetadata.GetProperty("product").GetString());
 
         var frc = root.GetProperty("user_context_map").GetProperty("frc").GetString();
         Assert.False(string.IsNullOrWhiteSpace(frc));
@@ -70,7 +76,7 @@ public sealed class AudiblePkceRegistrationClientTests
     {
         var handler = new CapturingHandler("{}", HttpStatusCode.OK);
         using var http = new HttpClient(handler);
-        var challenge = AudibleOAuthFlow.Create("in") with
+        var challenge = AudibleOAuthFlow.Create("in", TestDeviceInfo()) with
         {
             CodeChallenge = new string('B', 43)
         };
@@ -87,7 +93,7 @@ public sealed class AudiblePkceRegistrationClientTests
     {
         var handler = new CapturingHandler("{}", HttpStatusCode.OK);
         using var http = new HttpClient(handler);
-        var challenge = AudibleOAuthFlow.Create("in");
+        var challenge = AudibleOAuthFlow.Create("in", TestDeviceInfo());
         var tamperedAuthorizationUri = new Uri(challenge.AuthorizationUri.AbsoluteUri.Replace(
             challenge.CodeChallenge, new string('B', 43), StringComparison.Ordinal));
         var tampered = challenge with { AuthorizationUri = tamperedAuthorizationUri };
@@ -104,7 +110,7 @@ public sealed class AudiblePkceRegistrationClientTests
     {
         var handler = new CapturingHandler("{}", HttpStatusCode.OK);
         using var http = new HttpClient(handler);
-        var challenge = AudibleOAuthFlow.Create("in") with
+        var challenge = AudibleOAuthFlow.Create("in", TestDeviceInfo()) with
         {
             CallbackUri = new Uri("https://www.audible.com/ap/maplanding")
         };
@@ -122,7 +128,7 @@ public sealed class AudiblePkceRegistrationClientTests
         using var rsa = RSA.Create(2048);
         var privateKey = rsa.ExportRSAPrivateKeyPem();
         const string adp = "{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}";
-        var challenge = AudibleOAuthFlow.Create("in");
+        var challenge = AudibleOAuthFlow.Create("in", TestDeviceInfo());
         var response = """
         {"response":{"success":{"tokens":{
           "bearer":{"access_token":"Atna|test-access","refresh_token":"Atnr|test-refresh","expires_in":3600},
@@ -163,7 +169,7 @@ public sealed class AudiblePkceRegistrationClientTests
     [Fact]
     public async Task RegisterAsync_RejectsRegistrationResponseWithNonAndroidDeviceType()
     {
-        var challenge = AudibleOAuthFlow.Create("in");
+        var challenge = AudibleOAuthFlow.Create("in", TestDeviceInfo());
         var handler = new CapturingHandler(
             """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600},"mac_dms":{"device_private_key":"private-key","adp_token":"{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}"}},"extensions":{"device_info":{"device_type":"A2CZJZGLK2JJVM","device_serial_number":"__SERIAL__"},"customer_info":{"user_id":"user"}}}}}"""
                 .Replace("__SERIAL__", challenge.DeviceSerial, StringComparison.Ordinal),
@@ -180,7 +186,7 @@ public sealed class AudiblePkceRegistrationClientTests
     [Fact]
     public async Task RegisterAsync_RejectsIncompleteSuccessfulResponse()
     {
-        var challenge = AudibleOAuthFlow.Create("in");
+        var challenge = AudibleOAuthFlow.Create("in", TestDeviceInfo());
         var response = """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600}},"extensions":{"device_info":{"device_type":"A10KISP2GWF0E4","device_serial_number":"__SERIAL__"},"customer_info":{}}}}}"""
             .Replace("__SERIAL__", challenge.DeviceSerial, StringComparison.Ordinal);
         var handler = new CapturingHandler(response, HttpStatusCode.OK);
@@ -192,6 +198,11 @@ public sealed class AudiblePkceRegistrationClientTests
 
         Assert.Contains("device credentials", error.Message);
     }
+
+    private static AudibleAndroidDeviceInfo TestDeviceInfo() => new(
+        "Test Manufacturer", "Test Brand", "Test Model", "test-device", "test-product",
+        "test/test/test:14/UP1A.1/test:user/release-keys", "14", "34",
+        "Test Android Device", "en", 1080, 2400);
 
     private sealed class CapturingHandler(string responseBody, HttpStatusCode statusCode) : HttpMessageHandler
     {

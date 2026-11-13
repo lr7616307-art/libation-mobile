@@ -265,3 +265,8 @@ The Accounts page exposes a one-time **Refresh Android registration** action onl
 
 The preflight is a local metadata compatibility check. It does not guarantee that Audible grants a licence for a particular title or that protected playback works on a physical device. Provider authorization and real-device offline playback remain required validation steps.
 
+
+
+## Pass 39 — host device metadata
+
+The Android registration challenge now receives manufacturer, brand, model, device/product identifiers, OS release, SDK level, build fingerprint, screen dimensions and language from the Android host. Those values are used in the registration payload and FRC context; the previous fixed emulator/Pixel fingerprint, 1080×2400 dimensions and T-Mobile carrier claim are removed. If required host metadata is unavailable or invalid, sign-in fails before a registration request is sent. This improves registration accuracy but does not establish provider approval or guarantee an offline Widevine licence.

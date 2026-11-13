@@ -14,7 +14,8 @@ public sealed class AudibleAccountAuthenticator(
     AudibleIdentitySnapshotStore snapshotStore,
     AudiblePkceRegistrationClient registrationClient,
     IAudibleTokenRefresher tokenRefresher,
-    ISystemDateTime systemDateTime) : IAccountAuthenticator
+    ISystemDateTime systemDateTime,
+    Func<AudibleAndroidDeviceInfo> deviceInfoFactory) : IAccountAuthenticator
 {
     private static readonly TimeSpan ChallengeLifetime = TimeSpan.FromMinutes(10);
     private readonly AudibleIdentityLifecycleCoordinator lifecycleCoordinator = snapshotStore.LifecycleCoordinator;
@@ -27,7 +28,9 @@ public sealed class AudibleAccountAuthenticator(
         ArgumentNullException.ThrowIfNull(request);
         request.Validate();
         cancellationToken.ThrowIfCancellationRequested();
-        var challenge = AudibleOAuthFlow.Create(request.Marketplace);
+        var deviceInfo = deviceInfoFactory?.Invoke()
+            ?? throw new InvalidOperationException("Android device metadata is unavailable. Sign-in cannot safely register this device.");
+        var challenge = AudibleOAuthFlow.Create(request.Marketplace, deviceInfo);
         var id = Guid.NewGuid().ToString("N");
         var expires = systemDateTime.UtcNow.Add(ChallengeLifetime);
         lock (gate)

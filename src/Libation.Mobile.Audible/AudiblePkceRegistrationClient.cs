@@ -24,12 +24,8 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 
     private const string DeviceType = AudibleOAuthFlow.AndroidDeviceType;
     private const string AppVersion = "2090263407";
-    private const string OsVersion = @"google\/raven\/raven:14\/UPB5.230623.003\/10615560:user\/release-keys";
     private const string SoftwareVersion = "130050002";
-    private const string DeviceModel = "sdk_gphone64_x86_64";
     private const string AppName = "com.audible.application";
-    private const string DeviceName =
-        "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android";
 
     public async Task<AudibleIdentitySnapshot> RegisterAsync(
         AudibleOAuthChallenge challenge,
@@ -39,6 +35,8 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         ArgumentNullException.ThrowIfNull(challenge);
         ArgumentException.ThrowIfNullOrWhiteSpace(authorizationCode);
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(challenge.DeviceInfo);
+        challenge.DeviceInfo.Validate();
 
         if (!string.Equals(challenge.Marketplace, challenge.Marketplace.Trim().ToLowerInvariant(), StringComparison.Ordinal))
             throw new InvalidOperationException("The OAuth marketplace is invalid.");
@@ -185,10 +183,10 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             ["device_serial"] = challenge.DeviceSerial,
             ["app_name"] = AppName,
             ["app_version"] = AppVersion,
-            ["device_model"] = DeviceModel,
-            ["os_version"] = OsVersion,
+            ["device_model"] = challenge.DeviceInfo.Model,
+            ["os_version"] = challenge.DeviceInfo.SdkVersion,
             ["software_version"] = SoftwareVersion,
-            ["device_name"] = DeviceName
+            ["device_name"] = challenge.DeviceInfo.DeviceName
         };
         var authData = new JObject
         {
@@ -217,10 +215,14 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 ["device_os_family"] = "android",
                 ["device_type"] = DeviceType,
                 ["device_serial"] = challenge.DeviceSerial,
-                ["manufacturer"] = "Google",
-                ["model"] = DeviceModel,
-                ["os_version"] = "34",
-                ["product"] = DeviceModel
+                ["manufacturer"] = challenge.DeviceInfo.Manufacturer,
+                ["brand"] = challenge.DeviceInfo.Brand,
+                ["model"] = challenge.DeviceInfo.Model,
+                ["device"] = challenge.DeviceInfo.Device,
+                ["os_version"] = challenge.DeviceInfo.SdkVersion,
+                ["os_release"] = challenge.DeviceInfo.OsRelease,
+                ["build_fingerprint"] = challenge.DeviceInfo.BuildFingerprint,
+                ["product"] = challenge.DeviceInfo.Product
             }
         };
         return root;

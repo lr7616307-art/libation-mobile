@@ -1,4 +1,8 @@
 using Libation.Mobile.Audible;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Xunit;
 
 namespace Libation.Mobile.Core.Tests;
@@ -8,7 +12,7 @@ public sealed class AudibleOAuthFlowTests
     [Fact]
     public void CreateIndiaChallenge_UsesCurrentAndroidWidevineAuthorizationShape()
     {
-        var flow = AudibleOAuthFlow.Create("in");
+        var flow = AudibleOAuthFlow.Create("in", TestDeviceInfo());
         var query = System.Web.HttpUtility.ParseQueryString(flow.AuthorizationUri.Query);
 
         Assert.Equal("https", flow.AuthorizationUri.Scheme);
@@ -35,8 +39,8 @@ public sealed class AudibleOAuthFlowTests
     [Fact]
     public void Create_GeneratesIndependentPkceDeviceAndRegistrationContextValues()
     {
-        var first = AudibleOAuthFlow.Create("in");
-        var second = AudibleOAuthFlow.Create("in");
+        var first = AudibleOAuthFlow.Create("in", TestDeviceInfo());
+        var second = AudibleOAuthFlow.Create("in", TestDeviceInfo());
 
         Assert.NotEqual(first.CodeVerifier, second.CodeVerifier);
         Assert.NotEqual(first.DeviceSerial, second.DeviceSerial);
@@ -52,7 +56,7 @@ public sealed class AudibleOAuthFlowTests
     [InlineData("in", "www.audible.in", "AJO3FBRUE6J4S")]
     public void Create_UsesMarketplaceSpecificAudibleCallback(string market, string host, string marketplaceId)
     {
-        var flow = AudibleOAuthFlow.Create(market);
+        var flow = AudibleOAuthFlow.Create(market, TestDeviceInfo());
         var query = System.Web.HttpUtility.ParseQueryString(flow.AuthorizationUri.Query);
 
         Assert.Equal(host, flow.CallbackUri.Host);
@@ -82,8 +86,95 @@ public sealed class AudibleOAuthFlowTests
     [Fact]
     public void Create_RejectsUnknownMarketplace()
     {
-        Assert.Throws<ArgumentException>(() => AudibleOAuthFlow.Create("xx"));
+        Assert.Throws<ArgumentException>(() => AudibleOAuthFlow.Create("xx", TestDeviceInfo()));
     }
+
+    [Fact]
+    public void Create_UsesActualHostDeviceMetadataInsteadOfAnEmulatorTemplate()
+    {
+        var info = TestDeviceInfo() with
+        {
+            Manufacturer = "Xiaomi",
+            Brand = "Redmi",
+            Model = "Redmi 9i",
+            Device = "dandelion",
+            Product = "dandelion_in",
+            BuildFingerprint = "redmi/dandelion_in/dandelion:10/QKQ1.200419.002/V12.0.5.0.QCPINXM:user/release-keys",
+            OsRelease = "10",
+            SdkVersion = "29",
+            DeviceName = "Xiaomi Redmi 9i",
+            DeviceLanguage = "en-IN",
+            ScreenWidthPixels = 720,
+            ScreenHeightPixels = 1600
+        };
+
+        var flow = AudibleOAuthFlow.Create("in", info);
+
+        Assert.Equal(info, flow.DeviceInfo);
+        Assert.DoesNotContain("sdk_gphone", flow.DeviceInfo.Model, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("raven", flow.DeviceInfo.BuildFingerprint, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(29, int.Parse(flow.DeviceInfo.SdkVersion));
+    }
+
+    [Fact]
+    public void Create_EncodesActualHostFactsInFrcContext()
+    {
+        var info = TestDeviceInfo() with
+        {
+            Manufacturer = "Xiaomi",
+            Brand = "Redmi",
+            Model = "Redmi 9i",
+            Device = "dandelion",
+            Product = "dandelion_in",
+            BuildFingerprint = "redmi/dandelion_in/dandelion:10/test:user/release-keys",
+            OsRelease = "10",
+            SdkVersion = "29",
+            DeviceName = "Xiaomi Redmi 9i",
+            DeviceLanguage = "hi",
+            ScreenWidthPixels = 720,
+            ScreenHeightPixels = 1600
+        };
+        var flow = AudibleOAuthFlow.Create("in", info);
+        var bytes = Convert.FromBase64String(flow.FrcValue);
+        var iv = bytes.AsSpan(9, 16).ToArray();
+        var cipherText = bytes.AsSpan(25).ToArray();
+        var key = Rfc2898DeriveBytes.Pbkdf2(
+            flow.DeviceSerial.AsSpan(), "AES/CBC/PKCS7Padding"u8,
+            1000, HashAlgorithmName.SHA1, 16);
+
+        byte[] plain;
+        using (var aes = Aes.Create())
+        {
+            aes.Key = key;
+            plain = aes.DecryptCbc(cipherText, iv, PaddingMode.PKCS7);
+        }
+        CryptographicOperations.ZeroMemory(key);
+
+        using var compressed = new MemoryStream(plain);
+        using var gzip = new GZipStream(compressed, CompressionMode.Decompress);
+        using var json = JsonDocument.Parse(gzip);
+        var root = json.RootElement;
+
+        Assert.Equal(info.BuildFingerprint, root.GetProperty("DeviceOSVersion").GetString());
+        Assert.Equal(info.DeviceName, root.GetProperty("DeviceName").GetString());
+        Assert.Equal("720", root.GetProperty("ScreenWidthPixels").GetString());
+        Assert.Equal("1600", root.GetProperty("ScreenHeightPixels").GetString());
+        Assert.Equal("hi", root.GetProperty("DeviceLanguage").GetString());
+        Assert.Equal("Unknown", root.GetProperty("Carrier").GetString());
+    }
+
+    [Fact]
+    public void Create_RejectsIncompleteOrImpossibleHostMetadata()
+    {
+        var info = TestDeviceInfo() with { ScreenWidthPixels = 0 };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => AudibleOAuthFlow.Create("in", info));
+    }
+
+    private static AudibleAndroidDeviceInfo TestDeviceInfo() => new(
+        "Test Manufacturer", "Test Brand", "Test Model", "test-device", "test-product",
+        "test/test/test:14/UP1A.1/test:user/release-keys", "14", "34",
+        "Test Android Device", "en-IN", 1080, 2400);
 
     private static string DecodeClientDeviceType(string clientId)
     {
