@@ -191,7 +191,7 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
                 100,
                 actionLabel: null);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (System.OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             FinishWithNotification(
                 startId,
@@ -260,7 +260,7 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
     {
         var builder = new Notification.Builder(this, ChannelId)
             .SetSmallIcon(Resource.Drawable.vorath_notification)
-            .SetContentTitle("VØRATH · Audible download")
+            .SetContentTitle(title.Length > 64 ? $"VØRATH · {title[..64]}" : $"VØRATH · {title}")
             .SetContentText(text.Length > 180 ? text[..180] : text)
             .SetOnlyAlertOnce(true)
             .SetOngoing(ongoing);
@@ -284,7 +284,7 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
                 PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
             builder.AddAction(
-                global::Android.Graphics.Drawables.Icon.CreateWithResource(this, Resource.Drawable.vorath_notification),
+                Resource.Drawable.vorath_notification,
                 new Java.Lang.String(actionLabel),
                 pendingIntent);
         }
