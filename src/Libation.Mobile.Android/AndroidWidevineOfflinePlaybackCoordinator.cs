@@ -339,8 +339,14 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     /// The encrypted manifest reference is saved before transfer so interrupted
     /// work can be retried without putting signed URLs in ordinary queue storage.
     /// </summary>
-    public async Task DownloadOfflineMediaAsync(
+    public Task DownloadOfflineMediaAsync(
         string asin,
+        CancellationToken cancellationToken = default)
+        => DownloadOfflineMediaWithProgressAsync(asin, null, cancellationToken);
+
+    public async Task DownloadOfflineMediaWithProgressAsync(
+        string asin,
+        IProgress<WidevineOfflineDownloadProgress>? progress,
         CancellationToken cancellationToken = default)
     {
         if (!await HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false))
@@ -375,7 +381,12 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         {
             var offlineStore = new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context);
             await offlineStore.DownloadAsync(
-                accountId, asin, content.ManifestUri, manifest.AudioStreamKeys, cancellationToken)
+                accountId,
+                asin,
+                content.ManifestUri,
+                manifest.AudioStreamKeys,
+                cancellationToken,
+                progress)
                 .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
