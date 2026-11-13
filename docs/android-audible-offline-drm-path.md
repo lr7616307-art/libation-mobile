@@ -238,3 +238,9 @@ A later smaller content-length report cannot shrink the previously persisted
 content length or byte progress. A same-title retry from Downloading, Paused or
 Failed retains partial encrypted progress; a fresh download after a Completed
 state begins with a clean progress record.
+
+
+The activity's resume callback may run many times while the foreground service is
+still executing. Recovery now checks the live service instance first and skips
+re-dispatch while a transfer is active, preventing a lifecycle callback from
+mistaking a pending Pause transition for process death and accidentally resuming it.
