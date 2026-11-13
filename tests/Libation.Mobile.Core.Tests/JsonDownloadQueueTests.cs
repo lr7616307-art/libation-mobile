@@ -257,6 +257,24 @@ public sealed class JsonDownloadQueueTests
 
 
     [Fact]
+    public async Task StartingFreshProtectedDownloadResetsOldProgress()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("provider:B012345678");
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync("provider:B012345678", 10_000, 10_000);
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Protected);
+
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(0, item.BytesReceived);
+        Assert.Null(item.TotalBytes);
+        Assert.Equal(DownloadStatus.Downloading, item.Status);
+    }
+
+    [Fact]
     public async Task ExistingAudibleOfflineMediaCanBeDisplayedAsProtectedInQueue()
     {
         using var directory = new TemporaryDirectory();
