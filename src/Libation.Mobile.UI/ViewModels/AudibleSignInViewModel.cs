@@ -217,7 +217,10 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             challengeId = challenge.ChallengeId;
 
             Status = "Complete sign-in on the Audible page inside VØRATH. Your password and verification codes stay on that sign-in page.";
-            var responseUrl = await _browser.OpenAsync(challenge.AuthorizationUri, cancellationToken);
+            var responseUrl = await _browser.OpenAsync(
+                challenge.AuthorizationUri,
+                challenge.SignInCookies ?? Array.Empty<ExternalSignInCookie>(),
+                cancellationToken);
             if (string.IsNullOrWhiteSpace(responseUrl))
             {
                 await _connection.CancelSignInAsync(challenge.ChallengeId, CancellationToken.None);
