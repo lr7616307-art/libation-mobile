@@ -115,7 +115,7 @@ public sealed class AudibleOAuthFlowTests
         Assert.Equal(info, flow.DeviceInfo);
         Assert.Equal(AudibleOAuthFlow.AndroidDeviceModel, AudibleOAuthFlow.AndroidDeviceProduct);
         Assert.Contains("Android 14", AudibleOAuthFlow.AndroidUserAgent);
-        Assert.Contains("sdk_gphone64_x86_64", AudibleOAuthFlow.AndroidOsVersion);
+        Assert.Contains("sdk_gphone64_x86_64", AudibleOAuthFlow.AndroidDeviceModel);
         Assert.Equal(20, flow.DeviceSerial.Length);
     }
 
