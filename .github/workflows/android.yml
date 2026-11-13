@@ -236,8 +236,8 @@ jobs:
             echo "::error::Could not restore the Pass 41 signing key. Refusing to publish an incompatible APK."
             exit 1
           fi
-          keytool -list -storetype JKS -keystore "$RUNNER_TEMP/vorath-ci-test.jks" \\
-            -alias vorath-test -storepass "$TEST_STORE_PASSWORD" \\
+          keytool -list -storetype JKS -keystore "$RUNNER_TEMP/vorath-ci-test.jks" \
+            -alias vorath-test -storepass "$TEST_STORE_PASSWORD" \
             -keypass "$TEST_KEY_PASSWORD" >/dev/null
       - name: Install Android workload
         run: dotnet workload install android
@@ -248,14 +248,14 @@ jobs:
         run: |
           set -euo pipefail
           version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
-          dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj \\
-            -c Release -r android-arm --no-restore \\
-            -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false \\
-            -p:AndroidPackageFormat=apk -p:ApplicationVersion="$version_code" \\
-            -p:AndroidKeyStore=true \\
-            -p:AndroidSigningKeyStore="$RUNNER_TEMP/vorath-ci-test.jks" \\
-            -p:AndroidSigningStorePass="$TEST_STORE_PASSWORD" \\
-            -p:AndroidSigningKeyAlias=vorath-test \\
+          dotnet publish src/Libation.Mobile.Android/Libation.Mobile.Android.csproj \
+            -c Release -r android-arm --no-restore \
+            -p:RuntimeIdentifiers= -p:AndroidCreatePackagePerAbi=false \
+            -p:AndroidPackageFormat=apk -p:ApplicationVersion="$version_code" \
+            -p:AndroidKeyStore=true \
+            -p:AndroidSigningKeyStore="$RUNNER_TEMP/vorath-ci-test.jks" \
+            -p:AndroidSigningStorePass="$TEST_STORE_PASSWORD" \
+            -p:AndroidSigningKeyAlias=vorath-test \
             -p:AndroidSigningKeyPass="$TEST_KEY_PASSWORD"
           output="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish"
           mapfile -t apks < <(find "$output" -maxdepth 1 -type f -name '*-Signed.apk')
@@ -267,7 +267,7 @@ jobs:
           apksigner="$(find "$sdk/build-tools" -type f -name apksigner | sort | tail -n 1)"
           test -n "$apksigner"
           cert_output="$("$apksigner" verify --print-certs "${apks[0]}" 2>&1)"
-          printf '%s\\n' "$cert_output"
+          printf '%s\n' "$cert_output"
           if ! printf '%s' "$cert_output" | grep -Fqi "$EXPECTED_TEST_CERT_SHA256"; then
             echo "::error::The APK is not signed by the existing Pass 41 test certificate."
             exit 1
