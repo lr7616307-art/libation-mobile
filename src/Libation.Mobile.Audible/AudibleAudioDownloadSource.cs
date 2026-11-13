@@ -132,8 +132,9 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 
         if (license is null ||
             !string.Equals(license.StatusCode, "Granted", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(
-                "Audible did not grant a Widevine content licence for this audiobook.");
+            throw new AudibleWidevineContentGrantException(
+                license?.StatusCode ?? "Missing",
+                license?.DrmType.ToString() ?? "Unknown");
 
         if (!string.Equals(license.DrmType.ToString(), "Widevine", StringComparison.OrdinalIgnoreCase))
             throw new AudibleWidevineNotAvailableException();
