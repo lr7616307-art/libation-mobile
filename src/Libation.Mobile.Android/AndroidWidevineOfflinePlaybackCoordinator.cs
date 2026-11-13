@@ -212,17 +212,27 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     /// confirmed expiry is retained until a provider renewal/release flow exists.
     /// An unknown DRM state fails closed instead of overwriting it.
     /// </summary>
+    public Task AcquireOfflineLicenseAsync(
+        string asin,
+        CancellationToken cancellationToken = default)
+        => AcquireOfflineLicenseAsync(asin, null, cancellationToken);
+
     public async Task AcquireOfflineLicenseAsync(
         string asin,
+        IProgress<AudibleOfflineDownloadStage>? stageProgress,
         CancellationToken cancellationToken = default)
     {
         if (await RemoveInactiveLicenseBeforeReplacementAsync(asin, cancellationToken)
                 .ConfigureAwait(false))
+        {
+            ReportStage(stageProgress, "licence-ready", "A valid Audible offline licence is already saved.");
             return;
+        }
 
+        ReportStage(stageProgress, "content-grant", "Requesting Audible's content-download authorization…");
         var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
-        var contentVersionKey = AudibleWidevineCacheIdentity.CreateContentVersionKey(
-            content.Acr, content.FileVersion);
+
+        ReportStage(stageProgress, "manifest", "Fetching and validating the Audible audio manifest…");
         await keySetStore.SaveProviderLicenseReferenceAsync(
             accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
         var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
@@ -236,18 +246,24 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
 
         try
         {
+            ReportStage(stageProgress, "device-challenge", "Creating the Android Widevine offline request…");
             challenge = drmSession.CreateOfflineKeyRequest(
                 manifest.InitializationData, manifest.MimeType);
 
+            ReportStage(stageProgress, "audible-license", "Sending the protected offline request to Audible…");
             response = await source.RequestWidevineLicenseBytesAsync(
                 asin, challenge, cancellationToken).ConfigureAwait(false);
 
+            ReportStage(stageProgress, "install-license", "Installing Audible's licence in Android's DRM store…");
             keySetId = drmSession.ProvideOfflineLicenseResponse(response);
+
+            ReportStage(stageProgress, "persist-license", "Securing the offline licence on this device…");
             await keySetStore.SaveAsync(accountId, asin, keySetId, cancellationToken)
                 .ConfigureAwait(false);
             persisted = true;
             await keySetStore.SaveProviderLicenseReferenceAsync(
                 accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
+            ReportStage(stageProgress, "licence-ready", "Audible's offline licence is installed and saved.");
         }
         catch
         {
@@ -267,6 +283,15 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             if (response is not null) CryptographicOperations.ZeroMemory(response);
             if (keySetId is not null) CryptographicOperations.ZeroMemory(keySetId);
         }
+    }
+
+    private static void ReportStage(
+        IProgress<AudibleOfflineDownloadStage>? progress,
+        string stage,
+        string message)
+    {
+        try { progress?.Report(new AudibleOfflineDownloadStage(stage, message)); }
+        catch (Exception) { /* UI/notification reporting must not break DRM handling. */ }
     }
 
     private async Task<bool> RemoveInactiveLicenseBeforeReplacementAsync(
