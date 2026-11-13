@@ -125,6 +125,32 @@ public sealed class AudibleLicenseFailureClassifierTests
             new InvalidOperationException("Network unavailable.")));
     }
 
+
+    [Fact]
+    public void GetSafeUserMessage_ReportsSafeWidevineGrantStatusAndDrmCategory()
+    {
+        var exception = new AudibleWidevineContentGrantException("Denied", "Adrm");
+
+        var message = AudibleLicenseFailureClassifier.GetSafeUserMessage(exception);
+
+        Assert.NotNull(message);
+        Assert.Contains("status: Denied", message, StringComparison.Ordinal);
+        Assert.Contains("DRM: Adrm", message, StringComparison.Ordinal);
+        Assert.Contains("not a download-transfer failure", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WidevineGrantException_DoesNotRetainUnrecognizedProviderText()
+    {
+        var exception = new AudibleWidevineContentGrantException(
+            "Denied: private customer details", "Widevine?token=secret");
+
+        Assert.Equal("Other", exception.StatusCode);
+        Assert.Equal("Other", exception.DrmType);
+        Assert.DoesNotContain("private customer", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secret", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static ContentLicenseDeniedException CreateDenial(params (string Validation, string Reason)[] reasons)
     {
         var license = new ContentLicense
