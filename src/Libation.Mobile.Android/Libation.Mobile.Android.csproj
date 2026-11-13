@@ -7,7 +7,7 @@
     <ApplicationTitle>VØRATH</ApplicationTitle>
     <!-- The CI workflow supplies a unique, increasing versionCode for every build. -->
     <ApplicationVersion Condition="'$(ApplicationVersion)' == ''">1</ApplicationVersion>
-    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>0.1.2</ApplicationDisplayVersion>
     <SupportedOSPlatformVersion>29.0</SupportedOSPlatformVersion>
     <RuntimeIdentifiers>android-arm;android-arm64</RuntimeIdentifiers>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
