@@ -445,9 +445,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                     "No offline Audible DASH media is saved for this audiobook.");
 
             if (!await keySetStore.IsDashDownloadCompleteAsync(accountId, asin, cancellationToken)
-                    .ConfigureAwait(false) ||
-                !await new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
-                    .HasCachedResourcesAsync(accountId, asin, cancellationToken).ConfigureAwait(false))
+                    .ConfigureAwait(false))
                 throw new InvalidOperationException(
                     "The Audible DASH download is incomplete. Connect to the internet and retry the offline download.");
 
