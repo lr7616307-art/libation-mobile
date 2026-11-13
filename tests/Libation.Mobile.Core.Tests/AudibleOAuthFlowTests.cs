@@ -158,7 +158,7 @@ public sealed class AudibleOAuthFlowTests
         using var json = JsonDocument.Parse(gzip);
         var root = json.RootElement;
 
-        Assert.Equal(AudibleOAuthFlow.AppName, root.GetProperty("ApplicationName").GetString());
+        Assert.Equal("com.audible.application", root.GetProperty("ApplicationName").GetString());
         Assert.Equal(AudibleOAuthFlow.AndroidOsVersion, root.GetProperty("DeviceOSVersion").GetString());
         Assert.Equal(AudibleOAuthFlow.AndroidFrcDeviceName, root.GetProperty("DeviceName").GetString());
         Assert.Equal("1080", root.GetProperty("ScreenWidthPixels").GetString());
