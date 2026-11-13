@@ -304,7 +304,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 : null;
             return (code, message);
         }
-        catch (JsonException) { return (null, null); }
+        catch (System.Text.Json.JsonException) { return (null, null); }
         catch (InvalidOperationException) { return (null, null); }
         catch (KeyNotFoundException) { return (null, null); }
     }
