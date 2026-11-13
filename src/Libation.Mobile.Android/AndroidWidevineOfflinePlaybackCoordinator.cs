@@ -375,7 +375,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     public Task DownloadOfflineMediaAsync(
         string asin,
         CancellationToken cancellationToken = default)
-        => DownloadOfflineMediaWithProgressAsync(asin, null, cancellationToken);
+        => DownloadOfflineMediaWithProgressAsync(asin, null, null, cancellationToken);
 
     public async Task DownloadOfflineMediaWithProgressAsync(
         string asin,
