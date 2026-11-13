@@ -38,14 +38,14 @@ public sealed class AudibleIdentitySnapshotSerializerTests
     {
         var legacy = CreateSnapshot() with
         {
-            RegistrationProfileId = AudibleOAuthFlow.LegacyIPhoneRegistrationProfileId,
+            RegistrationProfileId = AudibleOAuthFlow.LegacyAndroidRegistrationProfileId,
             DeviceType = "A2CZJZGLK2JJVM"
         };
 
         var restored = AudibleIdentitySnapshotSerializer.Deserialize(
             AudibleIdentitySnapshotSerializer.Serialize(legacy));
 
-        Assert.Equal(AudibleOAuthFlow.LegacyIPhoneRegistrationProfileId, restored.RegistrationProfileId);
+        Assert.Equal(AudibleOAuthFlow.LegacyAndroidRegistrationProfileId, restored.RegistrationProfileId);
         Assert.Equal("A2CZJZGLK2JJVM", restored.DeviceType);
     }
 
