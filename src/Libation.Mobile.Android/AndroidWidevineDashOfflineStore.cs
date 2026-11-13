@@ -112,6 +112,15 @@ public sealed class AndroidWidevineDashOfflineStore
         {
             throw;
         }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // Media3 may surface Downloader.cancel() as a platform exception
+            // rather than a managed OperationCanceledException. Preserve the
+            // same pause/resume semantics and keep the partial DASH cache.
+            throw new OperationCanceledException(
+                "The offline DASH transfer was paused.",
+                cancellationToken);
+        }
     }
 
     /// <summary>
