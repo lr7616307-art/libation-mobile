@@ -1,11 +1,17 @@
 using Android.App;
 using Android.Content;
 using Android.OS;
+using Libation.Mobile.Audible;
 using Libation.Mobile.Core;
 using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.Android;
 
+/// <summary>
+/// Runs the LibriSync-compatible Audible ADRM download in Android's foreground
+/// service. The provider-issued voucher is used to convert the downloaded AAX/AAXC
+/// file into a playable M4B; pause and process interruption retain the HTTP .part.
+/// </summary>
 [Service(Name = "org.libationmobile.app.AndroidAudibleOfflineDownloadService", Exported = false)]
 public sealed class AndroidAudibleOfflineDownloadService : Service
 {
@@ -16,12 +22,25 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
     private const string ExtraAsin = "asin";
     private const string ExtraTitle = "title";
 
+    private static readonly HttpClient DownloadHttpClient = new(new SocketsHttpHandler
+    {
+        AllowAutoRedirect = true,
+        MaxAutomaticRedirections = 5,
+        AutomaticDecompression = System.Net.DecompressionMethods.None,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    })
+    {
+        Timeout = Timeout.InfiniteTimeSpan
+    };
+
     private CancellationTokenSource? _runCancellation;
     private Task? _runTask;
     private string? _activeAsin;
     private string? _activeTitle;
 
-    public static Func<CancellationToken, Task<IAudibleWidevinePlaybackCoordinator?>>? CoordinatorFactory { get; set; }
+    public static Func<CancellationToken, Task<AudibleAudioDownloadSource?>>? SourceFactory { get; set; }
+    public static string DownloadDirectory { get; set; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "audible-downloads");
 
     public static void Start(Context context, string asin, string title)
     {
@@ -74,7 +93,7 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
             if (_runTask is null)
                 FinishWithNotification(
                     startId,
-                    "Download paused. Tap Resume to continue.",
+                    "Download paused. Your received bytes are saved; tap Resume to continue.",
                     null,
                     actionLabel: "Resume");
             return StartCommandResult.NotSticky;
@@ -107,7 +126,7 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
             NotificationId,
             BuildNotification(
                 _activeTitle!,
-                "Preparing Audible offline download…",
+                "Preparing Audible ADRM download…",
                 null,
                 indeterminate: true,
                 ongoing: true,
@@ -123,71 +142,103 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
         string title,
         CancellationToken cancellationToken)
     {
+        var partialPath = string.Empty;
+        var resumeMetadataPath = string.Empty;
+
         try
         {
-            var coordinator = await (CoordinatorFactory?.Invoke(cancellationToken)
-                ?? Task.FromResult<IAudibleWidevinePlaybackCoordinator?>(null));
-            if (coordinator is null)
-                throw new InvalidOperationException("Audible account session unavailable.");
+            var sourceFactory = SourceFactory
+                ?? throw new InvalidOperationException("The Audible ADRM download source is not configured.");
+            var source = await sourceFactory(cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Sign in to Audible again before downloading.");
+
+            Directory.CreateDirectory(DownloadDirectory);
+            var stagingDirectory = Path.Combine(DownloadDirectory, "staging");
+            Directory.CreateDirectory(stagingDirectory);
+            partialPath = Path.Combine(stagingDirectory, asin.ToUpperInvariant() + ".encrypted.part");
+            resumeMetadataPath = partialPath + ".resume.json";
 
             UpdateNotification(
                 title,
-                "Checking Audible offline authorization…",
+                "Requesting Audible ADRM/AAC-LC licence…",
                 null,
                 indeterminate: true,
                 ongoing: true,
                 actionLabel: "Pause");
 
-            if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken))
+            // LibriSync's actual Audible request: ADRM + AAC-LC, not the unrelated
+            // Widevine DASH route. The response includes the signed file URL and
+            // the provider-issued AAXC voucher (or the legacy AAX fallback).
+            var plan = await source.ResolveAdrmDownloadPlanAsync(asin, cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var progress = new Progress<AudioDownloadProgress>(value =>
+            {
+                var detail = value.TotalBytes is > 0
+                    ? FormatBytes(value.BytesReceived) + " of " + FormatBytes(value.TotalBytes.Value)
+                    : FormatBytes(value.BytesReceived) + " received";
+
+                UpdateNotification(
+                    title,
+                    detail,
+                    value.Percentage is { } percent ? (int)Math.Clamp(percent, 0d, 100d) : null,
+                    indeterminate: value.Percentage is null,
+                    ongoing: true,
+                    actionLabel: "Pause");
+            });
+
+            var downloader = new ResumableAudioFileDownloader(DownloadHttpClient);
+            var downloaded = await downloader.DownloadAsync(
+                plan.DownloadUri,
+                partialPath,
+                plan.ResumeFingerprint,
+                progress,
+                cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var outputPath = plan.MediaKind == AudibleAdrmMediaKind.Mpeg
+                ? Path.Combine(DownloadDirectory, asin.ToUpperInvariant() + ".mp3")
+                : Path.Combine(DownloadDirectory, asin.ToUpperInvariant() + ".m4b");
+
+            if (plan.MediaKind == AudibleAdrmMediaKind.Mpeg)
+            {
+                File.Move(downloaded.PartialFilePath, outputPath, overwrite: true);
+            }
+            else
             {
                 UpdateNotification(
                     title,
-                    "Requesting Audible offline licence…",
-                    null,
-                    indeterminate: true,
+                    "Download complete. Preparing playable audiobook…",
+                    100,
+                    indeterminate: false,
                     ongoing: true,
-                    actionLabel: "Pause");
-                await coordinator.AcquireOfflineLicenseAsync(asin, cancellationToken);
+                    actionLabel: null);
+
+                var converter = new AndroidFfmpegKitRunner();
+                await converter.ConvertToM4bAsync(
+                    downloaded.PartialFilePath,
+                    outputPath,
+                    plan,
+                    cancellationToken).ConfigureAwait(false);
+
+                // Delete the encrypted staging file only after FFmpeg has written
+                // and verified a non-empty M4B. Conversion errors keep the source
+                // and resume metadata so the user does not have to download again.
+                TryDelete(downloaded.PartialFilePath);
             }
 
+            TryDelete(resumeMetadataPath);
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!await coordinator.HasOfflineMediaAsync(asin, cancellationToken))
-            {
-                UpdateNotification(
-                    title,
-                    "Downloading encrypted audio…",
-                    null,
-                    indeterminate: true,
-                    ongoing: true,
-                    actionLabel: "Pause");
+            var outputInfo = new FileInfo(outputPath);
+            if (!outputInfo.Exists || outputInfo.Length <= 0)
+                throw new InvalidDataException("VØRATH did not produce a complete playable audiobook file.");
 
-                var progress = new Progress<AudioDownloadProgress>(value =>
-                {
-                    var detail = value.TotalBytes is > 0
-                        ? $"{FormatBytes(value.BytesReceived)} of {FormatBytes(value.TotalBytes.Value)}"
-                        : $"{FormatBytes(value.BytesReceived)} received";
-                    UpdateNotification(
-                        title,
-                        detail,
-                        value.Percentage is { } percent ? (int)Math.Clamp(percent, 0d, 100d) : null,
-                        indeterminate: value.Percentage is null,
-                        ongoing: true,
-                        actionLabel: "Pause");
-                });
-
-                await coordinator.DownloadOfflineMediaAsync(asin, progress, cancellationToken);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (!await coordinator.HasOfflineMediaAsync(asin, cancellationToken))
-                throw new InvalidDataException("Audible's encrypted offline audio did not pass its cache integrity check.");
-
-            MainView.PlatformAudibleDownloadCompletedAction?.Invoke(asin);
+            MainView.PlatformAudibleDownloadCompletedAction?.Invoke(asin, outputPath);
             FinishWithNotification(
                 startId,
-                "Download complete. This audiobook is ready to play offline in VØRATH.",
+                "Download complete. The audiobook is ready to play offline in VØRATH.",
                 100,
                 actionLabel: null);
         }
@@ -195,23 +246,30 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
         {
             FinishWithNotification(
                 startId,
-                "Download paused. Completed encrypted segments are kept; tap Resume to continue.",
+                "Download paused. Received bytes are preserved; tap Resume to continue.",
                 null,
                 actionLabel: "Resume");
         }
-        catch (NotSupportedException)
+        catch (ContentLicenseDeniedException)
         {
             FinishWithNotification(
                 startId,
-                "Audible did not grant Widevine offline media for this title or device. No DRM fallback was used.",
+                "Audible did not grant the ADRM licence or legacy AAX download URL for this account/title.",
                 null,
                 actionLabel: "Retry");
         }
-        catch (Exception)
+        catch (NotSupportedException ex)
         {
+            var message = SafeStatusMessage(ex.Message);
+            FinishWithNotification(startId, message, null, actionLabel: "Retry");
+        }
+        catch (Exception ex)
+        {
+            // Do not display signed provider URLs, vouchers, keys or raw HTTP bodies.
+            var detail = SafeStatusMessage(ex.Message);
             FinishWithNotification(
                 startId,
-                "Download could not finish. Tap Retry to continue. VØRATH keeps valid encrypted cache segments.",
+                "Download could not finish: " + detail + " Received bytes are kept where safe; tap Retry.",
                 null,
                 actionLabel: "Retry");
         }
@@ -221,6 +279,19 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
             _runCancellation?.Dispose();
             _runCancellation = null;
         }
+    }
+
+    private static string SafeStatusMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return "Unknown Audible download error.";
+        var safe = message.Trim();
+        if (safe.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
+            safe.Contains("authorization", StringComparison.OrdinalIgnoreCase) ||
+            safe.Contains("voucher", StringComparison.OrdinalIgnoreCase) ||
+            safe.Contains("bearer", StringComparison.OrdinalIgnoreCase))
+            return "Audible rejected or could not complete the authorized media request.";
+        return safe.Length > 180 ? safe[..180] : safe;
     }
 
     private void FinishWithNotification(int startId, string text, int? percentage, string? actionLabel)
@@ -260,7 +331,7 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
     {
         var builder = new Notification.Builder(this, ChannelId)
             .SetSmallIcon(Resource.Drawable.vorath_notification)
-            .SetContentTitle(title.Length > 64 ? $"VØRATH · {title[..64]}" : $"VØRATH · {title}")
+            .SetContentTitle(title.Length > 64 ? "VØRATH · " + title[..64] : "VØRATH · " + title)
             .SetContentText(text.Length > 180 ? text[..180] : text)
             .SetOnlyAlertOnce(true)
             .SetOngoing(ongoing);
@@ -321,9 +392,16 @@ public sealed class AndroidAudibleOfflineDownloadService : Service
 
     private static string FormatBytes(long bytes)
     {
-        if (bytes < 1024) return $"{bytes} B";
-        if (bytes < 1024 * 1024) return $"{bytes / 1024d:0.0} KB";
-        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024d * 1024):0.0} MB";
-        return $"{bytes / (1024d * 1024 * 1024):0.00} GB";
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024d).ToString("0.0") + " KB";
+        if (bytes < 1024L * 1024 * 1024) return (bytes / (1024d * 1024)).ToString("0.0") + " MB";
+        return (bytes / (1024d * 1024 * 1024)).ToString("0.00") + " GB";
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 }
