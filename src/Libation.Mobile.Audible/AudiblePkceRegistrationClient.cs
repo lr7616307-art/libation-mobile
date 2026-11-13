@@ -44,12 +44,11 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             throw new InvalidOperationException("The OAuth marketplace is invalid.");
 
         var locale = Localization.Get(challenge.Marketplace);
+        var expectedLoginHost = locale.LoginUri().Host;
+        var expectedCallbackHost = locale.AudibleLoginUri().Host;
+        var cookieDomain = locale.LoginUri().Host;
         if (!AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
             throw new InvalidOperationException("The Audible callback does not match the selected marketplace.");
-        var expectedLoginHost = challenge.CallbackUri.Host;
-        var topDomain = expectedLoginHost["www.audible.".Length..];
-        var amazonDomain = "amazon." + topDomain;
-        var cookieDomain = amazonDomain;
 
         if (!challenge.AuthorizationUri.IsAbsoluteUri
             || !challenge.CallbackUri.IsAbsoluteUri
@@ -61,9 +60,9 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             || !string.IsNullOrEmpty(challenge.CallbackUri.UserInfo)
             || !string.Equals(challenge.AuthorizationUri.AbsolutePath, "/ap/signin", StringComparison.OrdinalIgnoreCase)
             || !string.Equals(challenge.AuthorizationUri.Host, expectedLoginHost, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(challenge.CallbackUri.Host, expectedLoginHost, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(challenge.CallbackUri.Host, expectedCallbackHost, StringComparison.OrdinalIgnoreCase)
             || !AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
-            throw new InvalidOperationException("The Audible OAuth challenge does not match the selected marketplace's Android sign-in callback.");
+            throw new InvalidOperationException("The Audible OAuth challenge does not match the selected marketplace's Android sign-in and callback hosts.");
 
         if (challenge.DeviceSerial.Length != 20
             || challenge.DeviceSerial.Any(character => !(character is >= '0' and <= '9' or >= 'a' and <= 'f')))
@@ -88,7 +87,11 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             || !string.Equals(authorizationParameters["openid.oa2.code_challenge"], expectedCodeChallenge, StringComparison.Ordinal)
             || !string.Equals(authorizationParameters["openid.oa2.client_id"], "device:" + clientIdHex, StringComparison.Ordinal)
             || !string.Equals(authorizationParameters["openid.return_to"], challenge.CallbackUri.AbsoluteUri, StringComparison.Ordinal)
-            || !string.Equals(authorizationParameters["pageId"], "amzn_audible_android_aui_v2_dark_" + challenge.Marketplace, StringComparison.Ordinal))
+            || !string.Equals(authorizationParameters["pageId"],
+                locale.WithUsername
+                    ? "amzn_audible_android_privatepool_aui_v2_dark_" + locale.CountryCode
+                    : "amzn_audible_android_aui_v2_dark_" + locale.CountryCode,
+                StringComparison.Ordinal))
             throw new InvalidOperationException("The Audible authorization URL does not match the Android device registration or PKCE challenge.");
 
         var body = CreateAndroidRegistrationBody(
@@ -96,7 +99,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 
         using var message = new HttpRequestMessage(
             HttpMethod.Post,
-            new Uri("https://api." + amazonDomain + "/auth/register"))
+            new Uri(locale.RegistrationUri(), "/auth/register"))
         {
             Content = new StringContent(body.ToString(Formatting.None), Encoding.UTF8, "application/json")
         };
@@ -199,7 +202,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             ["requested_token_type"] = new JArray("bearer", "mac_dms", "store_authentication_cookie", "website_cookies"),
             ["cookies"] = new JObject
             {
-                ["domain"] = "." + cookieDomain,
+                ["domain"] = cookieDomain,
                 ["website_cookies"] = new JArray()
             },
             ["user_context_map"] = new JObject { ["frc"] = challenge.FrcValue },
