@@ -92,8 +92,12 @@ public static class AudibleIdentitySnapshotSerializer
             throw new InvalidDataException("Unsupported identity provider.");
         if (!string.Equals(snapshot.AudibleApiVersion, AudibleIdentitySnapshot.SupportedAudibleApiVersion, StringComparison.Ordinal))
             throw new InvalidDataException("Unsupported AudibleApi identity format version.");
-        if (!string.Equals(snapshot.RegistrationProfileId, AudibleOAuthFlow.RegistrationProfileId, StringComparison.Ordinal))
-            throw new InvalidDataException("The saved Audible identity uses an obsolete device-registration profile. Sign in again to register the updated profile.");
+        // Existing installations may still have a valid iPhone-profile identity.
+        // Keep it readable so users can safely disconnect it and re-register with
+        // the Android profile; never treat the old profile as Widevine-capable.
+        if (!string.Equals(snapshot.RegistrationProfileId, AudibleOAuthFlow.RegistrationProfileId, StringComparison.Ordinal)
+            && !string.Equals(snapshot.RegistrationProfileId, AudibleOAuthFlow.LegacyIPhoneRegistrationProfileId, StringComparison.Ordinal))
+            throw new InvalidDataException("The saved Audible identity uses an unsupported device-registration profile. Sign in again to register the Android profile.");
 
         RequireText(snapshot.LocaleName, nameof(snapshot.LocaleName));
         RequirePrefix(snapshot.AccessToken, "Atna|", nameof(snapshot.AccessToken));
