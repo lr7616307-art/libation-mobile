@@ -70,6 +70,15 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                 actionLabel: null);
             try { runCancellation?.Cancel(); }
             catch (ObjectDisposedException) { }
+
+            if (runTask is null || runTask.IsCompleted)
+            {
+                FinishWithNotification(
+                    startId,
+                    "Paused. Downloaded DASH segments are preserved; tap Resume to continue.",
+                    null,
+                    actionLabel: "Resume");
+            }
             return StartCommandResult.NotSticky;
         }
 
@@ -219,7 +228,9 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     {
         UpdateNotification(message, percentage, indeterminate: false, ongoing: false, actionLabel);
         StopForeground(StopForegroundFlags.Detach);
-        StopSelf(startId);
+        // Pause/resume starts a newer service startId. StopSelf(startId) with
+        // the original run's ID would leave the detached service alive.
+        StopSelf();
     }
 
     private void UpdateNotification(
