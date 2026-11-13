@@ -123,6 +123,20 @@ public sealed class JsonWidevineOfflineDownloadStateStoreTests
             () => store.MarkDownloadingAsync("not-an-asin", "Example audiobook"));
     }
 
+
+    [Fact]
+    public async Task PauseCannotOverwriteACompletedState()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = new JsonWidevineOfflineDownloadStateStore(Path.Combine(directory.Path, "state.json"));
+        await store.MarkDownloadingAsync("B012345678", "Example audiobook");
+        await store.MarkCompletedAsync("B012345678");
+
+        await store.MarkPausedAsync("B012345678");
+
+        Assert.Equal(WidevineOfflineDownloadStatus.Completed, (await store.GetAsync())!.Status);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
