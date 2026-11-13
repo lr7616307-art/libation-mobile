@@ -77,7 +77,8 @@ public sealed class LibrarySyncService
                     CoverImageUrl = string.IsNullOrWhiteSpace(remoteBook.CoverImageUrl) ? localBook.CoverImageUrl : remoteBook.CoverImageUrl,
                     CoverImagePath = localBook.CoverImagePath,
                     Chapters = localBook.Chapters.Count > 0 ? localBook.Chapters : remoteBook.Chapters,
-                    FileSizeBytes = localBook.FileSizeBytes > 0 ? localBook.FileSizeBytes : remoteBook.FileSizeBytes
+                    FileSizeBytes = localBook.FileSizeBytes > 0 ? localBook.FileSizeBytes : remoteBook.FileSizeBytes,
+                    IsWidevineOfflineAvailable = localBook.IsWidevineOfflineAvailable
                 }
                 : remoteBook).ToArray();
 

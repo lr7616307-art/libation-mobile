@@ -225,11 +225,28 @@
                             Click="DownloadAudibleBookFromDetailClicked"/>
                     <TextBlock Text="{Binding DownloadSettingsStatus}"
                                FontSize="11" Opacity="0.78" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding AudioImportStatus}" FontSize="12"
+                               Foreground="#F0C6A8" TextWrapping="Wrap"/>
                     <Button Content="▶  Play audiobook in VØRATH" HorizontalAlignment="Stretch"
                             IsVisible="{Binding HasPlayableDetailAudio}" Click="PlayDetailBookClicked"/>
                     <TextBlock Text="{Binding DetailProtectedDownloadLabel}"
                                IsVisible="{Binding HasProtectedDetailDownload}"
                                FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
+                    <Button Content="Cancel Audible operation"
+                            IsVisible="{Binding IsProtectedAudibleOperationInProgress}"
+                            HorizontalAlignment="Stretch"
+                            Click="CancelProtectedAudibleOperationClicked"/>
+                    <TextBlock Text="Diagnostic only: sends a renewal challenge to Audible and reports response metadata. It does not install the returned licence or replace this offline copy."
+                               IsVisible="{Binding DetailBook.IsWidevineOfflineAvailable}"
+                               FontSize="10" Opacity="0.68" TextWrapping="Wrap"/>
+                    <Button Content="Check Audible renewal support"
+                            IsVisible="{Binding DetailBook.IsWidevineOfflineAvailable}"
+                            HorizontalAlignment="Stretch"
+                            Click="ProbeAudibleRenewalClicked"/>
+                    <Button Content="Remove offline copy"
+                            IsVisible="{Binding DetailBook.IsWidevineOfflineAvailable}"
+                            HorizontalAlignment="Stretch"
+                            Click="RemoveAudibleOfflineBookClicked"/>
                   </StackPanel>
                 </Border>
                 <Border CornerRadius="12" Padding="12" Background="#211A2D"
@@ -301,6 +318,12 @@
             </Grid>
             <TextBox PlaceholderText="Search Audible titles or authors" Text="{Binding AudibleSearchText, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock Text="{Binding SyncStatus}" FontSize="12" TextWrapping="Wrap" Opacity="0.8"/>
+            <TextBlock Text="{Binding AudioImportStatus}" FontSize="12"
+                       Foreground="#F0C6A8" TextWrapping="Wrap"/>
+            <Button Content="Cancel current Audible operation"
+                    IsVisible="{Binding IsProtectedAudibleOperationInProgress}"
+                    HorizontalAlignment="Stretch"
+                    Click="CancelProtectedAudibleOperationClicked"/>
             <TextBlock Text="{Binding LastSuccessfulSyncLabel}" FontSize="11" Opacity="0.6"/>
             <TextBlock Text="{Binding AudibleLibraryEmptyMessage}" FontSize="14" Opacity="0.7" IsVisible="{Binding HasNoAudibleBooks}"/>
             <ItemsControl ItemsSource="{Binding AudibleBooks}">
@@ -370,6 +393,15 @@
                           VerticalAlignment="Center" Click="CycleDownloadFolderOrganizationClicked"/>
                 </Grid>
                 <TextBlock Text="{Binding DownloadFolderOrganizationExample}" FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+                <Border Height="1" Background="#40324F" Margin="0,2"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="Audible download quality" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding AudibleDownloadQualityLabel}" FontSize="12" Foreground="#C4B5FD"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Change" Padding="16,9"
+                          VerticalAlignment="Center" Click="CycleAudibleDownloadQualityClicked"/>
+                </Grid>
                 <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
                 <TextBlock Text="VØRATH requests Audible-issued offline licences. Unprotected audio is added to your playable library; DRM-protected files are saved encrypted in this folder and are not sent to the normal player." FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
               </StackPanel>
@@ -403,7 +435,14 @@
                           </Grid>
                           <TextBlock Text="{Binding ErrorMessage}" FontSize="11" Foreground="#E89A9A"
                                      TextWrapping="Wrap" IsVisible="{Binding HasErrorMessage}"/>
+                          <StackPanel Spacing="3" IsVisible="{Binding HasProgress}">
+                            <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercentage}" Height="5"/>
+                            <TextBlock Text="{Binding ProgressLabel}" FontSize="10" Opacity="0.72"/>
+                          </StackPanel>
                           <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="{Binding DownloadActionLabel}" Padding="12,5"
+                                    IsVisible="{Binding CanToggleAudibleDownload}"
+                                    Click="QueueAudibleDownloadActionClicked"/>
                             <Button Content="Retry" Padding="12,5" IsVisible="{Binding CanRetry}"
                                     Click="RetryQueueClicked"/>
                             <Button Content="Remove" Padding="12,5" IsVisible="{Binding CanRemove}"

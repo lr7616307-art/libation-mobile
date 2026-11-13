@@ -1,4 +1,5 @@
 using Android.Content;
+using System.Text.Json;
 using Libation.Mobile.Core;
 using Libation.Mobile.UI.ViewModels;
 
@@ -56,9 +57,18 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
         }
     }
 
-    public async Task<string?> OpenAsync(Uri authorizationUri, CancellationToken cancellationToken = default)
+    public Task<string?> OpenAsync(
+        Uri authorizationUri,
+        CancellationToken cancellationToken = default)
+        => OpenAsync(authorizationUri, Array.Empty<ExternalSignInCookie>(), cancellationToken);
+
+    public async Task<string?> OpenAsync(
+        Uri authorizationUri,
+        IReadOnlyList<ExternalSignInCookie> signInCookies,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(authorizationUri);
+        ArgumentNullException.ThrowIfNull(signInCookies);
         if (!authorizationUri.IsAbsoluteUri
             || !string.Equals(authorizationUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(authorizationUri.Host))
@@ -88,6 +98,7 @@ public sealed class AndroidExternalBrowserLauncher(Context context) : IExternalB
             var intent = new Intent(_context, typeof(AudibleLoginActivity));
             intent.PutExtra(AudibleLoginActivity.AuthorizationUrlExtra, authorizationUri.AbsoluteUri);
             intent.PutExtra(AudibleLoginActivity.ExpectedHostExtra, callbackUri.Host);
+            intent.PutExtra(AudibleLoginActivity.SignInCookiesExtra, JsonSerializer.Serialize(signInCookies));
             intent.PutExtra(AudibleLoginActivity.RequestIdExtra, requestId);
             intent.AddFlags(ActivityFlags.NewTask);
             _context.StartActivity(intent);
