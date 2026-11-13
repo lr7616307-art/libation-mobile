@@ -47,7 +47,14 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
 
         // Share one live view model so account state changes after login, sync and
         // disconnect are reflected by the account tile without rebuilding the view.
-        var signInViewModel = new AudibleSignInViewModel(connection, browser);
+        var signInViewModel = new AudibleSignInViewModel(
+            connection,
+            browser,
+            async cancellationToken =>
+            {
+                var savedIdentity = await snapshots.LoadAsync(cancellationToken);
+                return AudibleAndroidRegistrationValidator.IsCurrentAndroidRegistration(savedIdentity);
+            });
         MainView.PlatformSignInViewModelFactory = () => signInViewModel;
 
         // The provider restores only the identity already stored on this device.
@@ -72,6 +79,13 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
             var savedIdentity = await snapshots.LoadAsync(cancellationToken);
             if (savedIdentity is null)
                 return null;
+
+            // AudibleApi 14.1.2 silently downgrades a Widevine request to ADRM
+            // unless the saved identity uses its Android device type. Stop here
+            // with an actionable account-level fix instead of showing a vague
+            // per-title licence failure.
+            AudibleAndroidRegistrationValidator.EnsureCurrentAndroidRegistration(savedIdentity);
+
             if (string.IsNullOrWhiteSpace(savedIdentity.AmazonAccountId))
                 throw new InvalidOperationException(
                     "The saved Audible identity does not contain the account identifier required for offline licence storage.");
