@@ -203,8 +203,16 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
             catch (OperationCanceledException) when (
                 timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
+                await AndroidLocalAudioPlaybackService.StopWidevinePlaybackIfCurrentAsync(
+                    asin, CancellationToken.None).ConfigureAwait(false);
                 throw new TimeoutException(
                     "Android did not confirm that the saved Audible offline stream became ready within 30 seconds.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await AndroidLocalAudioPlaybackService.StopWidevinePlaybackIfCurrentAsync(
+                    asin, CancellationToken.None).ConfigureAwait(false);
+                throw;
             }
         }
         finally
