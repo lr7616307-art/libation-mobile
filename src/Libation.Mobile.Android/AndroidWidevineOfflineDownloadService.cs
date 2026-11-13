@@ -27,6 +27,13 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     private Task? runTask;
     private string? activeAsin;
     private string? activeTitle;
+    private bool userRequestedPause;
+    private JsonWidevineOfflineDownloadStateStore? recoveryStore;
+    private const string RecoveryFileName = "vorath-widevine-download-recovery-v1.json";
+
+    private JsonWidevineOfflineDownloadStateStore RecoveryStore
+        => recoveryStore ??= new JsonWidevineOfflineDownloadStateStore(
+            Path.Combine(FilesDir!.AbsolutePath!, RecoveryFileName));
 
     public static Func<CancellationToken, Task<IAudibleWidevinePlaybackCoordinator?>>? CoordinatorFactory { get; set; }
 
@@ -63,6 +70,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
 
         if (intent?.Action == ActionPause)
         {
+            userRequestedPause = true;
             UpdateNotification(
                 "Pausing offline download…",
                 null,
@@ -74,6 +82,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
 
             if (runTask is null || runTask.IsCompleted)
             {
+                _ = PersistPausedAsync(activeAsin);
                 FinishWithNotification(
                     startId,
                     "Paused. Downloaded DASH segments are preserved; tap Resume to continue.",
@@ -96,6 +105,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         if (runTask is { IsCompleted: false })
             return StartCommandResult.NotSticky;
 
+        userRequestedPause = false;
         runCancellation?.Dispose();
         runCancellation = new CancellationTokenSource();
         StartForeground(
@@ -113,6 +123,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     {
         try
         {
+            await RecoveryStore.MarkDownloadingAsync(asin, title, CancellationToken.None).ConfigureAwait(false);
             var factory = CoordinatorFactory
                 ?? throw new InvalidOperationException("The Widevine offline service is not configured.");
             var coordinator = await factory(cancellationToken).ConfigureAwait(false)
@@ -148,6 +159,8 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                 ongoing: true,
                 actionLabel: "Pause");
 
+            var lastPersistedBytes = 0L;
+            var lastPersistedAt = DateTimeOffset.MinValue;
             var progress = new InlineProgress<WidevineOfflineDownloadProgress>(value =>
             {
                 var detail = value.ContentLength is > 0
@@ -159,6 +172,16 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                     indeterminate: value.Percentage is null,
                     ongoing: true,
                     actionLabel: "Pause");
+
+                var now = DateTimeOffset.UtcNow;
+                if (value.BytesDownloaded - lastPersistedBytes >= 1_048_576 ||
+                    (now - lastPersistedAt).TotalSeconds >= 2 ||
+                    value.Percentage is >= 100d)
+                {
+                    lastPersistedBytes = Math.Max(lastPersistedBytes, value.BytesDownloaded);
+                    lastPersistedAt = now;
+                    _ = PersistProgressAsync(asin, value);
+                }
             });
 
             // Retry only transient transport errors. Media3's cache keeps completed
@@ -196,6 +219,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                 throw new InvalidDataException(
                     "Android could not verify both the offline licence and the complete cached audiobook.");
 
+            await RecoveryStore.MarkCompletedAsync(asin, CancellationToken.None).ConfigureAwait(false);
             MainView.PlatformWidevineOfflineDownloadCompletedAction?.Invoke(asin);
             FinishWithNotification(
                 startId,
@@ -205,6 +229,11 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         }
         catch (System.OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            // Only an explicit notification Pause is recorded as user-paused.
+            // Unexpected service/process teardown leaves Downloading persisted so
+            // the next foreground app launch can safely recover it.
+            if (userRequestedPause)
+                await PersistPausedAsync(asin).ConfigureAwait(false);
             FinishWithNotification(
                 startId,
                 "Paused. Downloaded DASH segments are preserved; tap Resume to continue.",
@@ -213,9 +242,12 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         }
         catch (Exception exception)
         {
+            var safeMessage = SafeFailureMessage(exception);
+            try { await RecoveryStore.MarkFailedAsync(asin, safeMessage, CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception persistenceException) { System.Diagnostics.Debug.WriteLine($"Could not persist Widevine failure state: {persistenceException.Message}"); }
             FinishWithNotification(
                 startId,
-                SafeFailureMessage(exception),
+                safeMessage,
                 null,
                 actionLabel: "Retry");
         }
@@ -225,6 +257,50 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             runCancellation?.Dispose();
             runCancellation = null;
         }
+    }
+
+    public static void RecoverInterrupted(Context context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var appContext = context.ApplicationContext ?? context;
+        _ = RecoverInterruptedCoreAsync(appContext);
+    }
+
+    private static async Task RecoverInterruptedCoreAsync(Context context)
+    {
+        try
+        {
+            var path = Path.Combine(context.FilesDir!.AbsolutePath!, RecoveryFileName);
+            var state = await new JsonWidevineOfflineDownloadStateStore(path)
+                .GetAsync(CancellationToken.None).ConfigureAwait(false);
+            if (state?.ShouldAutoRecover == true)
+                Start(context, state.Asin, state.Title);
+        }
+        catch (Exception exception)
+        {
+            // A damaged recovery record must never prevent the app from opening.
+            System.Diagnostics.Debug.WriteLine($"Widevine download recovery was skipped: {exception.Message}");
+        }
+    }
+
+    private async Task PersistProgressAsync(string asin, WidevineOfflineDownloadProgress value)
+    {
+        try
+        {
+            await RecoveryStore.MarkProgressAsync(
+                asin, value.BytesDownloaded, value.ContentLength, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine($"Could not persist Widevine progress: {exception.Message}");
+        }
+    }
+
+    private async Task PersistPausedAsync(string? asin)
+    {
+        if (string.IsNullOrWhiteSpace(asin)) return;
+        try { await RecoveryStore.MarkPausedAsync(asin, CancellationToken.None).ConfigureAwait(false); }
+        catch (Exception exception) { System.Diagnostics.Debug.WriteLine($"Could not persist Widevine pause state: {exception.Message}"); }
     }
 
     private static bool IsRetryableMediaFailure(Exception exception)
