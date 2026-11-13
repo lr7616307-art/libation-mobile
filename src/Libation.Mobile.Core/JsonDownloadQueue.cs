@@ -61,6 +61,48 @@ public sealed class JsonDownloadQueue : IDownloadQueue
         }, cancellationToken);
     }
 
+    public async Task EnqueueProviderAsync(
+        string audiobookId,
+        string displayTitle,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(displayTitle);
+        const string providerPrefix = "provider:";
+        if (!audiobookId.StartsWith(providerPrefix, StringComparison.Ordinal) ||
+            audiobookId.Length != providerPrefix.Length + 10 ||
+            audiobookId.AsSpan(providerPrefix.Length).ToString().Any(character => !char.IsAsciiLetterOrDigit(character)))
+            throw new ArgumentException("A valid Audible provider identifier is required.", nameof(audiobookId));
+        if (displayTitle.Trim().Length > 300)
+            throw new ArgumentOutOfRangeException(nameof(displayTitle));
+
+        await MutateAsync(items =>
+        {
+            var index = items.FindIndex(item =>
+                string.Equals(item.AudiobookId, audiobookId, StringComparison.Ordinal));
+            var now = DateTimeOffset.UtcNow;
+            if (index < 0)
+            {
+                items.Add(new DownloadQueueItem(
+                    audiobookId, DownloadStatus.Queued, now, now,
+                    DisplayTitle: displayTitle.Trim()));
+                return;
+            }
+
+            var existing = items[index];
+            var status = existing.Status == DownloadStatus.Failed
+                ? DownloadStatus.Queued
+                : existing.Status;
+            items[index] = existing with
+            {
+                Status = status,
+                UpdatedAtUtc = now,
+                ErrorMessage = status == DownloadStatus.Queued ? null : existing.ErrorMessage,
+                DisplayTitle = displayTitle.Trim()
+            };
+        }, cancellationToken);
+    }
+
     public async Task EnqueueAuthorizedAsync(
         string audiobookId,
         string sourceUrl,
