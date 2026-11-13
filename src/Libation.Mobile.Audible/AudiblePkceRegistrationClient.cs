@@ -45,9 +45,10 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         var expectedLoginHost = locale.LoginUri().Host;
         var expectedCallbackHost = locale.AudibleLoginUri().Host;
         var loginHost = locale.LoginUri().Host;
-        var cookieDomain = "." + (loginHost.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
-            ? loginHost[4..]
-            : loginHost);
+        // AudibleApi CurrentAndroid uses the login host (www.amazon.<tld>) as
+        // the registration body's cookies.domain. The browser cookie jar separately
+        // receives the dotted parent domain.
+        var registrationCookieDomain = loginHost;
         if (!AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
             throw new InvalidOperationException("The Audible callback does not match the selected marketplace.");
 
@@ -96,7 +97,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             throw new InvalidOperationException("The Audible authorization URL does not match the Android device registration or PKCE challenge.");
 
         var body = CreateAndroidRegistrationBody(
-            challenge, authorizationCode, clientIdHex, cookieDomain);
+            challenge, authorizationCode, clientIdHex, registrationCookieDomain);
 
         using var message = new HttpRequestMessage(
             HttpMethod.Post,
@@ -174,8 +175,11 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         AudibleOAuthChallenge challenge,
         string authorizationCode,
         string clientIdHex,
-        string cookieDomain)
+        string registrationCookieDomain)
     {
+        // Keep this in lockstep with AudibleApi.DeviceRegistrationProfile.CurrentAndroid
+        // and OAuth2.GetRegistrationBody. These are virtual-device values, not the
+        // physical handset's Build.* values.
         var registrationData = new JObject
         {
             ["domain"] = "DeviceLegacy",
@@ -183,10 +187,10 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             ["device_serial"] = challenge.DeviceSerial,
             ["app_name"] = AppName,
             ["app_version"] = AppVersion,
-            ["device_model"] = challenge.DeviceInfo.Model,
-            ["os_version"] = challenge.DeviceInfo.SdkVersion,
+            ["device_model"] = AudibleOAuthFlow.AndroidDeviceModel,
+            ["os_version"] = AudibleOAuthFlow.AndroidOsVersion,
             ["software_version"] = SoftwareVersion,
-            ["device_name"] = challenge.DeviceInfo.DeviceName
+            ["device_name"] = "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android"
         };
         var authData = new JObject
         {
@@ -203,7 +207,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             ["requested_token_type"] = new JArray("bearer", "mac_dms", "store_authentication_cookie", "website_cookies"),
             ["cookies"] = new JObject
             {
-                ["domain"] = cookieDomain,
+                ["domain"] = registrationCookieDomain,
                 ["website_cookies"] = new JArray()
             },
             ["user_context_map"] = new JObject { ["frc"] = challenge.FrcValue },
@@ -215,14 +219,10 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
                 ["device_os_family"] = "android",
                 ["device_type"] = DeviceType,
                 ["device_serial"] = challenge.DeviceSerial,
-                ["manufacturer"] = challenge.DeviceInfo.Manufacturer,
-                ["brand"] = challenge.DeviceInfo.Brand,
-                ["model"] = challenge.DeviceInfo.Model,
-                ["device"] = challenge.DeviceInfo.Device,
-                ["os_version"] = challenge.DeviceInfo.SdkVersion,
-                ["os_release"] = challenge.DeviceInfo.OsRelease,
-                ["build_fingerprint"] = challenge.DeviceInfo.BuildFingerprint,
-                ["product"] = challenge.DeviceInfo.Product
+                ["manufacturer"] = "Google",
+                ["model"] = AudibleOAuthFlow.AndroidDeviceModel,
+                ["os_version"] = AudibleOAuthFlow.AndroidOsVersionNumber,
+                ["product"] = AudibleOAuthFlow.AndroidDeviceModel
             }
         };
         return root;
