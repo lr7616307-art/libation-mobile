@@ -86,9 +86,17 @@ public sealed class AudioFileDownloader
 
 public sealed record AudioDownloadProgress(long BytesReceived, long? TotalBytes)
 {
-    public double? Percentage => TotalBytes is > 0
-        ? Math.Clamp(BytesReceived * 100d / TotalBytes.Value, 0d, 100d)
-        : null;
+    /// <summary>
+    /// Optional provider/downloader estimate when the complete content length
+    /// is unknown (for example, a multi-resource DASH download).
+    /// </summary>
+    public double? ReportedPercentage { get; init; }
+
+    public double? Percentage => ReportedPercentage is { } reported
+        ? Math.Clamp(reported, 0d, 100d)
+        : TotalBytes is > 0
+            ? Math.Clamp(BytesReceived * 100d / TotalBytes.Value, 0d, 100d)
+            : null;
 }
 
 public sealed record AudioDownloadResult(string FilePath, long BytesReceived);
