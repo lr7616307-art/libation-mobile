@@ -160,6 +160,25 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         {
             await RecoveryStore.MarkDownloadingAsync(asin, title, CancellationToken.None).ConfigureAwait(false);
             await UpdateQueueStatusAsync(asin, DownloadStatus.Downloading).ConfigureAwait(false);
+
+            // The atomic recovery record is written before the queue mirror.
+            // If Android kills the process between those writes, restore the
+            // authoritative byte count into the visible queue on the next run.
+            var recoveredState = await RecoveryStore.GetAsync(cancellationToken).ConfigureAwait(false);
+            await RestoreQueueProgressAsync(asin, recoveredState).ConfigureAwait(false);
+            var recoveredPercentage = recoveredState?.Percentage is { } savedPercentage
+                ? (int)Math.Clamp(savedPercentage, 0d, 100d)
+                : (int?)null;
+            var recoveredMessage = recoveredState?.BytesDownloaded > 0
+                ? $"Resuming with {FormatBytes(recoveredState.BytesDownloaded)} of saved encrypted segments…"
+                : "Preparing Audible offline authorization…";
+            UpdateNotification(
+                recoveredMessage,
+                recoveredPercentage,
+                indeterminate: recoveredPercentage is null,
+                ongoing: true,
+                actionLabel: "Pause");
+
             var factory = CoordinatorFactory
                 ?? throw new InvalidOperationException("The Widevine offline service is not configured.");
             var coordinator = await factory(cancellationToken).ConfigureAwait(false)
@@ -348,6 +367,34 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         {
             // A damaged recovery record must never prevent the app from opening.
             System.Diagnostics.Debug.WriteLine($"Widevine download recovery was skipped: {exception.Message}");
+        }
+    }
+
+    private async Task RestoreQueueProgressAsync(
+        string asin,
+        WidevineOfflineDownloadState? state)
+    {
+        if (state is null || state.BytesDownloaded <= 0)
+            return;
+
+        try
+        {
+            var queue = DownloadQueueFactory?.Invoke();
+            if (queue is null)
+                return;
+
+            await queue.UpdateProgressAsync(
+                "provider:" + asin,
+                state.BytesDownloaded,
+                state.ContentLength,
+                CancellationToken.None).ConfigureAwait(false);
+            MainView.PlatformWidevineOfflineDownloadQueueChangedAction?.Invoke();
+        }
+        catch (Exception exception)
+        {
+            // The protected transfer can resume from the recovery record even
+            // if its visible queue mirror needs another refresh later.
+            System.Diagnostics.Debug.WriteLine($"Could not restore Audible queue progress: {exception.Message}");
         }
     }
 
