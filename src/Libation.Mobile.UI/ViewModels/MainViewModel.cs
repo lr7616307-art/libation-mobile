@@ -931,7 +931,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string PendingImportLabel => _pendingImport is null ? string.Empty : "Backup contains " + _pendingImport.Count + " entries. Confirm to replace the current catalogue.";
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
     public bool IsQueueEmpty => QueueItems.Count == 0;
-    public bool HasPendingDownloadItems => QueueItems.Any(x => x.Status == DownloadStatus.Queued);
+    public bool HasPendingDownloadItems => QueueItems.Any(x => x.Status == DownloadStatus.Queued && !x.AudiobookId.StartsWith("provider:", StringComparison.Ordinal));
     public string QueueCountLabel => $"Download queue ({QueueItems.Count})";
     public string QueueSummaryLabel
     {
@@ -941,10 +941,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var downloading = QueueItems.Count(x => x.Status == DownloadStatus.Downloading);
             var completed = QueueItems.Count(x => x.Status == DownloadStatus.Completed);
             var protectedCount = QueueItems.Count(x => x.Status == DownloadStatus.Protected);
+            var paused = QueueItems.Count(x => x.Status == DownloadStatus.Paused);
             var failed = QueueItems.Count(x => x.Status == DownloadStatus.Failed);
             var completedLabel = $"{completed} completed" +
                 (protectedCount > 0 ? $" · {protectedCount} protected" : string.Empty);
-            return $"{queued} queued · {downloading} downloading · {completedLabel} · {failed} failed";
+            return $"{queued} queued · {downloading} downloading · {paused} paused · {completedLabel} · {failed} failed";
         }
     }
     public bool IsDownloadQueueRunning => _isDownloadQueueRunning;
