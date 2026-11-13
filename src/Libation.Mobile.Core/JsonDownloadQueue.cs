@@ -160,10 +160,16 @@ public sealed class JsonDownloadQueue : IDownloadQueue
             if (current.Status != DownloadStatus.Downloading)
                 return;
 
-            var updatedTotal = totalBytes is > 0 ? totalBytes : current.TotalBytes;
+            var updatedTotal = totalBytes is > 0
+                ? current.TotalBytes is > 0
+                    ? Math.Max(current.TotalBytes.Value, totalBytes.Value)
+                    : totalBytes
+                : current.TotalBytes;
             var updatedBytes = Math.Max(current.BytesReceived, bytesReceived);
-            if (updatedTotal is > 0)
-                updatedBytes = Math.Min(updatedBytes, updatedTotal.Value);
+            // Never reduce the already persisted byte count to match a later,
+            // smaller provider length report. Expand the known total instead.
+            if (updatedTotal is > 0 && updatedBytes > updatedTotal.Value)
+                updatedTotal = updatedBytes;
 
             items[index] = current with
             {
