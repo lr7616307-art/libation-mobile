@@ -33,6 +33,7 @@ public sealed class AudibleOfflineDownloadPipelineTests
         Assert.Equal(1, backend.TransferCalls);
         Assert.Contains(stages.Values, item => item.Stage == "authorizing");
         Assert.Contains(stages.Values, item => item.Stage == "transferring");
+        Assert.Contains(stages.Values, item => item.Stage == "test-transfer");
         Assert.Contains(stages.Values, item => item.Stage == "verifying");
         Assert.Equal("completed", stages.Values[^1].Stage);
         Assert.Single(transfer.Values);
