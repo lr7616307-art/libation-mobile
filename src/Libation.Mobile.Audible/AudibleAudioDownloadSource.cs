@@ -211,14 +211,10 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         if (string.IsNullOrWhiteSpace(keyText))
             throw new InvalidDataException("Audible's ADRM voucher does not contain a content key.");
 
-        // The legacy AAX voucher carries four activation bytes as eight hex
-        // characters. AAXC uses two Base64-encoded 16-byte values.
-        if (keyText.Length == 8 && keyText.All(Uri.IsHexDigit) &&
-            string.IsNullOrWhiteSpace(voucher.Iv))
-        {
-            return CreatePlan(audiobookId, downloadUri, AudibleAdrmMediaKind.Aax, ".aax", null, null, keyText.ToLowerInvariant());
-        }
-
+        // AudibleApi returns the AAX voucher as eight hexadecimal activation
+        // characters. AAXC vouchers are Base64-encoded 16-byte key/IV pairs.
+        // Decode Base64 first so a valid Base64 token that happens to contain only
+        // hexadecimal characters cannot be misclassified as an AAX activation code.
         var key = DecodeVoucherValue(keyText, "key");
         var iv = string.IsNullOrWhiteSpace(voucher.Iv)
             ? Array.Empty<byte>()
