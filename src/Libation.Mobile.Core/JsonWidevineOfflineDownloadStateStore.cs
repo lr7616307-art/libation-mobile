@@ -151,7 +151,8 @@ public sealed class JsonWidevineOfflineDownloadStateStore
         return MutateAsync(current =>
         {
             if (current is null ||
-                !string.Equals(current.Asin, asin, StringComparison.OrdinalIgnoreCase))
+                !string.Equals(current.Asin, asin, StringComparison.OrdinalIgnoreCase) ||
+                current.Status != WidevineOfflineDownloadStatus.Downloading)
                 return current;
             return current with
             {
