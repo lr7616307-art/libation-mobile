@@ -36,12 +36,26 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         // Audible identity and the minimum account session use encrypted storage.
         var secrets = new AndroidSecretStore(this);
         var snapshots = new AudibleIdentitySnapshotStore(secrets);
-        // Follow LibriSync's current Audible registration profile. This is a provider
-        // registration choice and intentionally does not fabricate Android build details.
+        // Registration metadata must describe this real Android host. Do not send
+        // an emulator fingerprint, fabricated Pixel model, or guessed carrier.
+        var displayMetrics = Resources?.DisplayMetrics;
+        var deviceInfo = new AudibleAndroidDeviceInfo(
+            Build.Manufacturer ?? "Unknown",
+            Build.Brand ?? "Unknown",
+            Build.Model ?? "Unknown",
+            Build.Device ?? "Unknown",
+            Build.Product ?? "Unknown",
+            Build.Fingerprint ?? "Unknown",
+            Build.VERSION.Release ?? "Unknown",
+            ((int)Build.VERSION.SdkInt).ToString(System.Globalization.CultureInfo.InvariantCulture),
+            $"{Build.Manufacturer} {Build.Model}".Trim(),
+            System.Globalization.CultureInfo.CurrentUICulture.Name,
+            displayMetrics?.WidthPixels ?? 0,
+            displayMetrics?.HeightPixels ?? 0);
         var registrationClient = new AudiblePkceRegistrationClient(new HttpClient());
         var tokenRefresher = new AudibleTokenRefreshClient(new HttpClient(), new SystemDateTime());
         var authenticator = new AudibleAccountAuthenticator(
-            snapshots, registrationClient, tokenRefresher, new SystemDateTime());
+            snapshots, registrationClient, tokenRefresher, new SystemDateTime(), () => deviceInfo);
         var connection = new AccountConnectionService(authenticator, new AccountSessionStore(secrets));
         var browser = new AndroidExternalBrowserLauncher(this);
 
