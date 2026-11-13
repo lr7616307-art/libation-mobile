@@ -28,6 +28,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     private string? activeAsin;
     private string? activeTitle;
     private bool userRequestedPause;
+    private bool resumeRequestedWhileStopping;
     private JsonWidevineOfflineDownloadStateStore? recoveryStore;
     private const string RecoveryFileName = "vorath-widevine-download-recovery-v1.json";
 
@@ -81,11 +82,17 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     {
         var incomingAsin = intent?.GetStringExtra(ExtraAsin);
         var incomingTitle = intent?.GetStringExtra(ExtraTitle);
-        if (!string.IsNullOrWhiteSpace(incomingAsin)) activeAsin = incomingAsin;
-        if (!string.IsNullOrWhiteSpace(incomingTitle)) activeTitle = incomingTitle;
 
         if (intent?.Action == ActionPause)
         {
+            // Never let a Pause action for a queued second title cancel the title
+            // currently using the singleton foreground service.
+            if (runTask is { IsCompleted: false } &&
+                !string.Equals(incomingAsin, activeAsin, StringComparison.OrdinalIgnoreCase))
+                return StartCommandResult.NotSticky;
+
+            if (!string.IsNullOrWhiteSpace(incomingAsin)) activeAsin = incomingAsin;
+            if (!string.IsNullOrWhiteSpace(incomingTitle)) activeTitle = incomingTitle;
             userRequestedPause = true;
             UpdateNotification(
                 "Pausing offline download…",
@@ -108,7 +115,8 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             return StartCommandResult.NotSticky;
         }
 
-        if (intent?.Action != ActionStart || !IsValidAsin(activeAsin) || string.IsNullOrWhiteSpace(activeTitle))
+        if (intent?.Action != ActionStart || !IsValidAsin(incomingAsin) ||
+            string.IsNullOrWhiteSpace(incomingTitle))
         {
             StartForeground(
                 NotificationId,
@@ -119,15 +127,25 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         }
 
         if (runTask is { IsCompleted: false })
+        {
+            if (userRequestedPause &&
+                string.Equals(incomingAsin, activeAsin, StringComparison.OrdinalIgnoreCase))
+                resumeRequestedWhileStopping = true;
+            // A different Audible title remains safely queued. Do not overwrite
+            // activeAsin/title while the service is still processing the first.
             return StartCommandResult.NotSticky;
+        }
 
+        activeAsin = incomingAsin;
+        activeTitle = incomingTitle;
         userRequestedPause = false;
+        resumeRequestedWhileStopping = false;
         runCancellation?.Dispose();
         runCancellation = new CancellationTokenSource();
         StartForeground(
             NotificationId,
             BuildNotification("Preparing Audible offline authorization…", null, true, true, "Pause"));
-        runTask = RunDownloadAsync(startId, activeAsin!, activeTitle!, runCancellation.Token);
+        runTask = RunDownloadAsync(startId, activeAsin, activeTitle, runCancellation.Token);
         return StartCommandResult.RedeliverIntent;
     }
 
@@ -274,9 +292,24 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
         }
         finally
         {
+            var shouldResume = resumeRequestedWhileStopping &&
+                string.Equals(activeAsin, asin, StringComparison.OrdinalIgnoreCase);
+            resumeRequestedWhileStopping = false;
             runTask = null;
             runCancellation?.Dispose();
             runCancellation = null;
+
+            // A very fast Resume tap can arrive before cancellation has unwound.
+            // Queue it here instead of dropping the user's action.
+            if (shouldResume && IsValidAsin(asin))
+            {
+                userRequestedPause = false;
+                runCancellation = new CancellationTokenSource();
+                StartForeground(
+                    NotificationId,
+                    BuildNotification("Resuming Audible offline download…", null, true, true, "Pause"));
+                runTask = RunDownloadAsync(startId, asin, title, runCancellation.Token);
+            }
         }
     }
 
