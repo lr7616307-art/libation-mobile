@@ -184,3 +184,21 @@ Return a clear unsupported/error state if the device lacks Widevine, the identit
 - [Android MediaDrm reference](https://developer.android.com/reference/android/media/MediaDrm)
 - [Android offline key request constant](https://developer.android.com/reference/android/media/MediaDrm#KEY_TYPE_OFFLINE)
 - [Media3 ExoPlayer DRM documentation](https://developer.android.com/media/media3/exoplayer/drm)
+
+
+## Pass 32 — persistent protected-download recovery
+
+The Android foreground service records a small, atomic recovery record in app-private storage:
+ASIN, display title, state, byte progress, optional content length, and update time. It does
+not store signed media URLs, DASH manifest URLs, DRM licence material, or keys.
+
+An active download is reconciled when the app next resumes. The service then obtains a fresh
+provider-authorized manifest and continues through Media3's existing encrypted DASH cache;
+completed encrypted segments remain reusable. An explicit Pause is persisted separately and
+is not auto-resumed. The notification's Resume action starts that same title again. Completed
+and failed states are not restarted automatically.
+
+The recovery record is metadata only. It does not claim the device has received a usable
+Audible licence or that offline playback is available; the service must still verify both the
+offline licence and the complete cached media before reporting success. If the record is
+malformed, recovery is skipped and the app remains usable.
