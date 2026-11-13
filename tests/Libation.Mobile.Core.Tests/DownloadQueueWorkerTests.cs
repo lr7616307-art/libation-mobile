@@ -55,11 +55,11 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
-    public async Task ProcessNextAsync_ProtectedAudibleDownloadIsSavedWithoutMarkingItPlayable()
+    public async Task ProcessNextAsync_ProtectedMediaIsSavedWithoutMarkingItPlayable()
     {
         using var directory = new TemporaryDirectory();
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
-        await queue.EnqueueAsync("provider:ASIN123456");
+        await queue.EnqueueAsync("book-protected-media");
         var staging = Path.Combine(directory.Path, "protected.aaxc");
         var payload = new byte[] { 9, 8, 7, 6 };
         using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
