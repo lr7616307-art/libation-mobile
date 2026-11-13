@@ -11,6 +11,7 @@ public interface IAudibleWidevinePlaybackCoordinator
     Task<bool> HasOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
     Task AcquireOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task DownloadOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
+    Task DownloadOfflineMediaAsync(string asin, IProgress<AudioDownloadProgress>? progress, CancellationToken cancellationToken = default);
     Task PlayAsync(string asin, string title, long startPositionMilliseconds = 0, bool autoPlay = true, CancellationToken cancellationToken = default);
     Task RemoveOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task RemoveAllOfflineLicensesAsync(CancellationToken cancellationToken = default);
@@ -41,6 +42,12 @@ public partial class MainView
 
     /// <summary>Legacy external title launcher, retained for non-download navigation only.</summary>
     public static Func<string, Task>? PlatformOpenAudibleTitleFactory { get; set; }
+
+    /// <summary>Starts an Audible-authorized background offline download in Android's foreground service.</summary>
+    public static Action<string, string>? PlatformAudibleOfflineDownloadStartAction { get; set; }
+
+    /// <summary>Refreshes the local catalogue after the foreground Audible download completes.</summary>
+    public static Action<string>? PlatformAudibleDownloadCompletedAction { get; set; }
 
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
