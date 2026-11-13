@@ -1079,7 +1079,9 @@ public partial class MainView : UserControl
 
         try
         {
+            _viewModel.ReportAudioStatus("Starting VØRATH offline download. Checking your saved Audible session…");
             phase = "restoring your Audible account session";
+            _viewModel.ReportAudioStatus("Checking your saved Audible account session…");
             var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
             if (coordinator is null)
             {
@@ -1089,23 +1091,28 @@ public partial class MainView : UserControl
 
             var asin = book.Id["provider:".Length..];
             phase = "checking the offline licence";
+            _viewModel.ReportAudioStatus("Checking whether this title already has a valid offline licence…");
             if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken))
             {
                 _viewModel.ReportAudioStatus("Requesting an Audible-authorized Widevine offline licence…");
                 phase = "requesting the Audible offline licence";
+                _viewModel.ReportAudioStatus("Audible is being asked to authorize offline playback for this title…");
                 await coordinator.AcquireOfflineLicenseAsync(asin, cancellationToken);
             }
 
             phase = "checking saved encrypted audio";
+            _viewModel.ReportAudioStatus("Checking VØRATH's protected offline audio cache…");
             if (!await coordinator.HasOfflineMediaAsync(asin, cancellationToken))
             {
                 _viewModel.ReportAudioStatus("Downloading Audible's encrypted audio into VØRATH. You can cancel here.");
                 phase = "downloading encrypted Audible audio";
+                _viewModel.ReportAudioStatus("Downloading encrypted Audible audio. Keep VØRATH open; this can take several minutes…");
                 await coordinator.DownloadOfflineMediaAsync(asin, cancellationToken);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             phase = "saving the offline status";
+            _viewModel.ReportAudioStatus("Download data received. Verifying and saving the offline status…");
             await _viewModel.MarkWidevineOfflineAvailableAsync(book.Id, cancellationToken);
 
             if (!startPlayback)
@@ -1140,11 +1147,18 @@ public partial class MainView : UserControl
         }
         catch (Exception ex)
         {
-            var detail = ex is InvalidOperationException or IOException
-                ? " " + ex.Message
-                : " " + ex.GetType().Name;
-            if (detail.Length > 220) detail = detail[..220];
-            _viewModel.ReportAudioStatus("Audible download failed while " + phase + "." + detail);
+            var details = new List<string>();
+            for (Exception? current = ex; current is not null && details.Count < 3; current = current.InnerException)
+            {
+                var message = current.Message?.Trim();
+                if (!string.IsNullOrWhiteSpace(message) && !details.Contains(message, StringComparer.Ordinal))
+                    details.Add(message);
+            }
+            var detail = details.Count == 0 ? ex.GetType().Name : string.Join(" → ", details);
+            if (ex is HttpRequestException { StatusCode: { } statusCode })
+                detail = $"HTTP {(int)statusCode} ({statusCode}): {detail}";
+            if (detail.Length > 500) detail = detail[..500];
+            _viewModel.ReportAudioStatus($"Audible download failed while {phase}: {detail}");
         }
         finally
         {
