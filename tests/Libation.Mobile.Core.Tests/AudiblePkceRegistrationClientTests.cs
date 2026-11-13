@@ -26,7 +26,7 @@ public sealed class AudiblePkceRegistrationClientTests
         Assert.Equal("DeviceLegacy", root.GetProperty("registration_data").GetProperty("domain").GetString());
         Assert.Equal("2090263407", root.GetProperty("registration_data").GetProperty("app_version").GetString());
         Assert.Equal("130050002", root.GetProperty("registration_data").GetProperty("software_version").GetString());
-        Assert.Equal(@"google\/raven\/raven:14\/UPB5.230623.003\/10615560:user\/release-keys",
+        Assert.Equal("34",
             root.GetProperty("registration_data").GetProperty("os_version").GetString());
         Assert.Equal(AudibleOAuthFlow.AndroidDeviceType,
             root.GetProperty("registration_data").GetProperty("device_type").GetString());
