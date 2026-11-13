@@ -35,7 +35,8 @@ public static class AudibleWidevineCacheIdentity
             return true;
         return value is { Length: 66 } &&
             value.StartsWith("v-", StringComparison.Ordinal) &&
-            value.AsSpan(2).IndexOfAnyExcept("0123456789abcdef") < 0;
+            value.Skip(2).All(character =>
+                character is >= '0' and <= '9' or >= 'a' and <= 'f');
     }
 
     public static string CreateResourceFingerprint(Uri resourceUri, string contentVersionKey)
