@@ -4,6 +4,11 @@ using Libation.Mobile.UI.ViewModels;
 
 namespace Libation.Mobile.UI.Views;
 
+public sealed record WidevineOfflineDownloadProgress(
+    long BytesDownloaded,
+    long? ContentLength,
+    double? Percentage);
+
 public interface IAudibleWidevinePlaybackCoordinator
 {
     Task<bool> HasOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
@@ -11,6 +16,10 @@ public interface IAudibleWidevinePlaybackCoordinator
     Task<bool> HasOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
     Task AcquireOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task DownloadOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
+    Task DownloadOfflineMediaWithProgressAsync(
+        string asin,
+        IProgress<WidevineOfflineDownloadProgress>? progress,
+        CancellationToken cancellationToken = default);
     Task PlayAsync(string asin, string title, long startPositionMilliseconds = 0, bool autoPlay = true, CancellationToken cancellationToken = default);
     Task RemoveOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task RemoveAllOfflineLicensesAsync(CancellationToken cancellationToken = default);
@@ -20,6 +29,12 @@ public partial class MainView
 {
     /// <summary>Creates an authorized Widevine offline-licence/playback coordinator on demand.</summary>
     public static Func<CancellationToken, Task<IAudibleWidevinePlaybackCoordinator?>>? PlatformWidevinePlaybackCoordinatorFactory { get; set; }
+
+    /// <summary>Starts the provider-authorized offline download in Android's foreground service.</summary>
+    public static Action<string, string>? PlatformAudibleOfflineDownloadStartAction { get; set; }
+
+    /// <summary>Called after the foreground service verifies the offline licence and all DASH byte ranges.</summary>
+    public static Action<string>? PlatformWidevineOfflineDownloadCompletedAction { get; set; }
 
     /// <summary>Set by the platform host before Avalonia creates the main view.</summary>
     public static Func<AudibleSignInViewModel>? PlatformSignInViewModelFactory { get; set; }
