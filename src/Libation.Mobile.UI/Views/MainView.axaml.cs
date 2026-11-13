@@ -82,19 +82,19 @@ public partial class MainView : UserControl
             ?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         AttachPlaybackStateNotifications();
         _activeView = new WeakReference<MainView>(this);
-        PlatformAudibleDownloadCompletedAction = asin =>
+        PlatformAudibleDownloadCompletedAction = (asin, audioFilePath) =>
         {
             var audiobookId = "provider:" + asin;
             Dispatcher.UIThread.Post(async () =>
             {
                 try
                 {
-                    await _viewModel.MarkWidevineOfflineAvailableAsync(audiobookId);
+                    await _viewModel.MarkAudibleLocalFileAvailableAsync(audiobookId, audioFilePath);
                 }
                 catch (Exception exception)
                 {
                     System.Diagnostics.Debug.WriteLine(
-                        $"Could not refresh Audible offline status: {exception.GetType().Name}");
+                        $"Could not save completed Audible audio: {exception.GetType().Name}");
                 }
             });
         };
