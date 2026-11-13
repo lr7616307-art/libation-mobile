@@ -105,7 +105,11 @@ public sealed class JsonWidevineOfflineDownloadStateStore
                 return current;
 
             var bytes = Math.Max(current.BytesDownloaded, bytesDownloaded);
-            var total = contentLength is > 0 ? contentLength : current.ContentLength;
+            var total = contentLength is > 0
+                ? current.ContentLength is > 0
+                    ? Math.Max(current.ContentLength.Value, contentLength.Value)
+                    : contentLength
+                : current.ContentLength;
             if (total is > 0)
                 bytes = Math.Min(bytes, total.Value);
             return current with
