@@ -12,7 +12,7 @@ public sealed class AudibleOAuthFlowTests
         var query = System.Web.HttpUtility.ParseQueryString(flow.AuthorizationUri.Query);
 
         Assert.Equal("https", flow.AuthorizationUri.Scheme);
-        Assert.Equal("www.audible.in", flow.AuthorizationUri.Host);
+        Assert.Equal("www.amazon.in", flow.AuthorizationUri.Host);
         Assert.Equal("/ap/signin", flow.AuthorizationUri.AbsolutePath);
         Assert.Equal("https://www.audible.in/ap/maplanding", flow.CallbackUri.AbsoluteUri);
         Assert.Equal(flow.CallbackUri.AbsoluteUri, query["openid.return_to"]);
