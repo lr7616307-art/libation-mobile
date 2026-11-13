@@ -298,7 +298,7 @@ public sealed class AndroidWidevineDashOfflineStore
             // write and the durable title index update, but only for this version.
             foreach (var cacheKey in GetCacheKeys(cache))
             {
-                if (cacheKey.StartsWith(contentScope + ":", StringComparison.Ordinal))
+                if (AudibleWidevineCacheIdentity.IsContentCacheKey(contentScope, cacheKey))
                     keysToRemove.Add(cacheKey);
             }
 
