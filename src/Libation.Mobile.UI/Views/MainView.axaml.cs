@@ -1105,9 +1105,9 @@ public partial class MainView : UserControl
                 return;
             }
 
-            // Register the Audible title in the same durable queue used by the
-            // foreground service before starting provider authorization.
-            await _viewModel.EnqueueAsync(book.Id);
+            // Persist both the provider ID and title before starting the
+            // foreground service so queued items can be drained after this one.
+            await _viewModel.EnqueueAudibleDownloadAsync(book.Id, book.Title);
             await _viewModel.RefreshDownloadQueueAsync();
             if (_downloadQueue is not null &&
                 !(await _downloadQueue.GetItemsAsync()).Any(item => item.AudiobookId == book.Id))
