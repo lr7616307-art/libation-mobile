@@ -52,10 +52,12 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
             System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName,
             displayMetrics?.WidthPixels ?? 0,
             displayMetrics?.HeightPixels ?? 0);
+        var deviceSerialStore = new AudibleAndroidDeviceSerialStore(this);
         var registrationClient = new AudiblePkceRegistrationClient(new HttpClient());
         var tokenRefresher = new AudibleTokenRefreshClient(new HttpClient(), new SystemDateTime());
         var authenticator = new AudibleAccountAuthenticator(
-            snapshots, registrationClient, tokenRefresher, new SystemDateTime(), () => deviceInfo);
+            snapshots, registrationClient, tokenRefresher, new SystemDateTime(),
+            () => deviceInfo, () => deviceSerialStore.GetOrCreate());
         var connection = new AccountConnectionService(authenticator, new AccountSessionStore(secrets));
         var browser = new AndroidExternalBrowserLauncher(this);
 
