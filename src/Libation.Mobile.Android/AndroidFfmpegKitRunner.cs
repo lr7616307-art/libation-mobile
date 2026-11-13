@@ -56,6 +56,7 @@ public sealed class AndroidFfmpegKitRunner
 
         arguments.AddRange(
         [
+            "-f", plan.MediaKind == AudibleAdrmMediaKind.Aaxc ? "aaxc" : "aax",
             "-i", input,
             "-map", "0:a:0",
             "-map_metadata", "0",
