@@ -96,6 +96,18 @@ public sealed class AudibleLicenseFailureClassifierTests
     }
 
     [Fact]
+    public void GetSafeUserMessage_ExplainsOneTimeAndroidRegistrationRefresh()
+    {
+        var message = AudibleLicenseFailureClassifier.GetSafeUserMessage(
+            new AudibleAndroidRegistrationRequiredException());
+
+        Assert.NotNull(message);
+        Assert.Contains("Refresh Android registration", message, StringComparison.Ordinal);
+        Assert.Contains("one-time account registration refresh", message, StringComparison.Ordinal);
+        Assert.Contains("not approval for each audiobook", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void GetSafeUserMessage_IdentifiesNonWidevineContentWithoutFallback()
     {
         var message = AudibleLicenseFailureClassifier.GetSafeUserMessage(
