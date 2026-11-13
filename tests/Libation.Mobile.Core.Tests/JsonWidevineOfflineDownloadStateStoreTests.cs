@@ -114,6 +114,22 @@ public sealed class JsonWidevineOfflineDownloadStateStoreTests
     }
 
     [Fact]
+    public async Task SmallerLaterContentLengthDoesNotShrinkRecoveredProgress()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = new JsonWidevineOfflineDownloadStateStore(Path.Combine(directory.Path, "state.json"));
+        await store.MarkDownloadingAsync("B012345678", "Example audiobook");
+        await store.MarkProgressAsync("B012345678", 800, 1000);
+
+        await store.MarkProgressAsync("B012345678", 300, 500);
+
+        var state = await store.GetAsync();
+        Assert.Equal(800, state!.BytesDownloaded);
+        Assert.Equal(1000, state.ContentLength);
+        Assert.Equal(80d, state.Percentage);
+    }
+
+    [Fact]
     public async Task InvalidIdentityIsRejected()
     {
         using var directory = new TemporaryDirectory();
