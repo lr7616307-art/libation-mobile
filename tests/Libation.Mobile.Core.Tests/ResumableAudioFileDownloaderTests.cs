@@ -173,7 +173,7 @@ public sealed class ResumableAudioFileDownloaderTests
             {
                 _sentFirstChunk = true;
                 var bytes = Encoding.UTF8.GetBytes("first chunk");
-                bytes.CopyTo(buffer);
+                bytes.AsMemory().CopyTo(buffer);
                 return bytes.Length;
             }
 
