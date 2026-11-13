@@ -289,6 +289,84 @@ public sealed class JsonDownloadQueueTests
         Assert.False(item.CanToggleAudibleDownload);
     }
 
+    [Fact]
+    public async Task EnqueueProviderDownload_PersistsTitleAndUpdatesExistingItemWithoutDuplication()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+
+        await queue.EnqueueProviderAsync("provider:B012345678", "  First title  ");
+        await queue.EnqueueProviderAsync("provider:B012345678", "Updated title");
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal("Updated title", item.DisplayTitle);
+        Assert.Equal(DownloadStatus.Queued, item.Status);
+    }
+
+    [Fact]
+    public async Task EnqueueProviderDownload_RequeuesFailedItemAndKeepsTitle()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueProviderAsync("provider:B012345678", "Example audiobook");
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Failed, "Temporary failure");
+
+        await queue.EnqueueProviderAsync("provider:B012345678", "Example audiobook");
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Queued, item.Status);
+        Assert.Equal("Example audiobook", item.DisplayTitle);
+        Assert.Null(item.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task EnqueueProviderDownload_RejectsNonProviderOrInvalidAsin()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => queue.EnqueueProviderAsync("book-1", "Example audiobook"));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => queue.EnqueueProviderAsync("provider:short", "Example audiobook"));
+        Assert.Empty(await queue.GetItemsAsync());
+    }
+
+    [Fact]
+    public void AudibleProviderScheduler_SelectsOldestQueuedProviderAndSkipsLocalAndFailedJobs()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var items = new[]
+        {
+            new DownloadQueueItem("provider:B000000002", DownloadStatus.Queued, now.AddMinutes(-1), now),
+            new DownloadQueueItem("local-book", DownloadStatus.Queued, now.AddMinutes(-3), now),
+            new DownloadQueueItem("provider:B000000001", DownloadStatus.Queued, now.AddMinutes(-2), now),
+            new DownloadQueueItem("provider:B000000003", DownloadStatus.Failed, now.AddMinutes(-4), now)
+        };
+
+        var next = AudibleProviderQueueScheduler.SelectNext(items);
+
+        Assert.NotNull(next);
+        Assert.Equal("provider:B000000001", next.AudiobookId);
+    }
+
+    [Fact]
+    public void AudibleProviderScheduler_ExcludesCurrentTitle()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var items = new[]
+        {
+            new DownloadQueueItem("provider:B000000001", DownloadStatus.Queued, now.AddMinutes(-2), now),
+            new DownloadQueueItem("provider:B000000002", DownloadStatus.Queued, now.AddMinutes(-1), now)
+        };
+
+        var next = AudibleProviderQueueScheduler.SelectNext(items, "provider:B000000001");
+
+        Assert.NotNull(next);
+        Assert.Equal("provider:B000000002", next.AudiobookId);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(

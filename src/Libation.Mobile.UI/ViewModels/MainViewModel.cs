@@ -1331,7 +1331,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         try
         {
-            await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken);
+            if (audiobookId.StartsWith("provider:", StringComparison.Ordinal))
+            {
+                var providerTitle = _allBooks.FirstOrDefault(book => book.Id == audiobookId)?.Title
+                    ?? "Audible audiobook";
+                await _downloadQueue.EnqueueProviderAsync(audiobookId, providerTitle, cancellationToken);
+            }
+            else
+            {
+                await _downloadQueue.EnqueueAsync(audiobookId, cancellationToken);
+            }
             await ReloadQueueAsync(cancellationToken);
             ErrorMessage = string.Empty;
             DownloadSettingsStatus = audiobookId.StartsWith("provider:", StringComparison.Ordinal)
@@ -1340,6 +1349,31 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception) { ErrorMessage = "Could not update the local download queue."; }
+    }
+
+    public async Task EnqueueAudibleDownloadAsync(
+        string audiobookId,
+        string displayTitle,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(audiobookId) ||
+            !audiobookId.StartsWith("provider:", StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(displayTitle))
+            return;
+
+        try
+        {
+            await _downloadQueue.EnqueueProviderAsync(audiobookId, displayTitle, cancellationToken);
+            await ReloadQueueAsync(cancellationToken);
+            ErrorMessage = string.Empty;
+            DownloadSettingsStatus = "Added to the Audible download queue. Downloads will run one at a time.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            ErrorMessage = "Could not add this Audible title to the persistent download queue.";
+            DownloadSettingsStatus = ErrorMessage;
+        }
     }
 
     public async Task EnqueueAuthorizedDownloadAsync(

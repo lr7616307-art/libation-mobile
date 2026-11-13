@@ -667,12 +667,12 @@ public sealed class MainViewModelTests
         var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
         var vm = new MainViewModel(repository, queue,
             new LibrarySyncService(new FakeCatalogProvider([
-                new RemoteAudiobook("audible-asin", "Audible title", "Author", "Narrator", "5h")
+                new RemoteAudiobook("B012345678", "Audible title", "Author", "Narrator", "5h")
             ]), repository));
         await vm.InitializeAsync();
         await vm.SyncLibraryAsync();
 
-        var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
+        var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:B012345678"));
         Assert.False(book.CanQueueDownload); // Audible IDs cannot be sent to the generic direct-URL form.
         Assert.Equal("⇩  Download offline", book.DownloadActionLabel);
         Assert.Equal("⇩  Download offline",
