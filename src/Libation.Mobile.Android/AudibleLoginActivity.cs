@@ -100,6 +100,10 @@ public sealed class AudibleLoginActivity : Activity
             ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent));
 
         _webView = new WebView(this);
+        // Use the same virtual Android app User-Agent as AudibleApi's
+        // CurrentAndroid profile. The handset's default WebView UA is not the
+        // registration client profile and can change the Amazon login surface.
+        _webView.Settings.UserAgentString = AudibleApi.Resources.User_Agent;
         _webView.Settings.JavaScriptEnabled = true;
         _webView.Settings.DomStorageEnabled = true;
         _webView.Settings.AllowFileAccess = false;
