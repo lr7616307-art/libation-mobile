@@ -75,14 +75,17 @@ public sealed class JsonWidevineOfflineDownloadStateStore
         ValidateIdentity(asin, title);
         return MutateAsync(current =>
         {
-            var sameTitle = current is not null &&
-                string.Equals(current.Asin, asin, StringComparison.OrdinalIgnoreCase);
+            var sameResumableTransfer = current is not null &&
+                string.Equals(current.Asin, asin, StringComparison.OrdinalIgnoreCase) &&
+                current.Status is WidevineOfflineDownloadStatus.Downloading
+                    or WidevineOfflineDownloadStatus.Paused
+                    or WidevineOfflineDownloadStatus.Failed;
             return new WidevineOfflineDownloadState(
                 asin.ToUpperInvariant(),
                 title.Trim(),
                 WidevineOfflineDownloadStatus.Downloading,
-                sameTitle ? current!.BytesDownloaded : 0,
-                sameTitle ? current!.ContentLength : null,
+                sameResumableTransfer ? current!.BytesDownloaded : 0,
+                sameResumableTransfer ? current!.ContentLength : null,
                 DateTimeOffset.UtcNow);
         }, cancellationToken);
     }
@@ -105,7 +108,11 @@ public sealed class JsonWidevineOfflineDownloadStateStore
                 return current;
 
             var bytes = Math.Max(current.BytesDownloaded, bytesDownloaded);
-            var total = contentLength is > 0 ? contentLength : current.ContentLength;
+            var total = contentLength is > 0
+                ? current.ContentLength is > 0
+                    ? Math.Max(current.ContentLength.Value, contentLength.Value)
+                    : contentLength
+                : current.ContentLength;
             if (total is > 0)
                 bytes = Math.Min(bytes, total.Value);
             return current with

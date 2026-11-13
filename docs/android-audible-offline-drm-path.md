@@ -223,3 +223,24 @@ Progress writes are throttled and monotonic, including when a provider later rep
 completion are ignored. A paused row retains its latest persisted byte count and transitions
 back to Downloading when resumed. Queue presentation failures do not cancel the protected
 media transfer.
+
+
+## Pass 34 — notification and recovery progress reconciliation
+
+The Widevine recovery record is the durable source of truth for the active Audible
+transfer. When the foreground service resumes after process death or an explicit
+Pause, it copies the recovered byte count and content length back into the queue
+mirror before continuing. The foreground notification is rebuilt with the restored
+percentage when a reliable content length is available, or the saved byte count
+when it is not.
+
+A later smaller content-length report cannot shrink the previously persisted
+content length or byte progress. A same-title retry from Downloading, Paused or
+Failed retains partial encrypted progress; a fresh download after a Completed
+state begins with a clean progress record.
+
+
+The activity's resume callback may run many times while the foreground service is
+still executing. Recovery now checks the live service instance first and skips
+re-dispatch while a transfer is active, preventing a lifecycle callback from
+mistaking a pending Pause transition for process death and accidentally resuming it.
