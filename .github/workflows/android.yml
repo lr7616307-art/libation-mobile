@@ -223,11 +223,11 @@ jobs:
         id: test-key-cache
         uses: actions/cache/restore@v4
         with:
-          path: \${{ runner.temp }}/vorath-ci-test.jks
-          key: vorath-ci-test-key-v1-\${{ github.base_ref }}
+          path: ${{ runner.temp }}/vorath-ci-test.jks
+          key: vorath-ci-test-key-v1-${{ github.base_ref }}
       - name: Require the existing Pass 7 signing identity
         env:
-          CACHE_HIT: \${{ steps.test-key-cache.outputs.cache-hit }}
+          CACHE_HIT: ${{ steps.test-key-cache.outputs.cache-hit }}
         shell: bash
         run: |
           set -euo pipefail
@@ -261,21 +261,21 @@ jobs:
             -p:AndroidSigningKeyPass="$TEST_KEY_PASSWORD"
           output="src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish"
           mapfile -t apks < <(find "$output" -maxdepth 1 -type f -name '*-Signed.apk')
-          if (( \${#apks[@]} != 1 )); then
-            echo "::error::Expected one optimized signed ARMv7 APK; found \${#apks[@]}."
+          if (( ${#apks[@]} != 1 )); then
+            echo "::error::Expected one optimized signed ARMv7 APK; found ${#apks[@]}."
             exit 1
           fi
-          sdk="\${ANDROID_HOME:-\${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
           apksigner="$(find "$sdk/build-tools" -type f -name apksigner | sort | tail -n 1)"
           test -n "$apksigner"
-          cert_output="$("$apksigner" verify --print-certs "\${apks[0]}" 2>&1)"
+          cert_output="$("$apksigner" verify --print-certs "${apks[0]}" 2>&1)"
           printf '%s\n' "$cert_output"
           if ! printf '%s' "$cert_output" | grep -Fqi "$EXPECTED_TEST_CERT_SHA256"; then
             echo "::error::Optimized APK was not signed by the existing Pass 7 certificate."
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/vorath-apks"
-          cp "\${apks[0]}" "$RUNNER_TEMP/vorath-apks/VORATH-ARMv7-Optimized-Fixed.apk"
+          cp "${apks[0]}" "$RUNNER_TEMP/vorath-apks/VORATH-ARMv7-Optimized-Fixed.apk"
           python3 - "$RUNNER_TEMP/vorath-apks/VORATH-ARMv7-Optimized-Fixed.apk" <<'PY'
           import sys
           from pathlib import Path
@@ -317,20 +317,20 @@ jobs:
             -p:AndroidSigningKeyPass="$TEST_KEY_PASSWORD"
           output="preoptimization-source/src/Libation.Mobile.Android/bin/Release/net10.0-android36.0/android-arm/publish"
           mapfile -t apks < <(find "$output" -maxdepth 1 -type f -name '*-Signed.apk')
-          if (( \${#apks[@]} != 1 )); then
-            echo "::error::Expected one original-size signed ARMv7 APK; found \${#apks[@]}."
+          if (( ${#apks[@]} != 1 )); then
+            echo "::error::Expected one original-size signed ARMv7 APK; found ${#apks[@]}."
             exit 1
           fi
-          sdk="\${ANDROID_HOME:-\${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
           apksigner="$(find "$sdk/build-tools" -type f -name apksigner | sort | tail -n 1)"
           test -n "$apksigner"
-          cert_output="$("$apksigner" verify --print-certs "\${apks[0]}" 2>&1)"
+          cert_output="$("$apksigner" verify --print-certs "${apks[0]}" 2>&1)"
           printf '%s\n' "$cert_output"
           if ! printf '%s' "$cert_output" | grep -Fqi "$EXPECTED_TEST_CERT_SHA256"; then
             echo "::error::Original-size APK was not signed by the existing Pass 7 certificate."
             exit 1
           fi
-          cp "\${apks[0]}" "$RUNNER_TEMP/vorath-apks/VORATH-ARMv7-Original-Size.apk"
+          cp "${apks[0]}" "$RUNNER_TEMP/vorath-apks/VORATH-ARMv7-Original-Size.apk"
           python3 - "$RUNNER_TEMP/vorath-apks/VORATH-ARMv7-Original-Size.apk" <<'PY'
           import sys
           from pathlib import Path
@@ -352,14 +352,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: VORATH-ARMv7-Optimized-Fixed
-          path: \${{ runner.temp }}/vorath-apks/VORATH-ARMv7-Optimized-Fixed.apk
+          path: ${{ runner.temp }}/vorath-apks/VORATH-ARMv7-Optimized-Fixed.apk
           if-no-files-found: error
           retention-days: 30
       - name: Upload original-size APK
         uses: actions/upload-artifact@v4
         with:
           name: VORATH-ARMv7-Original-Size
-          path: \${{ runner.temp }}/vorath-apks/VORATH-ARMv7-Original-Size.apk
+          path: ${{ runner.temp }}/vorath-apks/VORATH-ARMv7-Original-Size.apk
           if-no-files-found: error
           retention-days: 30
 
