@@ -146,6 +146,82 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         StartService(intent, foreground: true);
     }
 
+    /// <summary>
+    /// Starts protected playback and waits until Media3 reports STATE_READY.
+    /// A successful service start alone is not treated as successful playback.
+    /// </summary>
+    public static async Task StartWidevineDashAsync(
+        Uri manifestUri,
+        byte[] offlineKeySetId,
+        string title,
+        string accountId,
+        string asin,
+        int[] streamKeyValues,
+        string contentVersionKey,
+        long startPositionMilliseconds = 0,
+        bool autoPlay = true,
+        CancellationToken cancellationToken = default)
+    {
+        var completion = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnReady(string readyAsin)
+        {
+            if (string.Equals(readyAsin, asin, StringComparison.OrdinalIgnoreCase))
+                completion.TrySetResult(true);
+        }
+
+        void OnFailed(string failedAsin, string safeMessage)
+        {
+            if (string.Equals(failedAsin, asin, StringComparison.OrdinalIgnoreCase))
+                completion.TrySetException(new InvalidOperationException(safeMessage));
+        }
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, timeout.Token);
+        AndroidLocalAudioPlaybackService.WidevinePlaybackReady += OnReady;
+        AndroidLocalAudioPlaybackService.WidevinePlaybackFailed += OnFailed;
+        try
+        {
+            linked.Token.ThrowIfCancellationRequested();
+            StartWidevineDash(
+                manifestUri,
+                offlineKeySetId,
+                title,
+                accountId,
+                asin,
+                streamKeyValues,
+                contentVersionKey,
+                startPositionMilliseconds,
+                autoPlay);
+
+            try
+            {
+                await completion.Task.WaitAsync(linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (
+                timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                await AndroidLocalAudioPlaybackService.StopWidevinePlaybackIfCurrentAsync(
+                    asin, CancellationToken.None).ConfigureAwait(false);
+                throw new TimeoutException(
+                    "Android did not confirm that the saved Audible offline stream became ready within 30 seconds.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await AndroidLocalAudioPlaybackService.StopWidevinePlaybackIfCurrentAsync(
+                    asin, CancellationToken.None).ConfigureAwait(false);
+                throw;
+            }
+        }
+        finally
+        {
+            AndroidLocalAudioPlaybackService.WidevinePlaybackReady -= OnReady;
+            AndroidLocalAudioPlaybackService.WidevinePlaybackFailed -= OnFailed;
+        }
+    }
+
     public void Pause() { ObjectDisposedException.ThrowIf(_disposed, this); AppContext.StartService(CreateIntent(AndroidLocalAudioPlaybackService.ActionPause)); }
     public void Resume() { ObjectDisposedException.ThrowIf(_disposed, this); AppContext.StartService(CreateIntent(AndroidLocalAudioPlaybackService.ActionResume)); }
 

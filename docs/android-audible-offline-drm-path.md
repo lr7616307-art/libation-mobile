@@ -251,3 +251,9 @@ Audible provider entries now persist their display title with the queue record. 
 
 The scheduler excludes local HTTP jobs, failed/paused/completed items, and the just-finished title. The ordinary HTTP queue worker continues to ignore `provider:` jobs. This stage covers persistent queue metadata and serialized service orchestration; it does not assert that Audible will authorize a particular title/device or that a physical handset has completed an offline download and playback test.
 
+## Pass 36 — Widevine playback readiness acknowledgement
+
+The UI no longer treats a successful Android service start as proof that protected playback has begun. The Android playback service reports a title-specific readiness acknowledgement only after Media3 reaches `STATE_READY`, and reports a sanitized failure when service setup or Media3 playback fails. The coordinator awaits that acknowledgement before the UI marks the Audible title as playing. A 30-second readiness timeout or a user cancellation stops a stalled protected player while preserving its recoverable position.
+
+This handshake validates service/player startup sequencing at compile time only. It does not substitute for a real-device test with an Audible-authorized offline licence and fully cached title.
+
