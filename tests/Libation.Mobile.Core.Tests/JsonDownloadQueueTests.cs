@@ -196,6 +196,23 @@ public sealed class JsonDownloadQueueTests
     }
 
     [Fact]
+    public async Task ProgressDoesNotRegressWhenProviderReportsASmallerLength()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("provider:B012345678");
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync("provider:B012345678", 7_000, 10_000);
+
+        await queue.UpdateProgressAsync("provider:B012345678", 2_000, 5_000);
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(7_000, item.BytesReceived);
+        Assert.Equal(7_000, item.TotalBytes);
+        Assert.Equal(100d, item.ProgressPercentage);
+    }
+
+    [Fact]
     public async Task PauseAndResumeTransitionsAreDurable()
     {
         using var directory = new TemporaryDirectory();
