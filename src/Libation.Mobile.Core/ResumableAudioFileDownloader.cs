@@ -58,6 +58,9 @@ public sealed class ResumableAudioFileDownloader(HttpClient httpClient)
         using var request = new HttpRequestMessage(HttpMethod.Get, sourceUri);
         request.Headers.AcceptEncoding.Clear();
         request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("identity"));
+        request.Headers.TryAddWithoutValidation(
+            "User-Agent",
+            "Audible/671 CFNetwork/1240.0.4 Darwin/20.6.1");
         if (existingLength > 0)
         {
             request.Headers.Range = new RangeHeaderValue(existingLength, null);
