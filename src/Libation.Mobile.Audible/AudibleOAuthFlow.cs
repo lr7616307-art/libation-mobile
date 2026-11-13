@@ -32,6 +32,12 @@ public static class AudibleOAuthFlow
     private const string AppVersionName = "26.34.07";
     private const string SoftwareVersion = "130050002";
     private const string MapVersion = "MAPAndroidLib-1.3.57073.0";
+    public const string AndroidDeviceModel = "sdk_gphone64_x86_64";
+    public const string AndroidOsVersion = @"google\\/raven\\/raven:14\\/UPB5.230623.003\\/10615560:user\\/release-keys";
+    public const string AndroidOsVersionNumber = "34";
+    private const string AndroidDeviceName = @"ranchu\\/Google\\/" + AndroidDeviceModel;
+    private const string AndroidManufacturer = "Google";
+    private const string AndroidCarrier = "T-Mobile";
 
     public static AudibleOAuthChallenge Create(string marketplace, AudibleAndroidDeviceInfo deviceInfo, string? stableDeviceSerial = null)
     {
@@ -52,7 +58,7 @@ public static class AudibleOAuthFlow
         var serialAndType = serial + "#" + AndroidDeviceType;
         var clientIdHex = Convert.ToHexString(Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
         var callback = new Uri(locale.AudibleLoginUri(), "/ap/maplanding");
-        var frc = CreateAndroidFrc(serial, deviceInfo);
+        var frc = CreateAndroidFrc(serial, locale);
         var loginHost = locale.LoginUri().Host;
         var cookieDomain = "." + (loginHost.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? loginHost[4..] : loginHost);
         var cookies = new[]
@@ -129,16 +135,25 @@ public static class AudibleOAuthFlow
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(mapMd.ToString(Formatting.None)));
     }
 
-    private static string CreateAndroidFrc(string serial, AudibleAndroidDeviceInfo hostDevice)
+    private static string CreateAndroidFrc(string serial, Locale locale)
     {
+        // Match AudibleApi's CurrentAndroid registration recipe exactly. Audible
+        // expects this virtual Android app profile; substituting the handset's
+        // physical Redmi fingerprint/device model causes a malformed registration.
         var registrationContext = new JObject
         {
-            ["ApplicationName"] = AppName, ["ApplicationVersion"] = AppVersion, ["DeviceOSVersion"] = hostDevice.BuildFingerprint,
-            ["DeviceName"] = hostDevice.DeviceName, ["ScreenWidthPixels"] = hostDevice.ScreenWidthPixels.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["ThirdPartyDeviceId"] = serial, ["FirstPartyDeviceId"] = serial,
-            ["ScreenHeightPixels"] = hostDevice.ScreenHeightPixels.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["DeviceLanguage"] = hostDevice.DeviceLanguage, ["TimeZone"] = FormatOffset(DateTimeOffset.Now.Offset),
-            ["Carrier"] = "Unknown", ["IpAddress"] = GetLocalIpAddress()
+            ["ApplicationName"] = AppName,
+            ["ApplicationVersion"] = AppVersion,
+            ["DeviceOSVersion"] = AndroidOsVersion,
+            ["DeviceName"] = AndroidDeviceName,
+            ["ScreenWidthPixels"] = "1080",
+            ["ThirdPartyDeviceId"] = serial,
+            ["FirstPartyDeviceId"] = serial,
+            ["ScreenHeightPixels"] = "2400",
+            ["DeviceLanguage"] = locale.Language,
+            ["TimeZone"] = FormatOffset(DateTimeOffset.Now.Offset),
+            ["Carrier"] = AndroidCarrier,
+            ["IpAddress"] = GetLocalIpAddress()
         };
         return EncodeFrc(serial, registrationContext.ToString(Formatting.None));
     }
@@ -147,13 +162,21 @@ public static class AudibleOAuthFlow
     {
         try
         {
-            var addresses = NetworkInterface.GetAllNetworkInterfaces().SelectMany(network => network.GetIPProperties().UnicastAddresses)
-                .Select(entry => entry.Address).Where(address => !IPAddress.IsLoopback(address) && !address.Equals(IPAddress.IPv6Any))
-                .OrderBy(address => address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
-                .OrderByDescending(address => !address.IsIPv6LinkLocal && !address.IsIPv6SiteLocal).FirstOrDefault();
-            return addresses?.ToString() ?? "0.0.0.0";
+            var address = NetworkInterface.GetAllNetworkInterfaces()
+                .Select(network => network.GetIPProperties())
+                .SelectMany(properties => properties.DnsAddresses
+                    .Concat(properties.GatewayAddresses.Select(gateway => gateway.Address))
+                    .Concat(properties.UnicastAddresses.Select(entry => entry.Address)))
+                .Where(candidate => !IPAddress.IsLoopback(candidate) && !candidate.Equals(IPAddress.IPv6Any))
+                .OrderBy(candidate => candidate.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+                .OrderByDescending(candidate => !candidate.IsIPv6LinkLocal && !candidate.IsIPv6SiteLocal && !candidate.IsIPv6UniqueLocal)
+                .FirstOrDefault();
+            return address?.ToString() ?? "0.0.0.0";
         }
-        catch { return "0.0.0.0"; }
+        catch
+        {
+            return IPAddress.IPv6Any.ToString();
+        }
     }
 
     private static string EncodeFrc(string serial, string json)
