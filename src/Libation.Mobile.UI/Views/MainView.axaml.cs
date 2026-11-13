@@ -82,6 +82,12 @@ public partial class MainView : UserControl
             ?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         AttachPlaybackStateNotifications();
         _activeView = new WeakReference<MainView>(this);
+        PlatformWidevineOfflineDownloadCompletedAction = asin =>
+        {
+            if (_activeView is null || !_activeView.TryGetTarget(out var activeView))
+                return;
+            Dispatcher.UIThread.Post(() => _ = activeView.MarkWidevineOfflineDownloadCompletedAsync(asin));
+        };
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -1051,11 +1057,41 @@ public partial class MainView : UserControl
         await RunProtectedAudibleOperationAsync(book, book.IsWidevineOfflineAvailable);
     }
 
+    private async Task MarkWidevineOfflineDownloadCompletedAsync(string asin)
+    {
+        try
+        {
+            await _viewModel.MarkWidevineOfflineAvailableAsync("provider:" + asin);
+            _viewModel.ReportAudioStatus("Download complete. Audible's encrypted audio and offline licence are verified and ready to play.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("The offline copy was verified, but the library status could not refresh. Reopen the title to check it.");
+        }
+    }
+
     private async Task RunProtectedAudibleOperationAsync(Audiobook book, bool startPlayback)
     {
         if (startPlayback && _localAudioPlayer is null)
         {
             _viewModel.ReportAudioStatus("Protected Audible playback is unavailable on this platform. The offline download itself does not require the player.");
+            return;
+        }
+
+        if (!startPlayback)
+        {
+            var asin = book.Id.StartsWith("provider:", StringComparison.Ordinal)
+                ? book.Id["provider:".Length..]
+                : string.Empty;
+            var startDownload = PlatformAudibleOfflineDownloadStartAction;
+            if (string.IsNullOrWhiteSpace(asin) || startDownload is null)
+            {
+                _viewModel.ReportAudioStatus("The Android foreground download service is not available in this build.");
+                return;
+            }
+
+            startDownload(asin, book.Title);
+            _viewModel.ReportAudioStatus("Offline download started. Follow real byte progress and Pause/Resume in the Android notification.");
             return;
         }
 
