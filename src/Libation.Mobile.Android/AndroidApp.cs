@@ -52,12 +52,50 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         var audibleDownloadDirectory = Path.Combine(
             global::System.Environment.GetFolderPath(global::System.Environment.SpecialFolder.LocalApplicationData),
             "audible-downloads");
-        MainView.PlatformAudibleDownloadSourceFactory = async cancellationToken =>
+        MainView.PlatformAudibleDownloadSourceFactory = async (quality, cancellationToken) =>
         {
             var source = await AudibleAudioDownloadSource.FromSavedIdentityAsync(
-                snapshots, audibleDownloadDirectory, cancellationToken);
+                snapshots, audibleDownloadDirectory, quality, cancellationToken);
             return (IAuthorizedAudioDownloadSource?)source;
         };
+        MainView.PlatformWidevinePlaybackCoordinatorFactory = async cancellationToken =>
+        {
+            var savedIdentity = await snapshots.LoadAsync(cancellationToken);
+            if (savedIdentity is null)
+                return null;
+            if (string.IsNullOrWhiteSpace(savedIdentity.AmazonAccountId))
+                throw new InvalidOperationException(
+                    "The saved Audible identity does not contain the account identifier required for offline licence storage.");
+
+            var session = await new AudibleApiSessionFactory(snapshots)
+                .CreateSessionFromSavedIdentityAsync(cancellationToken);
+            if (session is null)
+                return null;
+
+            var source = new AudibleAudioDownloadSource(
+                session.Value.Api,
+                session.Value.Locale,
+                audibleDownloadDirectory);
+            var manifestClient = new AudibleWidevineManifestClient(
+                new HttpClient { Timeout = Timeout.InfiniteTimeSpan });
+            var keySetStore = new AudibleOfflineLicenseKeySetStore(secrets);
+            return new AndroidWidevineOfflinePlaybackCoordinator(
+                source, manifestClient, keySetStore, savedIdentity.AmazonAccountId);
+        };
+        AndroidWidevineOfflineDownloadService.CoordinatorFactory =
+            MainView.PlatformWidevinePlaybackCoordinatorFactory;
+        MainView.PlatformAudibleOfflineDownloadStartAction =
+            (asin, title) => AndroidWidevineOfflineDownloadService.Start(this, asin, title);
+        signInViewModel.SetBeforeDisconnectCleanup(async cancellationToken =>
+        {
+            if (MainView.PlatformWidevinePlaybackCoordinatorFactory is null)
+                return;
+
+            var coordinator = await MainView.PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
+            if (coordinator is not null)
+                await coordinator.RemoveAllOfflineLicensesAsync(cancellationToken);
+        });
+
         MainView.PlatformLocalAudioPlayerFactory = () => new AndroidLocalAudioPlayer();
         MainView.PlatformWidevineDiagnosticFactory = () =>
         {

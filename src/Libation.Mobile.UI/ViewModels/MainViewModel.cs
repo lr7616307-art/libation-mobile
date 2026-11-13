@@ -26,6 +26,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _downloadSettingsStatus = string.Empty;
     private DownloadQueueProgress? _activeDownloadProgress;
     private bool _isDownloadQueueRunning;
+    private bool _isProtectedAudibleOperationInProgress;
     private readonly Func<string>? _widevineDiagnosticFactory;
     private string _widevineDiagnostic = "Widevine check is available only in the Android app.";
     private bool _isSyncing;
@@ -88,9 +89,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string LocalAudioEmptyMessage => HasLocalAudioBooks ? string.Empty : "Your library is empty. Import an audiobook file to get started.";
     public ObservableCollection<DownloadQueueItem> QueueItems { get; } = [];
 
+    public bool IsProtectedAudibleOperationInProgress => _isProtectedAudibleOperationInProgress;
+    public void SetProtectedAudibleOperationInProgress(bool isRunning)
+    {
+        if (_isProtectedAudibleOperationInProgress == isRunning) return;
+        _isProtectedAudibleOperationInProgress = isRunning;
+        OnPropertyChanged(nameof(IsProtectedAudibleOperationInProgress));
+    }
+
     public DownloadSettings CurrentDownloadSettings => _downloadSettings;
     public string DownloadDirectoryLabel => _downloadSettings.DirectoryLabel;
     public string DownloadFolderOrganizationLabel => _downloadSettings.FolderOrganizationLabel;
+    public string AudibleDownloadQualityLabel => _downloadSettings.AudibleQuality == AudibleDownloadQuality.High
+        ? "High quality"
+        : "Normal quality";
     public string DownloadFolderOrganizationExample => _downloadSettings.FolderOrganizationExample;
     public bool HasSelectedDownloadDirectory => _downloadSettings.HasSelectedDirectory;
     public string DownloadSettingsStatus
@@ -133,6 +145,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         DownloadSettingsStatus = "File organization preference saved.";
     }
 
+    public async Task CycleAudibleDownloadQualityAsync(CancellationToken cancellationToken = default)
+    {
+        var next = _downloadSettings.AudibleQuality == AudibleDownloadQuality.High
+            ? AudibleDownloadQuality.Normal
+            : AudibleDownloadQuality.High;
+        _downloadSettings = (_downloadSettings with { AudibleQuality = next }).Normalize();
+        if (_downloadSettingsStore is not null)
+            await _downloadSettingsStore.SaveAsync(_downloadSettings, cancellationToken);
+        RaiseDownloadSettingsChanged();
+        DownloadSettingsStatus = $"Audible download quality set to {AudibleDownloadQualityLabel.ToLowerInvariant()}. Applies to all new Audible downloads.";
+    }
+
     public void ReportDownloadSettingsStatus(string message) => DownloadSettingsStatus = message;
 
     private async Task LoadDownloadSettingsAsync(CancellationToken cancellationToken)
@@ -155,6 +179,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CurrentDownloadSettings));
         OnPropertyChanged(nameof(DownloadDirectoryLabel));
         OnPropertyChanged(nameof(DownloadFolderOrganizationLabel));
+        OnPropertyChanged(nameof(AudibleDownloadQualityLabel));
         OnPropertyChanged(nameof(DownloadFolderOrganizationExample));
         OnPropertyChanged(nameof(HasSelectedDownloadDirectory));
     }
@@ -295,11 +320,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string DetailAudibleAvailabilityLabel => IsDetailProviderBook
         ? _detailBook!.AudibleAvailabilityLabel
         : string.Empty;
-    public string DetailProtectedDownloadLabel => string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
-        ? string.Empty
-        : $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved; this protected file is not playable in VØRATH yet.";
+    public string DetailProtectedDownloadLabel => _detailBook?.IsWidevineOfflineAvailable == true
+        ? "Encrypted Audible DASH audio is stored in VØRATH's private offline cache and ready to play."
+        : !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
+            ? $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved. Tap Download offline to cache encrypted DASH audio with a Widevine licence."
+            : string.Empty;
     public bool HasPlayableDetailAudio => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.AudioFilePath);
-    public bool HasProtectedDetailDownload => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName);
+    public bool HasProtectedDetailDownload => IsDetailProviderBook &&
+        (_detailBook?.IsWidevineOfflineAvailable == true || !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName));
     public string DetailBookDescription
     {
         get
@@ -1377,6 +1405,97 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task RefreshDownloadQueueAsync(CancellationToken cancellationToken = default)
         => await ReloadQueueAsync(cancellationToken);
+
+    public async Task MarkWidevineOfflineAvailableAsync(
+        string audiobookId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(audiobookId))
+            return;
+
+        var book = _allBooks.FirstOrDefault(item =>
+            string.Equals(item.Id, audiobookId, StringComparison.Ordinal));
+        if (book is null || !book.IsProviderCatalogueEntry || book.IsWidevineOfflineAvailable)
+            return;
+
+        await _repository.UpsertAsync(
+            book with { IsWidevineOfflineAvailable = true }, cancellationToken).ConfigureAwait(false);
+        _allBooks = await _repository.GetBooksAsync(cancellationToken).ConfigureAwait(false);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+
+        if (_detailBook is not null &&
+            string.Equals(_detailBook.Id, audiobookId, StringComparison.Ordinal))
+        {
+            _detailBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
+        }
+    }
+
+    public async Task MarkWidevineOfflineRemovedAsync(
+        string audiobookId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(audiobookId))
+            return;
+
+        var book = _allBooks.FirstOrDefault(item =>
+            string.Equals(item.Id, audiobookId, StringComparison.Ordinal));
+        if (book is null || !book.IsProviderCatalogueEntry || !book.IsWidevineOfflineAvailable)
+            return;
+
+        await _repository.UpsertAsync(
+            book with { IsWidevineOfflineAvailable = false }, cancellationToken).ConfigureAwait(false);
+        _allBooks = await _repository.GetBooksAsync(cancellationToken).ConfigureAwait(false);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+
+        if (_detailBook is not null &&
+            string.Equals(_detailBook.Id, audiobookId, StringComparison.Ordinal))
+        {
+            _detailBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
+        }
+    }
+
+    /// <summary>
+    /// Clears catalogue "offline available" labels only after account-wide
+    /// device cleanup has succeeded during Audible disconnect.
+    /// </summary>
+    public async Task ClearAllWidevineOfflineFlagsAsync(CancellationToken cancellationToken = default)
+    {
+        var changed = _allBooks
+            .Where(book => book.IsProviderCatalogueEntry && book.IsWidevineOfflineAvailable)
+            .ToArray();
+        if (changed.Length == 0)
+            return;
+
+        var changedIds = changed.Select(book => book.Id).ToHashSet(StringComparer.Ordinal);
+        var updated = _allBooks
+            .Select(book => changedIds.Contains(book.Id)
+                ? book with { IsWidevineOfflineAvailable = false }
+                : book)
+            .ToArray();
+        await _repository.ReplaceAllAsync(updated, cancellationToken).ConfigureAwait(false);
+
+        _allBooks = await _repository.GetBooksAsync(cancellationToken).ConfigureAwait(false);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+        if (_detailBook is not null && changedIds.Contains(_detailBook.Id))
+        {
+            _detailBook = _allBooks.FirstOrDefault(book => book.Id == _detailBook.Id);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
+        }
+    }
 
     public async Task RefreshLibraryAfterDownloadAsync(CancellationToken cancellationToken = default)
     {

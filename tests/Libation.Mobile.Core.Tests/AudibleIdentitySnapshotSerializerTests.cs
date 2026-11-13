@@ -34,6 +34,22 @@ public sealed class AudibleIdentitySnapshotSerializerTests
     }
 
     [Fact]
+    public void Deserialize_AllowsLegacyIPhoneIdentitySoItCanBeSafelyDisconnected()
+    {
+        var legacy = CreateSnapshot() with
+        {
+            RegistrationProfileId = AudibleOAuthFlow.LegacyIPhoneRegistrationProfileId,
+            DeviceType = "A2CZJZGLK2JJVM"
+        };
+
+        var restored = AudibleIdentitySnapshotSerializer.Deserialize(
+            AudibleIdentitySnapshotSerializer.Serialize(legacy));
+
+        Assert.Equal(AudibleOAuthFlow.LegacyIPhoneRegistrationProfileId, restored.RegistrationProfileId);
+        Assert.Equal("A2CZJZGLK2JJVM", restored.DeviceType);
+    }
+
+    [Fact]
     public void Serialize_RejectsObsoleteRegistrationProfile()
     {
         var snapshot = CreateSnapshot() with
