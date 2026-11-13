@@ -14,6 +14,14 @@ namespace Libation.Mobile.Android;
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
 public class MainActivity : AvaloniaMainActivity
 {
+    protected override void OnResume()
+    {
+        base.OnResume();
+        // Reconcile a download left active by process death only after the app
+        // is visibly resumed. Explicitly paused jobs remain paused until tapped.
+        AndroidWidevineOfflineDownloadService.RecoverInterrupted(this);
+    }
+
     public override void OnBackPressed()
     {
         // Consume Back while an app page, overlay, search, or player screen

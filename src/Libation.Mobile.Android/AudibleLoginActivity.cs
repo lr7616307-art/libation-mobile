@@ -1,4 +1,6 @@
 using Libation.Mobile.Audible;
+using Libation.Mobile.Core;
+using System.Text.Json;
 using Android.App;
 using Android.OS;
 using Android.Views;
@@ -17,6 +19,7 @@ public sealed class AudibleLoginActivity : Activity
 {
     internal const string AuthorizationUrlExtra = "audible.authorization_url";
     internal const string ExpectedHostExtra = "audible.expected_host";
+    internal const string SignInCookiesExtra = "audible.sign_in_cookies";
     internal const string RequestIdExtra = "audible.request_id";
     private static readonly object ActiveGate = new();
     private static readonly Dictionary<string, WeakReference<AudibleLoginActivity>> ActiveActivities =
@@ -33,11 +36,30 @@ public sealed class AudibleLoginActivity : Activity
         Window?.SetNavigationBarColor(Color.Black);
 
         var authorizationUrl = Intent?.GetStringExtra(AuthorizationUrlExtra);
+        var signInCookiesJson = Intent?.GetStringExtra(SignInCookiesExtra);
         _expectedHost = Intent?.GetStringExtra(ExpectedHostExtra) ?? string.Empty;
         _requestId = Intent?.GetStringExtra(RequestIdExtra) ?? string.Empty;
+        ExternalSignInCookie[] signInCookies;
+        try
+        {
+            signInCookies = string.IsNullOrWhiteSpace(signInCookiesJson)
+                ? []
+                : JsonSerializer.Deserialize<ExternalSignInCookie[]>(signInCookiesJson) ?? [];
+        }
+        catch (JsonException)
+        {
+            signInCookies = [];
+        }
+
         if (string.IsNullOrWhiteSpace(authorizationUrl)
+            || !Uri.TryCreate(authorizationUrl, UriKind.Absolute, out var authorizationUri)
+            || !string.Equals(authorizationUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
             || string.IsNullOrWhiteSpace(_expectedHost)
-            || string.IsNullOrWhiteSpace(_requestId))
+            || string.IsNullOrWhiteSpace(_requestId)
+            || signInCookies.Length != 3
+            || !signInCookies.Any(cookie => cookie.Name == "frc")
+            || !signInCookies.Any(cookie => cookie.Name == "map-md")
+            || !signInCookies.Any(cookie => cookie.Name == "sid"))
         {
             FinishLogin(null);
             return;
@@ -86,8 +108,33 @@ public sealed class AudibleLoginActivity : Activity
         if (Build.VERSION.SdkInt >= BuildVersionCodes.O)
             _webView.Settings.SafeBrowsingEnabled = true;
 
-        CookieManager.Instance.SetAcceptCookie(true);
-        CookieManager.Instance.SetAcceptThirdPartyCookies(_webView, true);
+        var cookieManager = CookieManager.Instance;
+        cookieManager.SetAcceptCookie(true);
+        cookieManager.SetAcceptThirdPartyCookies(_webView, true);
+        var cookieOrigin = authorizationUri.GetLeftPart(UriPartial.Authority) + "/ap/signin";
+        foreach (var cookie in signInCookies)
+        {
+            var cookieDomain = cookie.Domain.TrimStart('.');
+            if (string.IsNullOrWhiteSpace(cookie.Name)
+                || !string.Equals(cookie.Name, "frc", StringComparison.Ordinal)
+                    && !string.Equals(cookie.Name, "map-md", StringComparison.Ordinal)
+                    && !string.Equals(cookie.Name, "sid", StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(cookie.Domain)
+                || !(string.Equals(authorizationUri.Host, cookieDomain, StringComparison.OrdinalIgnoreCase) || authorizationUri.Host.EndsWith("." + cookieDomain, StringComparison.OrdinalIgnoreCase))
+                || cookie.Value is null
+                || cookie.Value.Contains(';')
+                || cookie.Value.Contains('\n')
+                || (cookie.Path != "/ap" && cookie.Path != "/"))
+            {
+                FinishLogin(null);
+                return;
+            }
+
+            var cookieHeader = $"{cookie.Name}={cookie.Value}; Domain={cookie.Domain}; Path={cookie.Path}; Secure; SameSite=None";
+            cookieManager.SetCookie(cookieOrigin, cookieHeader);
+        }
+        cookieManager.Flush();
+
         _webView.SetWebViewClient(new AudibleLoginWebViewClient(
             _expectedHost,
             url => FinishLogin(url)));

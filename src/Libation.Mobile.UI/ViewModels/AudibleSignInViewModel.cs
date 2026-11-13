@@ -19,11 +19,18 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
     private int _syncedAudiobookCount;
     private DateTimeOffset? _lastLibrarySync;
     private string _librarySyncStatus = "No successful Audible library sync yet.";
+    private Func<CancellationToken, Task>? _beforeDisconnectCleanup;
+    private readonly Func<CancellationToken, Task<bool>>? _isCurrentAndroidRegistration;
+    private bool _requiresAndroidRegistrationRefresh;
 
-    public AudibleSignInViewModel(AccountConnectionService connection, IExternalBrowserLauncher browser)
+    public AudibleSignInViewModel(
+        AccountConnectionService connection,
+        IExternalBrowserLauncher browser,
+        Func<CancellationToken, Task<bool>>? isCurrentAndroidRegistration = null)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
         _browser = browser ?? throw new ArgumentNullException(nameof(browser));
+        _isCurrentAndroidRegistration = isCurrentAndroidRegistration;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -52,10 +59,14 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             _isBusy = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanBegin));
+            OnPropertyChanged(nameof(CanRefreshAndroidRegistration));
         }
     }
     public bool CanBegin => !IsBusy;
     public bool HasConnectedAccount => _lastState?.Status == AccountConnectionStatus.Connected;
+    public bool RequiresAndroidRegistrationRefresh => _requiresAndroidRegistrationRefresh;
+    public bool CanRefreshAndroidRegistration =>
+        HasConnectedAccount && RequiresAndroidRegistrationRefresh && !IsBusy;
     public bool CanAddAccount => !HasConnectedAccount && !IsBusy;
     public bool CanSyncLibrary => HasConnectedAccount && !IsBusy;
     public string ConnectionStatusLabel => _lastState?.Status switch
@@ -117,15 +128,53 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(LastLibrarySyncLabel));
     }
 
+    /// <summary>
+    /// Platform hosts may install a local offline-licence cleanup step. It runs
+    /// before account secrets are cleared so a failure never strands DRM key sets.
+    /// </summary>
+    public void SetBeforeDisconnectCleanup(Func<CancellationToken, Task>? cleanup)
+        => _beforeDisconnectCleanup = cleanup;
+
     private void NotifyAccountSummaryChanged()
     {
         OnPropertyChanged(nameof(HasConnectedAccount));
+        OnPropertyChanged(nameof(RequiresAndroidRegistrationRefresh));
+        OnPropertyChanged(nameof(CanRefreshAndroidRegistration));
         OnPropertyChanged(nameof(CanAddAccount));
         OnPropertyChanged(nameof(CanSyncLibrary));
         OnPropertyChanged(nameof(ConnectionStatusLabel));
         OnPropertyChanged(nameof(AccountDisplayName));
         OnPropertyChanged(nameof(AccountIdLabel));
         OnPropertyChanged(nameof(MarketplaceLabel));
+    }
+
+    private async Task RefreshAndroidRegistrationRequirementAsync(CancellationToken cancellationToken)
+    {
+        var required = false;
+        if (HasConnectedAccount && _isCurrentAndroidRegistration is not null)
+        {
+            try
+            {
+                required = !await _isCurrentAndroidRegistration(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // An unreadable profile is not treated as Widevine-ready. The
+                // encrypted snapshot itself is never surfaced to the UI.
+                required = true;
+            }
+        }
+
+        if (_requiresAndroidRegistrationRefresh == required)
+            return;
+
+        _requiresAndroidRegistrationRefresh = required;
+        OnPropertyChanged(nameof(RequiresAndroidRegistrationRefresh));
+        OnPropertyChanged(nameof(CanRefreshAndroidRegistration));
     }
 
     public async Task<string> GetDisplayStateAsync()
@@ -144,14 +193,17 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             // when a valid refresh credential is still available.
             var state = await _connection.RefreshAsync(cancellationToken);
             _lastState = state;
+            await RefreshAndroidRegistrationRequirementAsync(cancellationToken);
             NotifyAccountSummaryChanged();
-            Status = state.Status switch
-            {
-                AccountConnectionStatus.Connected => "Audible account connected.",
-                AccountConnectionStatus.Expired => "Your Audible session expired and automatic refresh did not succeed. Check your connection and try again.",
-                AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
-                _ => "Sign in to Audible inside VØRATH to access your library."
-            };
+            Status = RequiresAndroidRegistrationRefresh
+                ? "Your Audible account is connected, but its saved device registration is not the current Android profile. Refresh it once before downloading protected Audible titles."
+                : state.Status switch
+                {
+                    AccountConnectionStatus.Connected => "Audible account connected.",
+                    AccountConnectionStatus.Expired => "Your Audible session expired and automatic refresh did not succeed. Check your connection and try again.",
+                    AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
+                    _ => "Sign in to Audible inside VØRATH to access your library."
+                };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception)
@@ -162,14 +214,17 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             {
                 var state = await _connection.GetStateAsync(cancellationToken);
                 _lastState = state;
+                await RefreshAndroidRegistrationRequirementAsync(cancellationToken);
                 NotifyAccountSummaryChanged();
-                Status = state.Status switch
-                {
-                    AccountConnectionStatus.Expired => "Audible token refresh failed. Check your internet connection and retry; saved credentials were not changed.",
-                    AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
-                    AccountConnectionStatus.Connected => "Could not refresh account status, but your saved Audible connection is still valid.",
-                    _ => "Sign in to Audible inside VØRATH to access your library."
-                };
+                Status = RequiresAndroidRegistrationRefresh
+                    ? "Your saved Audible device registration needs a one-time Android profile refresh before protected downloads."
+                    : state.Status switch
+                    {
+                        AccountConnectionStatus.Expired => "Audible token refresh failed. Check your internet connection and retry; saved credentials were not changed.",
+                        AccountConnectionStatus.ReauthenticationRequired => "Saved Audible credentials need repair. Sign in again to restore your library.",
+                        AccountConnectionStatus.Connected => "Could not refresh account status, but your saved Audible connection is still valid.",
+                        _ => "Sign in to Audible inside VØRATH to access your library."
+                    };
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -209,7 +264,10 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             challengeId = challenge.ChallengeId;
 
             Status = "Complete sign-in on the Audible page inside VØRATH. Your password and verification codes stay on that sign-in page.";
-            var responseUrl = await _browser.OpenAsync(challenge.AuthorizationUri, cancellationToken);
+            var responseUrl = await _browser.OpenAsync(
+                challenge.AuthorizationUri,
+                challenge.SignInCookies ?? Array.Empty<ExternalSignInCookie>(),
+                cancellationToken);
             if (string.IsNullOrWhiteSpace(responseUrl))
             {
                 await _connection.CancelSignInAsync(challenge.ChallengeId, CancellationToken.None);
@@ -221,12 +279,13 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
             Status = "Completing secure Audible device registration…";
             var state = await _connection.CompleteSignInAsync(challenge.ChallengeId, responseUrl, cancellationToken);
             _lastState = state;
+            _requiresAndroidRegistrationRefresh = false;
             NotifyAccountSummaryChanged();
             challengeId = null;
             if (state.Status == AccountConnectionStatus.Connected)
             {
                 UpdateLibrarySummary(0, null, "Account connected. Sync your Audible library to load its titles.");
-                Status = "Audible account connected. Your encrypted device identity is saved.";
+                Status = "Audible account connected. Your current Android device identity is saved.";
             }
             else
             {
@@ -262,8 +321,14 @@ public sealed class AudibleSignInViewModel : INotifyPropertyChanged
         try
         {
             IsBusy = true;
+            if (_beforeDisconnectCleanup is not null)
+            {
+                Status = "Removing this account's protected offline copies from the device…";
+                await _beforeDisconnectCleanup(cancellationToken);
+            }
             await _connection.DisconnectAsync(cancellationToken);
             _lastState = await _connection.GetStateAsync(cancellationToken);
+            _requiresAndroidRegistrationRefresh = false;
             NotifyAccountSummaryChanged();
             UpdateLibrarySummary(0, null, "Account disconnected. No Audible library is currently connected.");
             Status = "Audible account disconnected. Saved credentials were removed from encrypted storage.";

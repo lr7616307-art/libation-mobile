@@ -37,6 +37,30 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AudibleDownloadQuality_CyclesAndPersistsGlobalPreference()
+    {
+        using var directory = new TemporaryDirectory();
+        var settingsStore = new JsonDownloadSettingsStore(Path.Combine(directory.Path, "download-settings.json"));
+        var vm = new MainViewModel(
+            new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")),
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            downloadSettingsStore: settingsStore);
+
+        await vm.InitializeAsync();
+        Assert.Equal("High quality", vm.AudibleDownloadQualityLabel);
+
+        await vm.CycleAudibleDownloadQualityAsync();
+
+        Assert.Equal(AudibleDownloadQuality.Normal, (await settingsStore.GetAsync()).AudibleQuality);
+        Assert.Equal("Normal quality", vm.AudibleDownloadQualityLabel);
+
+        await vm.CycleAudibleDownloadQualityAsync();
+
+        Assert.Equal(AudibleDownloadQuality.High, (await settingsStore.GetAsync()).AudibleQuality);
+        Assert.Equal("High quality", vm.AudibleDownloadQualityLabel);
+    }
+
+    [Fact]
     public void ProbeWidevine_UsesPlatformDiagnosticAndRaisesNotification()
     {
         using var directory = new TemporaryDirectory();
@@ -643,14 +667,18 @@ public sealed class MainViewModelTests
         var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
         var vm = new MainViewModel(repository, queue,
             new LibrarySyncService(new FakeCatalogProvider([
-                new RemoteAudiobook("audible-asin", "Audible title", "Author", "Narrator", "5h")
+                new RemoteAudiobook("B012345678", "Audible title", "Author", "Narrator", "5h")
             ]), repository));
         await vm.InitializeAsync();
         await vm.SyncLibraryAsync();
 
-        var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
+        var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:B012345678"));
         Assert.False(book.CanQueueDownload); // Audible IDs cannot be sent to the generic direct-URL form.
-        Assert.Equal("⇩  Download", book.DownloadActionLabel);
+        Assert.Equal("⇩  Download offline", book.DownloadActionLabel);
+        Assert.Equal("⇩  Download offline",
+            (book with { ProtectedAudioFileName = "audible-title.aaxc" }).DownloadActionLabel);
+        Assert.Equal("▶  Play offline",
+            (book with { IsWidevineOfflineAvailable = true }).DownloadActionLabel);
 
         await vm.EnqueueAsync(book.Id);
 
@@ -670,16 +698,16 @@ public sealed class MainViewModelTests
             new JsonLibraryRepository(Path.Combine(directory.Path, "library.json")), queue);
         await vm.InitializeAsync();
 
-        Assert.Equal("0 queued · 0 downloading · 0 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("0 queued · 0 downloading · 0 paused · 0 completed · 0 failed", vm.QueueSummaryLabel);
 
         await vm.EnqueueAsync("book-1");
-        Assert.Equal("1 queued · 0 downloading · 0 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("1 queued · 0 downloading · 0 paused · 0 completed · 0 failed", vm.QueueSummaryLabel);
 
         await queue.UpdateStatusAsync("book-1", DownloadStatus.Downloading);
         await queue.UpdateStatusAsync("book-1", DownloadStatus.Completed);
         await vm.ReloadAsync();
 
-        Assert.Equal("0 queued · 0 downloading · 1 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("0 queued · 0 downloading · 0 paused · 1 completed · 0 failed", vm.QueueSummaryLabel);
     }
 
     [Fact]
