@@ -11,9 +11,9 @@ using System.Text.Json.Serialization;
 namespace Libation.Mobile.Audible;
 
 /// <summary>
-/// Exchanges an Android-profile PKCE authorization code for a complete Audible
-/// device identity. The registration payload follows AudibleApi's CurrentAndroid
-/// profile so the saved identity retains the Android device type required by Widevine.
+/// Exchanges a LibriSync-compatible iPhone-profile PKCE authorization code for a
+/// complete Audible identity. This is the profile used for Audible ADRM/AAC-LC
+/// downloads; this client deliberately does not register as an Android Widevine device.
 /// </summary>
 public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 {
@@ -22,14 +22,14 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         PropertyNameCaseInsensitive = true
     };
 
-    private const string DeviceType = AudibleOAuthFlow.AndroidDeviceType;
-    private const string AppVersion = "2090263407";
-    private const string OsVersion = @"google\/raven\/raven:14\/UPB5.230623.003\/10615560:user\/release-keys";
-    private const string SoftwareVersion = "130050002";
-    private const string DeviceModel = "sdk_gphone64_x86_64";
-    private const string AppName = "com.audible.application";
+    private const string DeviceType = AudibleOAuthFlow.IPhoneDeviceType;
+    private const string AppVersion = "4.60";
+    private const string OsVersion = "26.2";
+    private const string SoftwareVersion = "46000856";
+    private const string DeviceModel = "iPhone";
+    private const string AppName = "Audible";
     private const string DeviceName =
-        "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android";
+        "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for iPhone";
 
     public async Task<AudibleIdentitySnapshot> RegisterAsync(
         AudibleOAuthChallenge challenge,
@@ -45,7 +45,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
 
         var locale = Localization.Get(challenge.Marketplace);
         var expectedLoginHost = locale.LoginUri().Host;
-        var expectedCallbackHost = locale.AudibleLoginUri().Host;
+        var expectedCallbackHost = locale.LoginUri().Host;
         var cookieDomain = $".{locale.LoginDomain()}.{locale.TopDomain}";
         if (!AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
             throw new InvalidOperationException("The Audible callback does not match the selected marketplace.");
@@ -62,13 +62,11 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             || !string.Equals(challenge.AuthorizationUri.Host, expectedLoginHost, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(challenge.CallbackUri.Host, expectedCallbackHost, StringComparison.OrdinalIgnoreCase)
             || !AudibleOAuthFlow.IsMarketplaceCallback(challenge.Marketplace, challenge.CallbackUri))
-            throw new InvalidOperationException("The Audible OAuth challenge does not match the selected marketplace's Android sign-in and callback hosts.");
+            throw new InvalidOperationException("The Audible OAuth challenge does not match the selected marketplace's iPhone sign-in and callback hosts.");
 
-        if (challenge.DeviceSerial.Length != 20
-            || challenge.DeviceSerial.Any(character => !(character is >= '0' and <= '9' or >= 'a' and <= 'f')))
-            throw new InvalidOperationException("The Audible Android-profile serial must be 20 lowercase hexadecimal characters.");
-        if (string.IsNullOrWhiteSpace(challenge.FrcValue))
-            throw new InvalidOperationException("The Audible Android device-registration context is missing.");
+        if (challenge.DeviceSerial.Length != 40
+            || challenge.DeviceSerial.Any(character => !char.IsAsciiLetterOrDigit(character)))
+            throw new InvalidOperationException("The Audible iPhone-profile serial must be 40 ASCII letters or digits.");
 
         if (challenge.CodeVerifier.Length != 43
             || challenge.CodeVerifier.Any(character => !(char.IsAsciiLetterOrDigit(character) || character is '-' or '_')))
@@ -87,14 +85,13 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             || !string.Equals(authorizationParameters["openid.oa2.code_challenge"], expectedCodeChallenge, StringComparison.Ordinal)
             || !string.Equals(authorizationParameters["openid.oa2.client_id"], "device:" + clientIdHex, StringComparison.Ordinal)
             || !string.Equals(authorizationParameters["openid.return_to"], challenge.CallbackUri.AbsoluteUri, StringComparison.Ordinal)
-            || !string.Equals(authorizationParameters["pageId"],
-                locale.WithUsername
-                    ? "amzn_audible_android_privatepool_aui_v2_dark_" + locale.CountryCode
-                    : "amzn_audible_android_aui_v2_dark_" + locale.CountryCode,
-                StringComparison.Ordinal))
-            throw new InvalidOperationException("The Audible authorization URL does not match the Android device registration or PKCE challenge.");
+            || !string.Equals(authorizationParameters["pageId"], "amzn_audible_ios", StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["openid.assoc_handle"],
+                "amzn_audible_ios_" + locale.CountryCode, StringComparison.Ordinal)
+            || !string.Equals(authorizationParameters["forceMobileLayout"], "true", StringComparison.Ordinal))
+            throw new InvalidOperationException("The Audible authorization URL does not match the LibriSync iPhone registration profile or PKCE challenge.");
 
-        var body = CreateAndroidRegistrationBody(
+        var body = CreateIPhoneRegistrationBody(
             challenge, authorizationCode, clientIdHex, cookieDomain);
 
         using var message = new HttpRequestMessage(
@@ -133,7 +130,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             ?? throw new InvalidDataException("Audible registration response did not contain customer information.");
 
         if (!string.Equals(device.DeviceType, DeviceType, StringComparison.Ordinal))
-            throw new InvalidDataException("Audible did not confirm the Android device type required for Widevine.");
+            throw new InvalidDataException("Audible did not confirm the LibriSync iPhone device type required for ADRM downloads.");
         if (!string.Equals(device.DeviceSerialNumber, challenge.DeviceSerial, StringComparison.Ordinal))
             throw new InvalidDataException("Audible returned a different device serial than the one registered.");
 
@@ -160,7 +157,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
             DeviceSerialNumber = device.DeviceSerialNumber,
             DeviceType = device.DeviceType,
             AmazonAccountId = customer.UserId,
-            DeviceName = device.DeviceName ?? "Audible for Android",
+            DeviceName = device.DeviceName ?? "Audible for iPhone",
             StoreAuthenticationCookie = tokens.StoreAuthenticationCookie?.Cookie ?? string.Empty
         };
 
@@ -169,7 +166,7 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
         return snapshot;
     }
 
-    private static JObject CreateAndroidRegistrationBody(
+    private static JObject CreateIPhoneRegistrationBody(
         AudibleOAuthChallenge challenge,
         string authorizationCode,
         string clientIdHex,
@@ -177,50 +174,39 @@ public sealed class AudiblePkceRegistrationClient(HttpClient httpClient)
     {
         var registrationData = new JObject
         {
-            ["domain"] = "DeviceLegacy",
-            ["device_type"] = DeviceType,
-            ["device_serial"] = challenge.DeviceSerial,
-            ["app_name"] = AppName,
+            ["domain"] = "Device",
             ["app_version"] = AppVersion,
-            ["device_model"] = DeviceModel,
+            ["device_serial"] = challenge.DeviceSerial,
+            ["device_type"] = DeviceType,
+            ["device_name"] = DeviceName,
             ["os_version"] = OsVersion,
             ["software_version"] = SoftwareVersion,
-            ["device_name"] = DeviceName
+            ["device_model"] = DeviceModel,
+            ["app_name"] = AppName
         };
         var authData = new JObject
         {
+            ["client_id"] = clientIdHex,
             ["authorization_code"] = authorizationCode,
             ["code_verifier"] = challenge.CodeVerifier,
             ["code_algorithm"] = "SHA-256",
-            ["client_domain"] = "DeviceLegacy",
-            ["client_id"] = clientIdHex,
-            ["use_global_authentication"] = "true"
+            ["client_domain"] = "DeviceLegacy"
         };
 
-        var root = new JObject
+        // This is the exact LibriSync iPhone registration shape. In particular,
+        // it intentionally omits Android-only user_context_map.frc and device_metadata.
+        return new JObject
         {
-            ["requested_token_type"] = new JArray("bearer", "mac_dms", "store_authentication_cookie", "website_cookies"),
+            ["requested_token_type"] = new JArray("bearer", "mac_dms", "website_cookies", "store_authentication_cookie"),
             ["cookies"] = new JObject
             {
                 ["domain"] = cookieDomain,
                 ["website_cookies"] = new JArray()
             },
-            ["user_context_map"] = new JObject { ["frc"] = challenge.FrcValue },
             ["registration_data"] = registrationData,
             ["auth_data"] = authData,
-            ["requested_extensions"] = new JArray("device_info", "customer_info"),
-            ["device_metadata"] = new JObject
-            {
-                ["device_os_family"] = "android",
-                ["device_type"] = DeviceType,
-                ["device_serial"] = challenge.DeviceSerial,
-                ["manufacturer"] = "Google",
-                ["model"] = DeviceModel,
-                ["os_version"] = "34",
-                ["product"] = DeviceModel
-            }
+            ["requested_extensions"] = new JArray("device_info", "customer_info")
         };
-        return root;
     }
 
     private sealed class RegistrationEnvelope
