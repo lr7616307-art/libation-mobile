@@ -106,9 +106,12 @@ public sealed class AndroidWidevineDashOfflineStore
 
             if (cache.CacheSpace > MaximumCachedBytes)
             {
-                RemoveTitle(accountId, asin);
+                // The quota failure belongs to this attempted content version.
+                // Preserve every other completed version for this title and all
+                // offline titles in the library.
+                RemoveContentVersion(accountId, asin, contentVersionKey);
                 throw new IOException(
-                    "The protected Audible download would exceed VØRATH's 8 GiB offline cache limit. The incomplete title cache was removed.");
+                    "The protected Audible download would exceed VØRATH's 8 GiB offline cache limit. Only this incomplete content-version cache was removed; existing offline versions were preserved.");
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -271,6 +274,48 @@ public sealed class AndroidWidevineDashOfflineStore
             allowNetwork: false);
     }
 
+    /// <summary>
+    /// Removes one content-version cache only. Other previously completed
+    /// versions of the same audiobook remain untouched.
+    /// </summary>
+    public void RemoveContentVersion(string accountId, string asin, string contentVersionKey)
+    {
+        ValidateIdentity(accountId, asin);
+        ValidateContentVersionKey(contentVersionKey);
+        var titleScope = GetTitleScope(accountId, asin);
+        var contentScope = AudibleWidevineCacheIdentity.CreateCacheScope(titleScope, contentVersionKey);
+        var cache = GetCache();
+
+        lock (CacheIndexGate)
+        {
+            var index = ReadCacheIndex();
+            var requirements = ReadCacheRequirements();
+            var keysToRemove = index.TryGetValue(contentScope, out var indexedKeys)
+                ? new HashSet<string>(indexedKeys, StringComparer.Ordinal)
+                : new HashSet<string>(StringComparer.Ordinal);
+
+            // Include unindexed resources left by a crash between Media3's cache
+            // write and the durable title index update, but only for this version.
+            foreach (var cacheKey in GetCacheKeys(cache))
+            {
+                if (AudibleWidevineCacheIdentity.IsContentCacheKey(contentScope, cacheKey))
+                    keysToRemove.Add(cacheKey);
+            }
+
+            foreach (var key in keysToRemove)
+                cache.RemoveResource(key);
+
+            index.Remove(contentScope);
+            requirements.Remove(contentScope);
+            WriteCacheIndex(index);
+            WriteCacheRequirements(requirements);
+        }
+    }
+
+    /// <summary>
+    /// Removes every cached version for one account/title. This is reserved for
+    /// explicit title removal or account cleanup, never routine quota handling.
+    /// </summary>
     public void RemoveTitle(string accountId, string asin)
     {
         ValidateIdentity(accountId, asin);
@@ -282,9 +327,10 @@ public sealed class AndroidWidevineDashOfflineStore
             var index = ReadCacheIndex();
             var requirements = ReadCacheRequirements();
             var matchingScopes = index.Keys
-                .Where(key => IsTitleCacheScope(scope, key))
+                .Where(key => AudibleWidevineCacheIdentity.IsTitleCacheScope(scope, key))
                 .ToHashSet(StringComparer.Ordinal);
-            matchingScopes.UnionWith(requirements.Keys.Where(key => IsTitleCacheScope(scope, key)));
+            matchingScopes.UnionWith(
+                requirements.Keys.Where(key => AudibleWidevineCacheIdentity.IsTitleCacheScope(scope, key)));
 
             var keysToRemove = new HashSet<string>(StringComparer.Ordinal);
             foreach (var cacheScope in matchingScopes)
@@ -293,8 +339,8 @@ public sealed class AndroidWidevineDashOfflineStore
                     keysToRemove.UnionWith(indexedKeys);
             }
 
-            // Include unindexed resources left by a crash between Media3's cache
-            // write and the durable title index update.
+            // Include legacy title-scoped and unindexed resources left by a crash
+            // between Media3's cache write and the durable title index update.
             foreach (var cacheKey in GetCacheKeys(cache))
             {
                 if (cacheKey.StartsWith(scope + ":", StringComparison.Ordinal) ||
@@ -552,21 +598,7 @@ public sealed class AndroidWidevineDashOfflineStore
     }
 
     private static string GetContentScope(string titleScope, string contentVersionKey)
-    {
-        // ReconcileCacheIndex deliberately disallows ':' in a scope and caps
-        // it at 128 characters. Retain a 192-bit version suffix while keeping
-        // the account/title prefix available for complete title removal.
-        var versionSuffix = string.Equals(
-            contentVersionKey, AudibleWidevineCacheIdentity.UnversionedContentKey,
-            StringComparison.Ordinal)
-            ? "u"
-            : "v-" + contentVersionKey[2..50];
-        return titleScope + "-" + versionSuffix;
-    }
-
-    private static bool IsTitleCacheScope(string titleScope, string candidate)
-        => string.Equals(candidate, titleScope, StringComparison.Ordinal)
-            || candidate.StartsWith(titleScope + "-", StringComparison.Ordinal);
+        => AudibleWidevineCacheIdentity.CreateCacheScope(titleScope, contentVersionKey);
 
     private static void ValidateContentVersionKey(string contentVersionKey)
     {
