@@ -132,26 +132,68 @@ public sealed class ResumableAudioFileDownloaderTests
 
     private sealed class SlowHttpContent(CancellationToken cancellationToken) : HttpContent
     {
-        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
-        {
-            await stream.WriteAsync(Encoding.UTF8.GetBytes("first chunk"), cancellationToken);
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-        }
+        protected override Task<Stream> CreateContentReadStreamAsync()
+            => Task.FromResult<Stream>(new SlowReadStream(cancellationToken));
 
-        protected override async Task SerializeToStreamAsync(
+        protected override Task<Stream> CreateContentReadStreamAsync(CancellationToken token)
+            => Task.FromResult<Stream>(new SlowReadStream(token));
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            => throw new NotSupportedException("The test content exposes a direct stream.");
+
+        protected override Task SerializeToStreamAsync(
             Stream stream,
             TransportContext? context,
-            CancellationToken cancellationToken)
-        {
-            await stream.WriteAsync(Encoding.UTF8.GetBytes("first chunk"), cancellationToken);
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-        }
+            CancellationToken token)
+            => throw new NotSupportedException("The test content exposes a direct stream.");
 
         protected override bool TryComputeLength(out long length)
         {
             length = -1;
             return false;
         }
+    }
+
+    private sealed class SlowReadStream(CancellationToken cancellationToken) : Stream
+    {
+        private bool _sentFirstChunk;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken token = default)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, token);
+            if (!_sentFirstChunk)
+            {
+                _sentFirstChunk = true;
+                var bytes = Encoding.UTF8.GetBytes("first chunk");
+                bytes.CopyTo(buffer);
+                return bytes.Length;
+            }
+
+            await Task.Delay(Timeout.InfiniteTimeSpan, linked.Token);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken token)
+            => ReadAsync(buffer.AsMemory(offset, count), token).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count)
+            => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private sealed class TemporaryDirectory : IDisposable
