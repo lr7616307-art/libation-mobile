@@ -112,6 +112,8 @@ public sealed class AudibleOfflineDownloadPipelineTests
             CancellationToken cancellationToken = default)
         {
             TransferCalls++;
+            stageProgress?.Report(new AudibleOfflineDownloadStage(
+                "test-transfer", "Test transfer stage."));
             if (TransferFailuresRemaining > 0)
             {
                 TransferFailuresRemaining--;
