@@ -4,8 +4,24 @@ using Libation.Mobile.UI.ViewModels;
 
 namespace Libation.Mobile.UI.Views;
 
+public interface IAudibleWidevinePlaybackCoordinator
+{
+    Task<bool> HasOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
+    Task<AudibleWidevineRenewalProbeResult> ProbeOfflineLicenseRenewalAsync(string asin, CancellationToken cancellationToken = default);
+    Task<bool> HasOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
+    Task AcquireOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
+    Task DownloadOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
+    Task DownloadOfflineMediaAsync(string asin, IProgress<AudioDownloadProgress>? progress, CancellationToken cancellationToken = default);
+    Task PlayAsync(string asin, string title, long startPositionMilliseconds = 0, bool autoPlay = true, CancellationToken cancellationToken = default);
+    Task RemoveOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
+    Task RemoveAllOfflineLicensesAsync(CancellationToken cancellationToken = default);
+}
+
 public partial class MainView
 {
+    /// <summary>Creates an authorized Widevine offline-licence/playback coordinator on demand.</summary>
+    public static Func<CancellationToken, Task<IAudibleWidevinePlaybackCoordinator?>>? PlatformWidevinePlaybackCoordinatorFactory { get; set; }
+
     /// <summary>Set by the platform host before Avalonia creates the main view.</summary>
     public static Func<AudibleSignInViewModel>? PlatformSignInViewModelFactory { get; set; }
 
@@ -22,10 +38,16 @@ public partial class MainView
     public static Func<IAudiobookDetailsProvider>? PlatformAudiobookDetailsProviderFactory { get; set; }
 
     /// <summary>Creates an authorized Audible media source from the saved account identity.</summary>
-    public static Func<CancellationToken, Task<IAuthorizedAudioDownloadSource?>>? PlatformAudibleDownloadSourceFactory { get; set; }
+    public static Func<AudibleDownloadQuality, CancellationToken, Task<IAuthorizedAudioDownloadSource?>>? PlatformAudibleDownloadSourceFactory { get; set; }
 
     /// <summary>Legacy external title launcher, retained for non-download navigation only.</summary>
     public static Func<string, Task>? PlatformOpenAudibleTitleFactory { get; set; }
+
+    /// <summary>Starts an Audible-authorized background offline download in Android's foreground service.</summary>
+    public static Action<string, string>? PlatformAudibleOfflineDownloadStartAction { get; set; }
+
+    /// <summary>Stores the playable local file after the foreground Audible download completes.</summary>
+    public static Action<string, string>? PlatformAudibleDownloadCompletedAction { get; set; }
 
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }

@@ -68,7 +68,8 @@ public sealed class LibrarySyncServiceTests
             new Audiobook("provider:aud-1", "[null]", "Unknown author", "", "", "Library")
             {
                 CoverImagePath = "/app/covers/aud-1.jpg",
-                CoverImageUrl = "https://m.media-amazon.com/images/I/old.jpg"
+                CoverImageUrl = "https://m.media-amazon.com/images/I/old.jpg",
+                IsWidevineOfflineAvailable = true
             }
         ]);
         var service = new LibrarySyncService(
@@ -95,6 +96,7 @@ public sealed class LibrarySyncServiceTests
         Assert.Equal("https://m.media-amazon.com/images/I/new.jpg", saved.CoverImageUrl);
         Assert.True(saved.IsPlayableOnAudible);
         Assert.False(saved.IsDownloadedOnAudible);
+        Assert.True(saved.IsWidevineOfflineAvailable);
     }
 
     [Fact]

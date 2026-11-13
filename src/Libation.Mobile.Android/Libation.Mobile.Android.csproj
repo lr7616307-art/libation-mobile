@@ -15,8 +15,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <AndroidLibrary Include="libs/ffmpeg-kit.aar" Bind="true" />
+    <AndroidLibrary Include="libs/smart-exception-java-0.1.1.jar" Bind="false" />
+    <AndroidLibrary Include="libs/smart-exception-common-0.1.1.jar" Bind="false" />
+    <TransformFile Include="Transforms/FFmpegKit.Metadata.xml" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Avalonia.Android" Version="12.1.2" />
     <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer" Version="1.11.1" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer.Dash" Version="1.11.1" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.DataSource" Version="1.11.1" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.Database" Version="1.11.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Libation.Mobile.UI\Libation.Mobile.UI.csproj" />

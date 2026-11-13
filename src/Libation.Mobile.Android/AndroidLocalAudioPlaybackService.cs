@@ -2,8 +2,12 @@ using Android.App;
 using Android.Content;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.ExoPlayer;
+using AndroidX.Media3.ExoPlayer.Dash;
+using AndroidX.Media3.ExoPlayer.Source;
 using Android.OS;
 using Android.Graphics;
+using System.Security.Cryptography;
+using Java.Util;
 
 namespace Libation.Mobile.Android;
 
@@ -12,6 +16,7 @@ namespace Libation.Mobile.Android;
 public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 {
     public const string ActionPlay = "org.libationmobile.app.action.PLAY";
+    public const string ActionPlayWidevineDash = "org.libationmobile.app.action.PLAY_WIDEVINE_DASH";
     public const string ActionPause = "org.libationmobile.app.action.PAUSE";
     public const string ActionResume = "org.libationmobile.app.action.RESUME";
     public const string ActionSeek = "org.libationmobile.app.action.SEEK";
@@ -26,6 +31,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionCancelSleepTimer = "org.libationmobile.app.action.CANCEL_SLEEP_TIMER";
     public const string ActionSetArtwork = "org.libationmobile.app.action.SET_ARTWORK";
     public const string ExtraFilePath = "file_path";
+    public const string ExtraManifestUri = "widevine_manifest_uri";
+    public const string ExtraOfflineKeySetId = "widevine_offline_key_set_id";
+    public const string ExtraWidevineAccountId = "widevine_account_id";
+    public const string ExtraWidevineAsin = "widevine_asin";
+    public const string ExtraWidevineStreamKeys = "widevine_stream_keys";
     public const string ExtraTitle = "title";
     public const string ExtraArtworkPath = "artwork_path";
     public const string ExtraChapterPositions = "chapter_positions";
@@ -37,9 +47,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private const string ChannelId = "libation_audiobook_playback";
     private const int NotificationId = 4102;
+    private static readonly UUID WidevineUuid = UUID.FromString("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed");
     private IExoPlayer? _player;
     private string _title = "Audiobook";
     private string? _currentFilePath;
+    private bool _isWidevinePlayback;
+    private string? _widevineAsin;
     private string? _coverImagePath;
     private Bitmap? _coverBitmap;
     private float _playbackSpeed = 1f;
@@ -58,6 +71,58 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public static long PositionMilliseconds => Current?.ReadPosition() ?? 0;
     public static long DurationMilliseconds => Current?.ReadDuration() ?? 0;
     public static float PlaybackSpeed => Current?._playbackSpeed ?? 1f;
+
+    /// <summary>
+    /// Stops this title's protected player on the Android main looper before its
+    /// offline licence or cache is removed. Clear-audio playback is unaffected.
+    /// </summary>
+    public static async Task StopWidevinePlaybackIfCurrentAsync(
+        string asin,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(asin);
+        var service = Current;
+        if (service is null ||
+            !service._isWidevinePlayback ||
+            !string.Equals(service._widevineAsin, asin, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var completion = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void StopOnMainLooper()
+        {
+            try
+            {
+                if (Current == service &&
+                    service._isWidevinePlayback &&
+                    string.Equals(service._widevineAsin, asin, StringComparison.OrdinalIgnoreCase))
+                {
+                    service.StopPlayback();
+                    service.StopSelf();
+                    service.PublishPlaybackState();
+                }
+                completion.TrySetResult(true);
+            }
+            catch (Exception exception)
+            {
+                completion.TrySetException(exception);
+            }
+        }
+
+        if (Looper.MyLooper() == Looper.MainLooper)
+        {
+            StopOnMainLooper();
+        }
+        else
+        {
+            var handler = service._checkpointHandler ?? new Handler(Looper.MainLooper!);
+            if (!handler.Post(new Java.Lang.Runnable(StopOnMainLooper)))
+                throw new InvalidOperationException("Unable to stop protected playback before removing the offline title.");
+        }
+
+        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     public override void OnCreate()
     {
@@ -93,6 +158,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             {
                 case ActionPlay:
                     StartPlayback(intent);
+                    break;
+                case ActionPlayWidevineDash:
+                    StartWidevineDashPlayback(intent);
                     break;
                 case ActionPause:
                     if (_player?.IsPlaying == true) _player.Pause();
@@ -172,7 +240,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
             _title = System.IO.Path.GetFileNameWithoutExtension(path);
+        WidevinePlaybackRecoveryStore.Clear(this);
+        _widevineAsin = null;
         _currentFilePath = path;
+        _isWidevinePlayback = false;
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
 
@@ -196,6 +267,105 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
         if (intent.GetBooleanExtra(ExtraAutoPlay, true))
             _player.Play();
+        SavePlaybackSnapshot();
+        UpdateNotification();
+        PublishPlaybackState();
+    }
+
+
+    private void StartWidevineDashPlayback(Intent intent)
+    {
+        var manifestValue = intent.GetStringExtra(ExtraManifestUri);
+        if (string.IsNullOrWhiteSpace(manifestValue) ||
+            !Uri.TryCreate(manifestValue, UriKind.Absolute, out var manifestUri) ||
+            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            manifestUri.UserInfo.Length != 0)
+            throw new InvalidDataException("A valid HTTPS Audible DASH manifest is required.");
+
+        var accountId = intent.GetStringExtra(ExtraWidevineAccountId);
+        var asin = intent.GetStringExtra(ExtraWidevineAsin);
+        if (string.IsNullOrWhiteSpace(accountId) || string.IsNullOrWhiteSpace(asin))
+            throw new InvalidDataException("The protected Audible account/title reference is missing.");
+
+        var keySetId = intent.GetByteArrayExtra(ExtraOfflineKeySetId);
+        if (keySetId is null || keySetId.Length is 0 or > 1024)
+            throw new InvalidDataException("A saved Android Widevine offline key-set identifier is required.");
+
+        var streamKeyValues = intent.GetIntArrayExtra(ExtraWidevineStreamKeys);
+        if (streamKeyValues is null || streamKeyValues.Length is 0 or > 384 ||
+            streamKeyValues.Length % 3 != 0)
+            throw new InvalidDataException("The saved offline DASH audio selection is invalid.");
+
+        StopPlayer();
+        _title = intent.GetStringExtra(ExtraTitle);
+        if (string.IsNullOrWhiteSpace(_title))
+            _title = "Audible audiobook";
+        PlaybackRecoveryStore.Clear(this);
+        _currentFilePath = null; // Protected media is never represented as a clear local file.
+        _widevineAsin = asin;
+        _isWidevinePlayback = true;
+        SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
+        _playbackSpeed = 1f;
+
+        StartForeground(NotificationId, BuildNotification());
+
+        MediaItem mediaItem;
+        try
+        {
+            var streamKeys = new global::Android.Runtime.JavaList<StreamKey>();
+            for (var offset = 0; offset < streamKeyValues.Length; offset += 3)
+            {
+                var periodIndex = streamKeyValues[offset];
+                var groupIndex = streamKeyValues[offset + 1];
+                var trackIndex = streamKeyValues[offset + 2];
+                if (periodIndex < 0 || groupIndex < 0 || trackIndex < 0)
+                    throw new InvalidDataException("The saved offline DASH audio selection contains an invalid index.");
+                streamKeys.Add(new StreamKey(periodIndex, groupIndex, trackIndex));
+            }
+
+            var drmConfiguration = new MediaItem.DrmConfiguration.Builder(WidevineUuid)
+                .SetKeySetId(keySetId)
+                .Build();
+            mediaItem = new MediaItem.Builder()
+                .SetUri(global::Android.Net.Uri.Parse(manifestUri.AbsoluteUri))
+                .SetMimeType("application/dash+xml")
+                .SetStreamKeys(streamKeys)
+                .SetDrmConfiguration(drmConfiguration)
+                .Build();
+
+        }
+        finally
+        {
+            // Media3's DRM configuration copies the supplied key-set byte array.
+            CryptographicOperations.ZeroMemory(keySetId);
+            intent.RemoveExtra(ExtraOfflineKeySetId);
+            intent.RemoveExtra(ExtraWidevineStreamKeys);
+        }
+
+        var offlineStore = new AndroidWidevineDashOfflineStore(this);
+        var cacheDataSourceFactory = offlineStore.CreatePlaybackDataSourceFactory(
+            accountId, asin, manifestUri);
+        // Cache-only source: if any DASH manifest/segment is missing, playback
+        // fails rather than silently falling back to the network.
+        var mediaSource = new DashMediaSource.Factory(cacheDataSourceFactory)
+            .CreateMediaSource(mediaItem);
+
+        _player = new ExoPlayerBuilder(this).Build();
+        _player.AddListener(this);
+        _player.SetMediaSource(mediaSource);
+        var position = Math.Max(0L, intent.GetLongExtra(ExtraPosition, 0));
+        if (position > 0) _player.SeekTo(position);
+        _player.Prepare();
+
+        var speed = intent.GetFloatExtra(ExtraSpeed, 1f);
+        if (!float.IsNaN(speed) && !float.IsInfinity(speed))
+        {
+            _playbackSpeed = Math.Clamp(speed, 0.5f, 3f);
+            _player.PlaybackParameters = new PlaybackParameters(_playbackSpeed, 1f);
+        }
+        if (intent.GetBooleanExtra(ExtraAutoPlay, true))
+            _player.Play();
+
         SavePlaybackSnapshot();
         UpdateNotification();
         PublishPlaybackState();
@@ -352,11 +522,21 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     }
     private void SavePlaybackSnapshot()
     {
-        if (_player is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        if (_player is null) return;
         try
         {
-            PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
-                _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying, _coverImagePath));
+            if (_isWidevinePlayback && !string.IsNullOrWhiteSpace(_widevineAsin))
+            {
+                WidevinePlaybackRecoveryStore.Save(this, new WidevinePlaybackRecoverySnapshot(
+                    _widevineAsin, _title, ReadPosition(), _player.IsPlaying));
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_currentFilePath))
+            {
+                PlaybackRecoveryStore.Save(this, new PlaybackRecoverySnapshot(
+                    _currentFilePath, _title, ReadPosition(), ReadDuration(), _playbackSpeed, _player.IsPlaying, _coverImagePath));
+            }
         }
         catch (Exception) { /* A checkpoint must never interrupt audio playback. */ }
     }
@@ -538,7 +718,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private void StopPlayback(bool clearRecovery = true)
     {
         StopPlayer();
-        if (clearRecovery) PlaybackRecoveryStore.Clear(this);
+        if (clearRecovery)
+        {
+            if (_isWidevinePlayback) WidevinePlaybackRecoveryStore.Clear(this);
+            else PlaybackRecoveryStore.Clear(this);
+        }
+        _isWidevinePlayback = false;
+        _widevineAsin = null;
         StopForeground(StopForegroundFlags.Remove);
     }
 

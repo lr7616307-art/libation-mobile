@@ -22,10 +22,15 @@ public sealed record Audiobook(
     public bool? IsPlayableOnAudible { get; init; }
     public bool? IsDownloadedOnAudible { get; init; }
 
+    /// <summary>True when the provider-encrypted Widevine DASH media and offline licence are cached privately by VØRATH.</summary>
+    public bool IsWidevineOfflineAvailable { get; init; }
+
     [JsonIgnore]
     public string AudibleAvailabilityLabel => !IsProviderCatalogueEntry
         ? string.Empty
-        : !string.IsNullOrWhiteSpace(ProtectedAudioFileName)
+        : IsWidevineOfflineAvailable
+            ? "Downloaded to VØRATH for offline Widevine playback"
+            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName)
             ? "Downloaded to VØRATH as a DRM-protected file"
             : !string.IsNullOrWhiteSpace(AudioFilePath)
                 ? "Downloaded to VØRATH and ready to play"
@@ -40,6 +45,7 @@ public sealed record Audiobook(
     [JsonIgnore]
     public string AudibleAvailabilityShortLabel => !IsProviderCatalogueEntry
         ? string.Empty
+        : IsWidevineOfflineAvailable ? "OFFLINE IN VØRATH"
         : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "SAVED IN VØRATH"
         : !string.IsNullOrWhiteSpace(AudioFilePath) ? "READY TO PLAY"
         : IsDownloadedOnAudible == true ? "DOWNLOADED ON AUDIBLE"
@@ -53,8 +59,8 @@ public sealed record Audiobook(
     [JsonIgnore]
     public string DownloadActionLabel => IsProviderCatalogueEntry
         ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶  Play"
-            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "✓  Saved"
-            : "⇩  Download"
+            : IsWidevineOfflineAvailable ? "▶  Play offline"
+            : "⇩  Download offline"
         : "Add to queue";
 
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>

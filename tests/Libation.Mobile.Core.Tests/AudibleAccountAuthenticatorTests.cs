@@ -26,7 +26,7 @@ public sealed class AudibleAccountAuthenticatorTests
     }
 
     [Theory]
-    [InlineData("http://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("http://www.audible.com/ap/maplanding?openid.oa2.authorization_code=fake")]
     [InlineData("not-a-url")]
     [InlineData("/relative/callback")]
     public async Task CompleteSignIn_RejectsNonAbsoluteHttpsResponseWithoutPersistingIdentity(string responseUrl)
@@ -45,10 +45,10 @@ public sealed class AudibleAccountAuthenticatorTests
 
     [Theory]
     [InlineData("https://evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.amazon.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.amazon.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.audible.com/ap/maplanding?openid.oa2.authorization_code=fake")]
-    [InlineData("https://www.amazon.com/not-maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.com.evil.example/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.com:444/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.in/ap/maplanding?openid.oa2.authorization_code=fake")]
+    [InlineData("https://www.audible.com/not-maplanding?openid.oa2.authorization_code=fake")]
     public async Task CompleteSignIn_RejectsResponseOutsideExactMarketplaceCallback(string responseUrl)
     {
         var secrets = new InMemorySecretStore();
@@ -91,7 +91,7 @@ public sealed class AudibleAccountAuthenticatorTests
 
         var replayError = await Assert.ThrowsAsync<InvalidOperationException>(
             () => authenticator.CompleteSignInAsync(challenge.ChallengeId,
-                "https://www.amazon.com/ap/maplanding?openid.oa2.authorization_code=fake"));
+                "https://www.audible.com/ap/maplanding?openid.oa2.authorization_code=fake"));
 
         Assert.Contains("missing, expired, or already used", replayError.Message);
         Assert.Equal(0, secrets.SetCalls);

@@ -1,5 +1,6 @@
 using Android.Content;
 using Libation.Mobile.Core;
+using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.Android;
 
@@ -16,6 +17,13 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
 
         // Rehydrate the last session when the app is opened after a process death
         // or device restart. The saved play/pause state is respected.
+        var widevineSnapshot = WidevinePlaybackRecoveryStore.Load(AppContext);
+        if (widevineSnapshot is not null)
+        {
+            _ = RestoreWidevinePlaybackAsync(widevineSnapshot);
+            return;
+        }
+
         var snapshot = PlaybackRecoveryStore.Load(AppContext);
         if (snapshot is not null)
         {
@@ -24,6 +32,32 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
                 AppContext.StartForegroundService(intent);
             else
                 AppContext.StartService(intent);
+        }
+    }
+
+    private static async Task RestoreWidevinePlaybackAsync(WidevinePlaybackRecoverySnapshot snapshot)
+    {
+        try
+        {
+            var factory = MainView.PlatformWidevinePlaybackCoordinatorFactory;
+            if (factory is null)
+                return;
+
+            var coordinator = await factory(CancellationToken.None).ConfigureAwait(false);
+            if (coordinator is null)
+                return;
+
+            await coordinator.PlayAsync(
+                snapshot.Asin,
+                snapshot.Title,
+                snapshot.PositionMilliseconds,
+                snapshot.WasPlaying,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Keep the non-secret checkpoint so the next app launch can retry.
+            // The UI can still open and the DRM/cache failure is not logged.
         }
     }
 
@@ -57,6 +91,53 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraFilePath, filePath);
         if (!string.IsNullOrWhiteSpace(title)) intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraTitle, title);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
+        StartService(intent, foreground: true);
+    }
+
+    /// <summary>
+    /// Starts protected Audible DASH playback through Media3 using a persisted
+    /// Android Widevine offline key-set identifier. The identifier is passed
+    /// only in an explicit in-app service intent and is never written to recovery
+    /// preferences or the audiobook catalogue.
+    /// </summary>
+    public static void StartWidevineDash(
+        Uri manifestUri,
+        byte[] offlineKeySetId,
+        string title,
+        string accountId,
+        string asin,
+        int[] streamKeyValues,
+        long startPositionMilliseconds = 0,
+        bool autoPlay = true)
+    {
+        ArgumentNullException.ThrowIfNull(manifestUri);
+        ArgumentNullException.ThrowIfNull(offlineKeySetId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentException.ThrowIfNullOrWhiteSpace(accountId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(asin);
+        ArgumentNullException.ThrowIfNull(streamKeyValues);
+
+        if (!manifestUri.IsAbsoluteUri ||
+            !string.Equals(manifestUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            manifestUri.UserInfo.Length != 0)
+            throw new ArgumentException("Protected Audible playback requires an HTTPS DASH manifest.", nameof(manifestUri));
+        if (offlineKeySetId.Length is 0 or > 1024)
+            throw new ArgumentOutOfRangeException(nameof(offlineKeySetId));
+        if (asin.Length != 10 || asin.Any(character => !char.IsAsciiLetterOrDigit(character)))
+            throw new ArgumentException("A valid Audible ASIN is required.", nameof(asin));
+        if (streamKeyValues.Length is 0 or > 384 || streamKeyValues.Length % 3 != 0 ||
+            streamKeyValues.Any(value => value < 0))
+            throw new ArgumentException("The offline DASH audio stream selection is invalid.", nameof(streamKeyValues));
+
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionPlayWidevineDash);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraManifestUri, manifestUri.AbsoluteUri);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraOfflineKeySetId, offlineKeySetId);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraTitle, title);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineAccountId, accountId);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineAsin, asin);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineStreamKeys, streamKeyValues);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraAutoPlay, autoPlay);
         StartService(intent, foreground: true);
     }
 

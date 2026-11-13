@@ -23,6 +23,7 @@ public partial class MainView : UserControl
     private readonly IDownloadQueue? _downloadQueue;
     private readonly DownloadQueueWorker? _downloadWorker;
     private CancellationTokenSource? _downloadRunCts;
+    private CancellationTokenSource? _protectedAudibleOperationCts;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly DispatcherTimer _playbackCheckpointTimer = new() { Interval = TimeSpan.FromSeconds(15) };
@@ -66,7 +67,7 @@ public partial class MainView : UserControl
             ordinaryDownloadSource,
             cancellationToken => PlatformAudibleDownloadSourceFactory is null
                 ? Task.FromResult<IAuthorizedAudioDownloadSource?>(null)
-                : PlatformAudibleDownloadSourceFactory(cancellationToken));
+                : PlatformAudibleDownloadSourceFactory(_viewModel.CurrentDownloadSettings.AudibleQuality, cancellationToken));
         _downloadWorker = new DownloadQueueWorker(
             queue,
             new AudioFileDownloader(new HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
@@ -81,6 +82,22 @@ public partial class MainView : UserControl
             ?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         AttachPlaybackStateNotifications();
         _activeView = new WeakReference<MainView>(this);
+        PlatformAudibleDownloadCompletedAction = (asin, audioFilePath) =>
+        {
+            var audiobookId = "provider:" + asin;
+            Dispatcher.UIThread.Post(async () =>
+            {
+                try
+                {
+                    await _viewModel.MarkAudibleLocalFileAvailableAsync(audiobookId, audioFilePath);
+                }
+                catch (Exception exception)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Could not save completed Audible audio: {exception.GetType().Name}");
+                }
+            });
+        };
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -143,6 +160,7 @@ public partial class MainView : UserControl
         await ValidateSavedDownloadFolderBookmarkAsync();
         if (PlatformSignInViewModelFactory?.Invoke() is { } accountViewModel)
             await accountViewModel.LoadStatusAsync();
+        await AuditWidevineOfflineLibraryAsync(CancellationToken.None);
         UpdateAudibleAccountSummary();
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
@@ -927,7 +945,67 @@ public partial class MainView : UserControl
     internal async Task SyncLibraryAndUpdateAccountAsync()
     {
         await _viewModel.SyncLibraryAsync();
+        await AuditWidevineOfflineLibraryAsync(CancellationToken.None);
         UpdateAudibleAccountSummary();
+    }
+
+    /// <summary>
+    /// Reconciles local "offline available" labels with the saved Audible
+    /// Widevine key-set and the title-scoped encrypted DASH cache. A missing
+    /// account identity or transient audit failure never clears catalogue state.
+    /// </summary>
+    private async Task AuditWidevineOfflineLibraryAsync(CancellationToken cancellationToken)
+    {
+        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+            return;
+
+        var candidates = _viewModel.AudibleBooks
+            .Where(book => book.IsWidevineOfflineAvailable
+                && book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            .ToArray();
+        if (candidates.Length == 0)
+            return;
+
+        try
+        {
+            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
+            if (coordinator is null)
+                return;
+
+            var unavailableCount = 0;
+            foreach (var book in candidates)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var asin = book.Id["provider:".Length..];
+                var hasLicense = await coordinator.HasOfflineLicenseAsync(asin, cancellationToken);
+                var hasCompleteMedia = hasLicense
+                    && await coordinator.HasOfflineMediaAsync(asin, cancellationToken);
+
+                if (hasCompleteMedia)
+                    continue;
+
+                await _viewModel.MarkWidevineOfflineRemovedAsync(book.Id, cancellationToken);
+                unavailableCount++;
+            }
+
+            if (unavailableCount > 0)
+            {
+                _viewModel.ReportAudioStatus(
+                    $"{unavailableCount} Audible offline title(s) need to be downloaded again. Open a title and tap Download offline to restore it.");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // The integrity check is best-effort; a transient storage/DRM failure
+            // must not interrupt login, catalogue sync or ordinary playback.
+            _viewModel.ReportAudioStatus(
+                "Could not verify every Audible offline copy. Their status will be checked again when you open a title.");
+        }
     }
 
     private void UpdateAudibleAccountSummary()
@@ -984,18 +1062,291 @@ public partial class MainView : UserControl
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(book.ProtectedAudioFileName))
+        // The library action is a download action until VØRATH has a complete
+        // offline copy. Only a subsequent Play offline tap starts playback.
+        await RunProtectedAudibleOperationAsync(book, book.IsWidevineOfflineAvailable);
+    }
+
+    private async Task RunProtectedAudibleOperationAsync(Audiobook book, bool startPlayback)
+    {
+        if (!book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            return;
+
+        var asin = book.Id["provider:".Length..];
+
+        // Audible media transfers are owned by Android's foreground service.
+        // That service keeps working when VØRATH is backgrounded and supplies
+        // progress, Pause and Resume actions through the Android notification.
+        if (!startPlayback)
         {
-            _viewModel.ReportAudioStatus(
-                "This Audible file is saved in VØRATH, but remains DRM-protected and cannot be played by the current player.");
+            StartAudibleOfflineDownload(asin, book.Title);
             return;
         }
 
-        await _viewModel.EnqueueAsync(book.Id);
-        if (string.IsNullOrWhiteSpace(_viewModel.ErrorMessage) &&
-            _viewModel.DownloadSettingsStatus.StartsWith("Added to the Audible download queue.", StringComparison.Ordinal))
+        if (_localAudioPlayer is null)
         {
-            await StartPendingDownloadsAsync();
+            _viewModel.ReportAudioStatus("Protected Audible playback is unavailable on this platform. The offline download itself does not require the player.");
+            return;
+        }
+
+        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+        {
+            _viewModel.ReportAudioStatus("The Android Widevine playback service is not available in this build.");
+            return;
+        }
+
+        if (_protectedAudibleOperationCts is not null)
+        {
+            _viewModel.ReportAudioStatus("Another Audible offline playback operation is already running.");
+            return;
+        }
+
+        var operationCts = new CancellationTokenSource();
+        _protectedAudibleOperationCts = operationCts;
+        _viewModel.SetProtectedAudibleOperationInProgress(true);
+        var cancellationToken = operationCts.Token;
+        var phase = "initialization";
+
+        try
+        {
+            _viewModel.ReportAudioStatus("Checking the saved Audible offline licence…");
+            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
+            if (coordinator is null)
+            {
+                _viewModel.ReportAudioStatus("Sign in to Audible again before playing this protected audiobook.");
+                return;
+            }
+
+            phase = "checking the offline licence";
+            if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken))
+            {
+                StartAudibleOfflineDownload(asin, book.Title);
+                return;
+            }
+
+            phase = "checking saved encrypted audio";
+            if (!await coordinator.HasOfflineMediaAsync(asin, cancellationToken))
+            {
+                StartAudibleOfflineDownload(asin, book.Title);
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            phase = "starting offline playback";
+            await coordinator.PlayAsync(
+                asin,
+                book.Title,
+                _viewModel.GetResumePositionMilliseconds(book.Id),
+                cancellationToken: cancellationToken);
+
+            _playingAudiobookId = book.Id;
+            _viewModel.SetNowPlayingBook(book.Id);
+            _playbackProgressTimer.Start();
+            _playbackCheckpointTimer.Start();
+            await _viewModel.MarkPlaybackStartedAsync(book.Id);
+            BeginChapterMetadataLoad(book.Id);
+            UpdatePlaybackProgressUi();
+            _viewModel.ReportAudioStatus("Playing the saved Audible audiobook offline through Android Widevine.");
+        }
+        catch (NotSupportedException ex)
+        {
+            _viewModel.ReportAudioStatus("Audible offline playback is not supported for this title/device: " + ex.Message);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _viewModel.ReportAudioStatus("Audible playback operation cancelled.");
+        }
+        catch (Exception ex)
+        {
+            var details = new List<string>();
+            for (Exception? current = ex; current is not null && details.Count < 3; current = current.InnerException)
+            {
+                var message = current.Message?.Trim();
+                if (!string.IsNullOrWhiteSpace(message) && !details.Contains(message, StringComparer.Ordinal))
+                    details.Add(message);
+            }
+            var detail = details.Count == 0 ? ex.GetType().Name : string.Join(" → ", details);
+            if (ex is HttpRequestException { StatusCode: { } statusCode })
+                detail = $"HTTP {(int)statusCode} ({statusCode}): {detail}";
+            if (detail.Length > 500) detail = detail[..500];
+            _viewModel.ReportAudioStatus($"Audible playback failed while {phase}: {detail}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_protectedAudibleOperationCts, operationCts))
+                _protectedAudibleOperationCts = null;
+            _viewModel.SetProtectedAudibleOperationInProgress(false);
+            operationCts.Dispose();
+        }
+    }
+
+    private void StartAudibleOfflineDownload(string asin, string title)
+    {
+        var startAction = PlatformAudibleOfflineDownloadStartAction;
+        if (startAction is null)
+        {
+            _viewModel.ReportAudioStatus("The Android foreground download service is unavailable in this build.");
+            return;
+        }
+
+        try
+        {
+            startAction(asin, title);
+            _viewModel.ReportAudioStatus(
+                "Audible download started. Follow live progress in the Android notification. Pause and Resume are available there.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("VØRATH could not start the Audible background download. Your existing offline data was left untouched.");
+        }
+    }
+
+    private async Task PlayProtectedAudibleBookAsync(Audiobook book) =>
+        await RunProtectedAudibleOperationAsync(book, startPlayback: true);
+
+    private void CancelProtectedAudibleOperationClicked(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var cancellation = _protectedAudibleOperationCts;
+        if (cancellation is null)
+            return;
+
+        try
+        {
+            cancellation.Cancel();
+            _viewModel.ReportAudioStatus("Cancelling the Audible licence/download request…");
+        }
+        catch (ObjectDisposedException)
+        {
+            // The operation completed between the button tap and cancellation.
+        }
+    }
+
+    private async void ProbeAudibleRenewalClicked(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var book = _viewModel.DetailBook;
+        if (book is null || !book.IsWidevineOfflineAvailable ||
+            !book.Id.StartsWith("provider:", StringComparison.Ordinal))
+            return;
+
+        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+        {
+            _viewModel.ReportAudioStatus("Audible renewal diagnostics are unavailable on this platform.");
+            return;
+        }
+
+        if (_protectedAudibleOperationCts is not null)
+        {
+            _viewModel.ReportAudioStatus("Another Audible operation is already running. Cancel it before starting the diagnostic.");
+            return;
+        }
+
+        var operationCts = new CancellationTokenSource();
+        _protectedAudibleOperationCts = operationCts;
+        _viewModel.SetProtectedAudibleOperationInProgress(true);
+
+        try
+        {
+            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(operationCts.Token);
+            if (coordinator is null)
+            {
+                _viewModel.ReportAudioStatus("Sign in to the Audible account that saved this offline title.");
+                return;
+            }
+
+            var asin = book.Id["provider:".Length..];
+            _viewModel.ReportAudioStatus(
+                "Sending an Audible renewal diagnostic challenge. The returned licence will not be installed or used to replace your saved copy.");
+
+            var result = await coordinator.ProbeOfflineLicenseRenewalAsync(
+                asin, operationCts.Token);
+
+            var status = string.IsNullOrWhiteSpace(result.StatusCode)
+                ? "not supplied"
+                : result.StatusCode;
+            var message = $"Audible renewal diagnostic: status {status}; " +
+                $"licence payload {(result.LicensePayloadPresent ? "present" : "missing")}; " +
+                $"licence ID {(result.LicenseIdentifierPresent ? "present" : "missing")}. " +
+                "The response was not applied; your saved offline copy was not replaced.";
+
+            if (!string.IsNullOrWhiteSpace(result.GrantedRight))
+                message += $" Granted right: {result.GrantedRight}.";
+            if (!string.IsNullOrWhiteSpace(result.AccessExpiryDate))
+                message += $" Access expiry: {result.AccessExpiryDate}.";
+            if (!string.IsNullOrWhiteSpace(result.LicenseExpirationDate))
+                message += $" Licence expiration: {result.LicenseExpirationDate}.";
+
+            var denialReasons = result.LicenseDenialReasons
+                .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                .Take(3)
+                .Select(reason => reason.Trim()[..Math.Min(140, reason.Trim().Length)])
+                .ToArray();
+            if (denialReasons.Length > 0)
+                message += $" Denial reasons: {string.Join("; ", denialReasons)}.";
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+                message += $" Audible message: {result.ErrorMessage[..Math.Min(200, result.ErrorMessage.Length)]}";
+
+            _viewModel.ReportAudioStatus(message);
+        }
+        catch (OperationCanceledException) when (operationCts.IsCancellationRequested)
+        {
+            _viewModel.ReportAudioStatus("Audible renewal diagnostic cancelled. The saved offline copy was not replaced.");
+        }
+        catch (Exception ex)
+        {
+            _viewModel.ReportAudioStatus(
+                $"Audible renewal diagnostic failed ({ex.GetType().Name}). The saved offline copy was not replaced.");
+        }
+        finally
+        {
+            if (ReferenceEquals(_protectedAudibleOperationCts, operationCts))
+                _protectedAudibleOperationCts = null;
+            _viewModel.SetProtectedAudibleOperationInProgress(false);
+            operationCts.Dispose();
+        }
+    }
+
+    private async void RemoveAudibleOfflineBookClicked(
+        object? sender,
+        Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var book = _viewModel.DetailBook;
+        if (book is null || !book.IsWidevineOfflineAvailable)
+            return;
+
+        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+        {
+            _viewModel.ReportAudioStatus("Offline Audible management is unavailable on this platform.");
+            return;
+        }
+
+        try
+        {
+            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(CancellationToken.None);
+            if (coordinator is null)
+            {
+                _viewModel.ReportAudioStatus("Sign in to the Audible account that downloaded this title.");
+                return;
+            }
+
+            var asin = book.Id["provider:".Length..];
+            _viewModel.ReportAudioStatus("Stopping protected playback and releasing the Audible offline licence…");
+            await coordinator.RemoveOfflineLicenseAsync(asin);
+            await _viewModel.MarkWidevineOfflineRemovedAsync(book.Id);
+            _viewModel.ReportAudioStatus("The Audible offline copy and its protected cache have been removed from VØRATH.");
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.ReportAudioStatus("Offline title removal was cancelled.");
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus(
+                "Could not remove this offline Audible title. The saved licence is retained when release fails; check the account and try again.");
         }
     }
 
@@ -1084,6 +1435,8 @@ public partial class MainView : UserControl
             if (PlatformSignInViewModelFactory is null) return;
             var vm = PlatformSignInViewModelFactory();
             await vm.DisconnectAsync();
+            if (!vm.HasConnectedAccount)
+                await _viewModel.ClearAllWidevineOfflineFlagsAsync();
             await vm.LoadStatusAsync();
             UpdateAudibleAccountSummary();
             _viewModel.ReportAudioStatus(vm.Status);
@@ -1190,6 +1543,19 @@ public partial class MainView : UserControl
         {
             System.Diagnostics.Debug.WriteLine($"Download organization preference save failed: {ex}");
             _viewModel.ReportDownloadSettingsStatus("Could not save the file organization preference.");
+        }
+    }
+
+    private async void CycleAudibleDownloadQualityClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        try
+        {
+            await _viewModel.CycleAudibleDownloadQualityAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Audible download quality preference save failed: {ex}");
+            _viewModel.ReportDownloadSettingsStatus("Could not save the Audible download quality preference.");
         }
     }
 

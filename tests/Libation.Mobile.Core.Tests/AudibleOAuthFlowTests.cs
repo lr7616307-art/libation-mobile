@@ -6,7 +6,7 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudibleOAuthFlowTests
 {
     [Fact]
-    public void CreateIndiaChallenge_UsesCurrentLibriSyncIPhoneAuthorizationShape()
+    public void CreateIndiaChallenge_UsesLibriSyncIPhoneAdrmAuthorizationShape()
     {
         var flow = AudibleOAuthFlow.Create("in");
         var query = System.Web.HttpUtility.ParseQueryString(flow.AuthorizationUri.Query);
@@ -28,10 +28,12 @@ public sealed class AudibleOAuthFlowTests
         Assert.Equal(40, flow.DeviceSerial.Length);
         Assert.All(flow.DeviceSerial, character => Assert.True(char.IsAsciiLetterOrDigit(character)));
         Assert.Equal(AudibleOAuthFlow.IPhoneDeviceType, DecodeClientDeviceType(query["openid.oa2.client_id"]!));
+        Assert.Equal(string.Empty, flow.FrcValue);
+        Assert.Empty(flow.SignInCookies);
     }
 
     [Fact]
-    public void Create_GeneratesIndependentPkceAndDeviceValues()
+    public void Create_GeneratesIndependentPkceAndIPhoneDeviceSerialValues()
     {
         var first = AudibleOAuthFlow.Create("in");
         var second = AudibleOAuthFlow.Create("in");
@@ -41,6 +43,7 @@ public sealed class AudibleOAuthFlowTests
         Assert.Equal(43, first.CodeVerifier.Length);
         Assert.Equal(43, first.CodeChallenge.Length);
         Assert.Equal(40, first.DeviceSerial.Length);
+        Assert.All(first.DeviceSerial, character => Assert.True(char.IsAsciiLetterOrDigit(character)));
     }
 
     [Theory]
@@ -52,6 +55,7 @@ public sealed class AudibleOAuthFlowTests
         var flow = AudibleOAuthFlow.Create(market);
         var query = System.Web.HttpUtility.ParseQueryString(flow.AuthorizationUri.Query);
 
+        Assert.Equal(host, flow.AuthorizationUri.Host);
         Assert.Equal(host, flow.CallbackUri.Host);
         Assert.Equal(marketplaceId, query["marketPlaceId"]);
         Assert.True(AudibleOAuthFlow.IsMarketplaceCallback(market, flow.CallbackUri));

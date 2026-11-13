@@ -34,6 +34,18 @@ public sealed class AudibleApiSessionFactory
     public async Task<Api?> CreateFromSavedIdentityAsync(
         CancellationToken cancellationToken = default)
     {
+        var session = await CreateSessionFromSavedIdentityAsync(cancellationToken).ConfigureAwait(false);
+        return session?.Api;
+    }
+
+    /// <summary>
+    /// Restores an authenticated API client together with the identity's marketplace.
+    /// The locale is returned from the same validated snapshot used to create the
+    /// client, so callers can select the matching regional API endpoint.
+    /// </summary>
+    public async Task<(Api Api, Locale Locale)?> CreateSessionFromSavedIdentityAsync(
+        CancellationToken cancellationToken = default)
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         // Capture before reading the snapshot. A login or disconnect racing with
@@ -53,6 +65,6 @@ public sealed class AudibleApiSessionFactory
             snapshotStore,
             identityGeneration: identityGeneration);
 
-        return new Api(maintainer);
+        return (new Api(maintainer), identity.Locale);
     }
 }

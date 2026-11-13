@@ -35,7 +35,7 @@ public sealed class AudibleAccountAuthenticator(
             pending.Clear();
             pending.Add(id, new PendingLogin(challenge, expires));
         }
-        return Task.FromResult(new ExternalSignInChallenge(id, challenge.AuthorizationUri, expires));
+        return Task.FromResult(new ExternalSignInChallenge(id, challenge.AuthorizationUri, expires, challenge.SignInCookies));
     }
 
     public async Task<AccountSession> CompleteSignInAsync(

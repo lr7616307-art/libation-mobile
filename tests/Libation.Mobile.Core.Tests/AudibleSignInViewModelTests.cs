@@ -75,9 +75,63 @@ public sealed class AudibleSignInViewModelTests
         Assert.Equal("old-refresh", saved?.RefreshToken);
     }
 
+
+    [Fact]
+    public async Task Disconnect_RunsOfflineCleanupBeforeClearingAccountSession()
+    {
+        var secrets = new InMemorySecretStore();
+        var sessions = new AccountSessionStore(secrets);
+        await sessions.SaveAsync(new AccountSession(
+            "account-cleanup", "access", "refresh", DateTimeOffset.UtcNow.AddHours(1)));
+        var authenticator = new FakeAuthenticator(null);
+        var viewModel = new AudibleSignInViewModel(
+            new AccountConnectionService(authenticator, sessions),
+            new FakeBrowser());
+        await viewModel.LoadStatusAsync();
+
+        var cleanupCalled = false;
+        viewModel.SetBeforeDisconnectCleanup(_ =>
+        {
+            cleanupCalled = true;
+            return Task.CompletedTask;
+        });
+
+        await viewModel.DisconnectAsync();
+
+        Assert.True(cleanupCalled);
+        Assert.Equal(1, authenticator.DisconnectCount);
+        Assert.False(viewModel.HasConnectedAccount);
+        Assert.Null(await sessions.LoadAsync());
+    }
+
+    [Fact]
+    public async Task Disconnect_WhenOfflineCleanupFailsRetainsAccountCredentials()
+    {
+        var secrets = new InMemorySecretStore();
+        var sessions = new AccountSessionStore(secrets);
+        await sessions.SaveAsync(new AccountSession(
+            "account-cleanup", "access", "refresh", DateTimeOffset.UtcNow.AddHours(1)));
+        var authenticator = new FakeAuthenticator(null);
+        var viewModel = new AudibleSignInViewModel(
+            new AccountConnectionService(authenticator, sessions),
+            new FakeBrowser());
+        await viewModel.LoadStatusAsync();
+
+        viewModel.SetBeforeDisconnectCleanup(_ =>
+            Task.FromException(new IOException("DRM cleanup failed.")));
+
+        await viewModel.DisconnectAsync();
+
+        Assert.Equal(0, authenticator.DisconnectCount);
+        Assert.True(viewModel.HasConnectedAccount);
+        Assert.NotNull(await sessions.LoadAsync());
+        Assert.Contains("Could not fully disconnect", viewModel.Status, StringComparison.Ordinal);
+    }
+
     private sealed class FakeAuthenticator(AccountSession? refreshedSession) : IAccountAuthenticator
     {
         public int RefreshCount { get; private set; }
+        public int DisconnectCount { get; private set; }
         public Exception? RefreshException { get; init; }
 
         public Task<ExternalSignInChallenge> BeginSignInAsync(
@@ -91,6 +145,13 @@ public sealed class AudibleSignInViewModelTests
         public Task<AccountSession> CompleteSignInAsync(
             string challengeId, string responseUrl, CancellationToken cancellationToken = default)
             => Task.FromException<AccountSession>(new NotSupportedException());
+
+        public Task DisconnectAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            DisconnectCount++;
+            return Task.CompletedTask;
+        }
 
         public Task<AccountSession> RefreshAsync(
             AccountSession currentSession, CancellationToken cancellationToken = default)
