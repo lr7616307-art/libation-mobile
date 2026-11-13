@@ -1,5 +1,6 @@
 using Android.Content;
 using Libation.Mobile.Core;
+using Libation.Mobile.Audible;
 using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.Android;
@@ -107,6 +108,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         string accountId,
         string asin,
         int[] streamKeyValues,
+        string contentVersionKey,
         long startPositionMilliseconds = 0,
         bool autoPlay = true)
     {
@@ -128,6 +130,8 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         if (streamKeyValues.Length is 0 or > 384 || streamKeyValues.Length % 3 != 0 ||
             streamKeyValues.Any(value => value < 0))
             throw new ArgumentException("The offline DASH audio stream selection is invalid.", nameof(streamKeyValues));
+        if (!AudibleWidevineCacheIdentity.IsValidContentVersionKey(contentVersionKey))
+            throw new ArgumentException("The Audible cache content-version key is invalid.", nameof(contentVersionKey));
 
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionPlayWidevineDash);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraManifestUri, manifestUri.AbsoluteUri);
@@ -136,6 +140,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineAccountId, accountId);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineAsin, asin);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineStreamKeys, streamKeyValues);
+        intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraWidevineContentVersionKey, contentVersionKey);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraPosition, Math.Max(0, startPositionMilliseconds));
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraAutoPlay, autoPlay);
         StartService(intent, foreground: true);

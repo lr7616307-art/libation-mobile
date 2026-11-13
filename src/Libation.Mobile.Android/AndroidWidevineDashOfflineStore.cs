@@ -57,11 +57,13 @@ public sealed class AndroidWidevineDashOfflineStore
         string asin,
         Uri manifestUri,
         IReadOnlyList<AudibleWidevineStreamKey> streamKeys,
+        string contentVersionKey,
         CancellationToken cancellationToken = default,
         IProgress<WidevineOfflineDownloadProgress>? progress = null)
     {
         ValidateIdentity(accountId, asin);
         ValidateManifest(manifestUri, streamKeys);
+        ValidateContentVersionKey(contentVersionKey);
         cancellationToken.ThrowIfCancellationRequested();
 
         var cache = GetCache();
@@ -69,8 +71,9 @@ public sealed class AndroidWidevineDashOfflineStore
             throw new IOException(
                 "VØRATH's protected-audio cache has reached its 8 GiB limit. Remove an offline Audible title before downloading another.");
 
-        var scope = GetTitleScope(accountId, asin);
-        var scopedCacheFactory = CreateCacheDataSourceFactory(cache, scope, manifestUri);
+        var scope = GetContentScope(GetTitleScope(accountId, asin), contentVersionKey);
+        var scopedCacheFactory = CreateCacheDataSourceFactory(
+            cache, scope, manifestUri, contentVersionKey);
         var androidUri = global::Android.Net.Uri.Parse(manifestUri.AbsoluteUri);
 
         var streamKeyList = new global::Android.Runtime.JavaList<StreamKey>();
@@ -131,19 +134,24 @@ public sealed class AndroidWidevineDashOfflineStore
     public Task<bool> HasCachedResourcesAsync(
         string accountId,
         string asin,
+        string contentVersionKey,
         CancellationToken cancellationToken = default)
     {
         ValidateIdentity(accountId, asin);
+        ValidateContentVersionKey(contentVersionKey);
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() => AuditCachedResources(accountId, asin, cancellationToken), cancellationToken);
+        return Task.Run(
+            () => AuditCachedResources(accountId, asin, contentVersionKey, cancellationToken),
+            cancellationToken);
     }
 
     private bool AuditCachedResources(
         string accountId,
         string asin,
+        string contentVersionKey,
         CancellationToken cancellationToken)
     {
-        var scope = GetTitleScope(accountId, asin);
+        var scope = GetContentScope(GetTitleScope(accountId, asin), contentVersionKey);
         var cache = GetCache();
         var liveKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var key in GetCacheKeys(cache))
@@ -247,14 +255,20 @@ public sealed class AndroidWidevineDashOfflineStore
     public CacheDataSource.Factory CreatePlaybackDataSourceFactory(
         string accountId,
         string asin,
-        Uri manifestUri)
+        Uri manifestUri,
+        string contentVersionKey)
     {
         ValidateIdentity(accountId, asin);
         ValidateManifestUri(manifestUri);
+        ValidateContentVersionKey(contentVersionKey);
         // No upstream factory is configured. A cache miss fails closed rather
         // than silently switching to the network when the user expects offline playback.
         return CreateCacheDataSourceFactory(
-            GetCache(), GetTitleScope(accountId, asin), manifestUri, allowNetwork: false);
+            GetCache(),
+            GetContentScope(GetTitleScope(accountId, asin), contentVersionKey),
+            manifestUri,
+            contentVersionKey,
+            allowNetwork: false);
     }
 
     public void RemoveTitle(string accountId, string asin)
@@ -267,21 +281,35 @@ public sealed class AndroidWidevineDashOfflineStore
         {
             var index = ReadCacheIndex();
             var requirements = ReadCacheRequirements();
-            var keysToRemove = index.TryGetValue(scope, out var indexedKeys)
-                ? new HashSet<string>(indexedKeys, StringComparer.Ordinal)
-                : new HashSet<string>(StringComparer.Ordinal);
+            var matchingScopes = index.Keys
+                .Where(key => IsTitleCacheScope(scope, key))
+                .ToHashSet(StringComparer.Ordinal);
+            matchingScopes.UnionWith(requirements.Keys.Where(key => IsTitleCacheScope(scope, key)));
 
+            var keysToRemove = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var cacheScope in matchingScopes)
+            {
+                if (index.TryGetValue(cacheScope, out var indexedKeys))
+                    keysToRemove.UnionWith(indexedKeys);
+            }
+
+            // Include unindexed resources left by a crash between Media3's cache
+            // write and the durable title index update.
             foreach (var cacheKey in GetCacheKeys(cache))
             {
-                if (cacheKey.StartsWith(scope + ":", StringComparison.Ordinal))
+                if (cacheKey.StartsWith(scope + ":", StringComparison.Ordinal) ||
+                    cacheKey.StartsWith(scope + "-", StringComparison.Ordinal))
                     keysToRemove.Add(cacheKey);
             }
 
             foreach (var key in keysToRemove)
                 cache.RemoveResource(key);
 
-            index.Remove(scope);
-            requirements.Remove(scope);
+            foreach (var cacheScope in matchingScopes)
+            {
+                index.Remove(cacheScope);
+                requirements.Remove(cacheScope);
+            }
             WriteCacheIndex(index);
             WriteCacheRequirements(requirements);
         }
@@ -319,13 +347,15 @@ public sealed class AndroidWidevineDashOfflineStore
         SimpleCache cache,
         string titleScope,
         Uri manifestUri,
+        string contentVersionKey,
         bool allowNetwork = true)
     {
         var factory = new CacheDataSource.Factory()
             .SetCache(cache)
             .SetCacheKeyFactory(new ScopedCacheKeyFactory(
                 titleScope,
-                manifestUri.AbsoluteUri,
+                AudibleWidevineCacheIdentity.CreateResourceFingerprint(manifestUri, contentVersionKey),
+                contentVersionKey,
                 RecordCacheKey));
 
         if (allowNetwork)
@@ -521,6 +551,29 @@ public sealed class AndroidWidevineDashOfflineStore
         return "vorath-v1-" + Convert.ToHexString(digest).ToLowerInvariant();
     }
 
+    private static string GetContentScope(string titleScope, string contentVersionKey)
+    {
+        // ReconcileCacheIndex deliberately disallows ':' in a scope and caps
+        // it at 128 characters. Retain a 192-bit version suffix while keeping
+        // the account/title prefix available for complete title removal.
+        var versionSuffix = string.Equals(
+            contentVersionKey, AudibleWidevineCacheIdentity.UnversionedContentKey,
+            StringComparison.Ordinal)
+            ? "u"
+            : "v-" + contentVersionKey[2..50];
+        return titleScope + "-" + versionSuffix;
+    }
+
+    private static bool IsTitleCacheScope(string titleScope, string candidate)
+        => string.Equals(candidate, titleScope, StringComparison.Ordinal)
+            || candidate.StartsWith(titleScope + "-", StringComparison.Ordinal);
+
+    private static void ValidateContentVersionKey(string contentVersionKey)
+    {
+        if (!AudibleWidevineCacheIdentity.IsValidContentVersionKey(contentVersionKey))
+            throw new ArgumentException("The Audible content-version cache key is invalid.", nameof(contentVersionKey));
+    }
+
     private static void ValidateIdentity(string accountId, string asin)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(accountId);
@@ -559,28 +612,35 @@ public sealed class AndroidWidevineDashOfflineStore
     private sealed class ScopedCacheKeyFactory : Java.Lang.Object, ICacheKeyFactory
     {
         private readonly string titleScope;
-        private readonly string manifestUri;
+        private readonly string manifestFingerprint;
+        private readonly string contentVersionKey;
         private readonly Action<string, string, long, long> recordCacheKey;
 
         public ScopedCacheKeyFactory(
             string titleScope,
-            string manifestUri,
+            string manifestFingerprint,
+            string contentVersionKey,
             Action<string, string, long, long> recordCacheKey)
         {
             this.titleScope = titleScope;
-            this.manifestUri = manifestUri;
+            this.manifestFingerprint = manifestFingerprint;
+            this.contentVersionKey = contentVersionKey;
             this.recordCacheKey = recordCacheKey;
         }
 
         public string? BuildCacheKey(DataSpec? dataSpec)
         {
-            var uri = dataSpec?.Uri?.ToString()
+            var uriText = dataSpec?.Uri?.ToString()
                 ?? throw new InvalidDataException("Media3 supplied a DASH resource without a URI.");
-            var kind = string.Equals(uri, manifestUri, StringComparison.Ordinal)
+            if (!Uri.TryCreate(uriText, UriKind.Absolute, out var resourceUri))
+                throw new InvalidDataException("Media3 supplied a DASH resource with an invalid URI.");
+            var resourceFingerprint = AudibleWidevineCacheIdentity.CreateResourceFingerprint(
+                resourceUri, contentVersionKey);
+            var kind = string.Equals(
+                resourceFingerprint, manifestFingerprint, StringComparison.Ordinal)
                 ? "manifest"
                 : "segment";
-            var digest = SHA256.HashData(Encoding.UTF8.GetBytes(uri));
-            var cacheKey = titleScope + ":" + kind + ":" + Convert.ToHexString(digest).ToLowerInvariant();
+            var cacheKey = titleScope + ":" + kind + ":" + resourceFingerprint;
             // The URI check above rejects a null DataSpec before this point.
             var position = dataSpec!.Position;
             var length = dataSpec!.Length;

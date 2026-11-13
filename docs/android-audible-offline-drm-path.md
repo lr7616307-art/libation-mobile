@@ -140,6 +140,16 @@ Security review note: the inspected upstream `AudibleApi.WidevineDrmLicense` imp
 - Add regression tests for transient/permanent HTTP status classification, wrapped transport exceptions, cancellation and the bounded backoff schedule.
 - This is source/CI validation only. It does not establish that Audible grants Widevine for a particular title/device or that the phone can play the result offline.
 
+## Pass 30 — version-aware DASH cache identity
+
+- Cache resource identities now include a hash of Audible's ACR and numeric file version. The raw ACR is not written into cache keys or ordinary catalogue metadata.
+- When both stable content-reference fields are present, known short-lived authorization query parameters are excluded from the resource fingerprint. The URI path and non-authorization query parameters remain part of the identity; query order is canonicalized.
+- This allows a refreshed signed URL for the same Audible content version to address already-downloaded encrypted Media3 segments. A different ACR or file version produces a different cache scope, so bytes from different content versions cannot be appended or reused as though they were identical.
+- If Audible omits either member of the content-reference pair, VØRATH uses an unversioned cache identity and retains the complete query string. It deliberately gives up token-rotation reuse rather than guessing which query parameters are safe to discard.
+- The same opaque version fingerprint is used for transfer, completion auditing and cache-only playback. Title removal enumerates all version scopes and removes every associated cache entry.
+- Unit tests cover rotating signature parameters, stable track-selection parameters, ACR/file-version changes, missing metadata and unsafe URLs.
+- This is a cache-consistency improvement only. It cannot make Audible grant a Widevine licence, and device-level offline playback still requires validation with an entitled title.
+
 ## Remaining implementation — not yet verified
 
 1. Implement and validate Audible's server-confirmed KEY_TYPE_RELEASE exchange and documented licence renewal/revocation semantics before claiming provider-side licence release.

@@ -5,6 +5,7 @@ using AndroidX.Media3.ExoPlayer;
 using AndroidX.Media3.ExoPlayer.Dash;
 using AndroidX.Media3.ExoPlayer.Source;
 using Android.OS;
+using Libation.Mobile.Audible;
 using Android.Graphics;
 using System.Security.Cryptography;
 using Java.Util;
@@ -36,6 +37,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ExtraWidevineAccountId = "widevine_account_id";
     public const string ExtraWidevineAsin = "widevine_asin";
     public const string ExtraWidevineStreamKeys = "widevine_stream_keys";
+    public const string ExtraWidevineContentVersionKey = "widevine_content_version_key";
     public const string ExtraTitle = "title";
     public const string ExtraArtworkPath = "artwork_path";
     public const string ExtraChapterPositions = "chapter_positions";
@@ -296,6 +298,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             streamKeyValues.Length % 3 != 0)
             throw new InvalidDataException("The saved offline DASH audio selection is invalid.");
 
+        var contentVersionKey = intent.GetStringExtra(ExtraWidevineContentVersionKey);
+        if (!AudibleWidevineCacheIdentity.IsValidContentVersionKey(contentVersionKey))
+            throw new InvalidDataException("The saved Audible content-version cache reference is invalid.");
+        intent.RemoveExtra(ExtraWidevineContentVersionKey);
+
         StopPlayer();
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
@@ -344,7 +351,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
         var offlineStore = new AndroidWidevineDashOfflineStore(this);
         var cacheDataSourceFactory = offlineStore.CreatePlaybackDataSourceFactory(
-            accountId, asin, manifestUri);
+            accountId, asin, manifestUri, contentVersionKey!);
         // Cache-only source: if any DASH manifest/segment is missing, playback
         // fails rather than silently falling back to the network.
         var mediaSource = new DashMediaSource.Factory(cacheDataSourceFactory)
