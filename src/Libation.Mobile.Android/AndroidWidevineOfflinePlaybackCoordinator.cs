@@ -189,9 +189,13 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         if (reference is null)
             return false;
 
+        var providerReference = await keySetStore.LoadProviderLicenseReferenceAsync(
+            accountId, asin, cancellationToken).ConfigureAwait(false);
+        var contentVersionKey = AudibleWidevineCacheIdentity.CreateContentVersionKey(
+            providerReference?.Acr, providerReference?.FileVersion);
         var offlineStore = new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context);
-        var hasCachedResources = await offlineStore.HasCachedResourcesAsync(accountId, asin, cancellationToken)
-            .ConfigureAwait(false);
+        var hasCachedResources = await offlineStore.HasCachedResourcesAsync(
+            accountId, asin, contentVersionKey, cancellationToken).ConfigureAwait(false);
         if (!hasCachedResources)
         {
             await keySetStore.InvalidateDashDownloadCompleteAsync(accountId, asin, cancellationToken)
@@ -217,6 +221,8 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             return;
 
         var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
+        var contentVersionKey = AudibleWidevineCacheIdentity.CreateContentVersionKey(
+            content.Acr, content.FileVersion);
         await keySetStore.SaveProviderLicenseReferenceAsync(
             accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
         var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
@@ -385,13 +391,14 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                 asin,
                 content.ManifestUri,
                 manifest.AudioStreamKeys,
+                contentVersionKey,
                 cancellationToken,
                 progress)
                 .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
-            if (!await offlineStore.HasCachedResourcesAsync(accountId, asin, cancellationToken)
-                    .ConfigureAwait(false))
+            if (!await offlineStore.HasCachedResourcesAsync(
+                    accountId, asin, contentVersionKey, cancellationToken).ConfigureAwait(false))
                 throw new InvalidDataException(
                     "The Audible DASH download returned without every selected initialization, index and media byte range being cached. Retry the download.");
 
@@ -445,6 +452,17 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                     "The Audible DASH download is incomplete. Connect to the internet and retry the offline download.");
 
             cancellationToken.ThrowIfCancellationRequested();
+            var providerReference = await keySetStore.LoadProviderLicenseReferenceAsync(
+                accountId, asin, cancellationToken).ConfigureAwait(false);
+            var contentVersionKey = AudibleWidevineCacheIdentity.CreateContentVersionKey(
+                providerReference?.Acr, providerReference?.FileVersion);
+
+            if (!await new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context)
+                    .HasCachedResourcesAsync(
+                        accountId, asin, contentVersionKey, cancellationToken).ConfigureAwait(false))
+                throw new InvalidOperationException(
+                    "The saved DASH cache does not match this Audible content version. Connect to the internet and download it again.");
+
             var streamKeyValues = mediaReference.StreamKeys
                 .SelectMany(key => new[] { key.PeriodIndex, key.GroupIndex, key.TrackIndex })
                 .ToArray();
@@ -456,6 +474,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                 accountId,
                 asin,
                 streamKeyValues,
+                contentVersionKey,
                 startPositionMilliseconds,
                 autoPlay);
         }
