@@ -467,7 +467,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                 .SelectMany(key => new[] { key.PeriodIndex, key.GroupIndex, key.TrackIndex })
                 .ToArray();
 
-            AndroidLocalAudioPlayer.StartWidevineDash(
+            await AndroidLocalAudioPlayer.StartWidevineDashAsync(
                 mediaReference.ManifestUri,
                 keySetId,
                 title,
@@ -476,7 +476,8 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                 streamKeyValues,
                 contentVersionKey,
                 startPositionMilliseconds,
-                autoPlay);
+                autoPlay,
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
