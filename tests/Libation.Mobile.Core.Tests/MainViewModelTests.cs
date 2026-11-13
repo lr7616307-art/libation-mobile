@@ -674,7 +674,11 @@ public sealed class MainViewModelTests
 
         var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
         Assert.False(book.CanQueueDownload); // Audible IDs cannot be sent to the generic direct-URL form.
-        Assert.Equal("⇩  Download", book.DownloadActionLabel);
+        Assert.Equal("⇩  Download offline", book.DownloadActionLabel);
+        Assert.Equal("⇩  Download offline",
+            (book with { ProtectedAudioFileName = "audible-title.aaxc" }).DownloadActionLabel);
+        Assert.Equal("▶  Play offline",
+            (book with { IsWidevineOfflineAvailable = true }).DownloadActionLabel);
 
         await vm.EnqueueAsync(book.Id);
 

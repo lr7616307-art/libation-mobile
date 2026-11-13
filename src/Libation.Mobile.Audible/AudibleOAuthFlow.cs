@@ -1,17 +1,26 @@
+using AudibleApi;
+using Libation.Mobile.Core;
+using System.IO.Compression;
+using System.Net;
+using System.Net.NetworkInformation;
 using System.Security.Cryptography;
 using System.Text;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Libation.Mobile.Audible;
 
 /// <summary>
-/// Builds the Audible PKCE authorization request using the current LibriSync
-/// iPhone registration profile. The profile is a provider registration choice;
-/// it does not claim that the physical Android handset is an iPhone.
+/// Creates AudibleApi's CurrentAndroid registration challenge and its required
+/// Android sign-in cookies. Login and callback hosts intentionally differ for
+/// most marketplaces: the sign-in host follows Locale.LoginUri while the return
+/// host follows Locale.AudibleLoginUri.
 /// </summary>
 public static class AudibleOAuthFlow
 {
-    public const string IPhoneDeviceType = "A2CZJZGLK2JJVM";
-    public const string RegistrationProfileId = "audible-iphone-4.60-ios-26.2-46000856";
+    public const string AndroidDeviceType = "A10KISP2GWF0E4";
+    public const string RegistrationProfileId = "audible-android-current-v26.34.07";
+    public const string LegacyIPhoneRegistrationProfileId = "audible-iphone-4.60-ios-26.2-46000856";
 
     private sealed record Market(string AmazonDomain, string MarketplaceId, string CountryCode);
 
@@ -31,47 +40,74 @@ public static class AudibleOAuthFlow
             ["br"] = new("amazon.com.br", "A10J1VAYUDTYRN", "br")
         };
 
+    // These values match AudibleApi DeviceRegistrationProfile.CurrentAndroid.
+    private const string AppName = "com.audible.application";
+    private const string AppVersion = "2090263407";
+    private const string AppVersionName = "26.34.07";
+    private const string SoftwareVersion = "130050002";
+    private const string DeviceModel = "sdk_gphone64_x86_64";
+    private const string OsVersion = @"google\/raven\/raven:14\/UPB5.230623.003\/10615560:user\/release-keys";
+    private const string DeviceName = @"ranchu\/Google\/" + DeviceModel;
+    private const string MapVersion = "MAPAndroidLib-1.3.57073.0";
+
     public static AudibleOAuthChallenge Create(string marketplace)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(marketplace);
         var code = marketplace.Trim().ToLowerInvariant();
-        if (!Markets.TryGetValue(code, out var market))
+        if (!Markets.TryGetValue(code, out _))
             throw new ArgumentException("The selected Audible marketplace is not supported.", nameof(marketplace));
 
+        var locale = Localization.Get(code);
         var verifier = Base64Url(RandomNumberGenerator.GetBytes(32));
         var codeChallenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
-        var serial = GenerateDeviceSerial();
-        var serialAndType = $"{serial}#{IPhoneDeviceType}";
+        var serial = Convert.ToHexString(RandomNumberGenerator.GetBytes(10)).ToLowerInvariant();
+        var serialAndType = serial + "#" + AndroidDeviceType;
         var clientIdHex = Convert.ToHexString(Encoding.UTF8.GetBytes(serialAndType)).ToLowerInvariant();
-        var callback = new Uri($"https://www.{market.AmazonDomain}/ap/maplanding");
+        var callback = new Uri(locale.AudibleLoginUri(), "/ap/maplanding");
+        var frc = CreateAndroidFrc(serial, locale);
+        var loginHost = locale.LoginUri().Host;
+        var cookieDomain = "." + (loginHost.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+            ? loginHost[4..]
+            : loginHost);
+        var cookies = new[]
+        {
+            new ExternalSignInCookie("frc", frc, cookieDomain, "/ap"),
+            new ExternalSignInCookie("map-md", CreateAndroidMapMd(), cookieDomain, "/ap"),
+            new ExternalSignInCookie("sid", string.Empty, cookieDomain, "/")
+        };
 
-        // Keep this parameter set aligned with LibriSync's current shipped iPhone
-        // profile. Do not mix these values with the separate Android device profile.
+        var association = locale.WithUsername
+            ? $"amzn_audible_android_aui_lap_{locale.CountryCode}"
+            : $"amzn_audible_android_aui_{locale.CountryCode}";
+        var pageId = locale.WithUsername
+            ? $"amzn_audible_android_privatepool_aui_v2_dark_{locale.CountryCode}"
+            : $"amzn_audible_android_aui_v2_dark_{locale.CountryCode}";
+
         var query = new List<KeyValuePair<string, string>>
         {
-            new("openid.oa2.response_type", "code"),
-            new("openid.oa2.code_challenge_method", "S256"),
-            new("openid.oa2.code_challenge", codeChallenge),
-            new("openid.return_to", callback.AbsoluteUri),
-            new("openid.assoc_handle", $"amzn_audible_ios_{market.CountryCode}"),
+            new("openid.pape.max_auth_age", "0"),
             new("openid.identity", "http://specs.openid.net/auth/2.0/identifier_select"),
-            new("pageId", "amzn_audible_ios"),
             new("accountStatusPolicy", "P1"),
-            new("openid.claimed_id", "http://specs.openid.net/auth/2.0/identifier_select"),
+            new("marketPlaceId", locale.MarketPlaceId),
+            new("pageId", pageId),
+            new("openid.return_to", callback.AbsoluteUri),
+            new("openid.assoc_handle", association),
+            new("openid.oa2.response_type", "code"),
             new("openid.mode", "checkid_setup"),
-            new("openid.ns.oa2", "http://www.amazon.com/ap/ext/oauth/2"),
-            new("openid.oa2.client_id", "device:" + clientIdHex),
             new("openid.ns.pape", "http://specs.openid.net/extensions/pape/1.0"),
-            new("marketPlaceId", market.MarketplaceId),
+            new("openid.oa2.code_challenge_method", "S256"),
+            new("openid.ns.oa2", "http://www.amazon.com/ap/ext/oauth/2"),
+            new("openid.oa2.code_challenge", codeChallenge),
             new("openid.oa2.scope", "device_auth_access"),
-            new("forceMobileLayout", "true"),
+            new("openid.claimed_id", "http://specs.openid.net/auth/2.0/identifier_select"),
+            new("openid.oa2.client_id", "device:" + clientIdHex),
             new("openid.ns", "http://specs.openid.net/auth/2.0"),
-            new("openid.pape.max_auth_age", "0")
+            new("disableLoginPrepopulate", "1")
         };
 
         var queryString = string.Join("&", query.Select(pair =>
             Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value)));
-        var authorizationUri = new Uri($"https://www.{market.AmazonDomain}/ap/signin?{queryString}");
+        var authorizationUri = new Uri(locale.LoginUri(), "/ap/signin?" + queryString);
 
         return new AudibleOAuthChallenge(
             code,
@@ -79,16 +115,24 @@ public static class AudibleOAuthFlow
             callback,
             serial,
             verifier,
-            codeChallenge);
+            codeChallenge,
+            frc,
+            cookies);
     }
 
     public static bool IsMarketplaceCallback(string marketplace, Uri callbackUri)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(marketplace);
         ArgumentNullException.ThrowIfNull(callbackUri);
-        return Markets.TryGetValue(marketplace.Trim(), out var market)
-            && string.Equals(callbackUri.Host, "www." + market.AmazonDomain, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(callbackUri.AbsolutePath.TrimEnd('/'), "/ap/maplanding", StringComparison.OrdinalIgnoreCase);
+        if (!Markets.ContainsKey(marketplace.Trim()))
+            return false;
+
+        var expected = new Uri(Localization.Get(marketplace.Trim()).AudibleLoginUri(), "/ap/maplanding");
+        return string.Equals(callbackUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(callbackUri.Host, expected.Host, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(callbackUri.AbsolutePath.TrimEnd('/'), expected.AbsolutePath, StringComparison.OrdinalIgnoreCase)
+            && callbackUri.IsDefaultPort
+            && string.IsNullOrEmpty(callbackUri.UserInfo);
     }
 
     public static bool HasAuthorizationResponse(Uri responseUri)
@@ -110,7 +154,7 @@ public static class AudibleOAuthFlow
             var description = parameters["error_description"];
             if (string.IsNullOrWhiteSpace(description)) description = "Amazon rejected the sign-in request.";
             description = description.Length > 200 ? description[..200] : description;
-            throw new InvalidOperationException($"Amazon sign-in failed: {error} — {description}");
+            throw new InvalidOperationException("Amazon sign-in failed: " + error + " — " + description);
         }
 
         var code = parameters["openid.oa2.authorization_code"];
@@ -120,12 +164,115 @@ public static class AudibleOAuthFlow
         return code;
     }
 
-    private static string GenerateDeviceSerial()
+    private static string CreateAndroidMapMd()
     {
-        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        return string.Concat(Enumerable.Range(0, 40)
-            .Select(_ => alphabet[RandomNumberGenerator.GetInt32(alphabet.Length)]));
+        var mapMd = new JObject
+        {
+            ["device_registration_data"] = new JObject
+            {
+                ["software_version"] = SoftwareVersion
+            },
+            ["app_identifier"] = new JObject
+            {
+                ["package"] = AppName,
+                ["SHA-256"] = JValue.CreateNull(),
+                ["app_version"] = AppVersion,
+                ["app_version_name"] = AppVersionName,
+                ["app_sms_hash"] = JValue.CreateNull(),
+                ["map_version"] = MapVersion
+            },
+            ["app_info"] = new JObject
+            {
+                ["auto_pv"] = 0,
+                ["auto_pv_with_smsretriever"] = 1,
+                ["smartlock_supported"] = 0,
+                ["permission_runtime_grant"] = 2
+            }
+        };
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(mapMd.ToString(Formatting.None)));
     }
+
+    private static string CreateAndroidFrc(string serial, Locale locale)
+    {
+        var deviceInfo = new JObject
+        {
+            ["ApplicationName"] = AppName,
+            ["ApplicationVersion"] = AppVersion,
+            ["DeviceOSVersion"] = OsVersion,
+            ["DeviceName"] = DeviceName,
+            ["ScreenWidthPixels"] = "1080",
+            ["ThirdPartyDeviceId"] = serial,
+            ["FirstPartyDeviceId"] = serial,
+            ["ScreenHeightPixels"] = "2400",
+            ["DeviceLanguage"] = locale.Language,
+            ["TimeZone"] = FormatOffset(DateTimeOffset.Now.Offset),
+            ["Carrier"] = "T-Mobile",
+            ["IpAddress"] = GetLocalIpAddress()
+        };
+        return EncodeFrc(serial, deviceInfo.ToString(Formatting.None));
+    }
+
+    private static string GetLocalIpAddress()
+    {
+        try
+        {
+            var addresses = NetworkInterface.GetAllNetworkInterfaces()
+                .SelectMany(network => network.GetIPProperties().UnicastAddresses)
+                .Select(entry => entry.Address)
+                .Where(address => !IPAddress.IsLoopback(address) && !address.Equals(IPAddress.IPv6Any))
+                .OrderBy(address => address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+                .OrderByDescending(address => !address.IsIPv6LinkLocal && !address.IsIPv6SiteLocal)
+                .FirstOrDefault();
+            return addresses?.ToString() ?? "0.0.0.0";
+        }
+        catch
+        {
+            return "0.0.0.0";
+        }
+    }
+
+    // Same FRC encoding used by AudibleApi's Android registration profile.
+    private static string EncodeFrc(string serial, string json)
+    {
+        byte[] compressed;
+        using (var output = new MemoryStream())
+        {
+            using (var gzip = new GZipStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
+            {
+                var jsonBytes = Encoding.UTF8.GetBytes(json);
+                gzip.Write(jsonBytes, 0, jsonBytes.Length);
+            }
+            compressed = output.ToArray();
+        }
+
+        var iv = RandomNumberGenerator.GetBytes(16);
+        var aesKey = Rfc2898DeriveBytes.Pbkdf2(serial.AsSpan(), "AES/CBC/PKCS7Padding"u8,
+            1000, HashAlgorithmName.SHA1, 16);
+        byte[] encrypted;
+        using (var aes = Aes.Create())
+        {
+            aes.Key = aesKey;
+            encrypted = aes.EncryptCbc(compressed, iv, PaddingMode.PKCS7);
+        }
+
+        var hmacKey = Rfc2898DeriveBytes.Pbkdf2(serial.AsSpan(), "HmacSHA256"u8,
+            1000, HashAlgorithmName.SHA1, 16);
+        byte[] signature;
+        using (var hmac = new HMACSHA256(hmacKey))
+            signature = hmac.ComputeHash(iv.Concat(encrypted).ToArray())[..8];
+
+        var result = new byte[1 + signature.Length + iv.Length + encrypted.Length];
+        signature.CopyTo(result, 1);
+        iv.CopyTo(result, 1 + signature.Length);
+        encrypted.CopyTo(result, 1 + signature.Length + iv.Length);
+        CryptographicOperations.ZeroMemory(aesKey);
+        CryptographicOperations.ZeroMemory(hmacKey);
+        CryptographicOperations.ZeroMemory(compressed);
+        return Convert.ToBase64String(result);
+    }
+
+    private static string FormatOffset(TimeSpan offset)
+        => (offset.Ticks < 0 ? "-" : "") + offset.Duration().ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string Base64Url(byte[] bytes)
         => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -137,4 +284,6 @@ public sealed record AudibleOAuthChallenge(
     Uri CallbackUri,
     string DeviceSerial,
     string CodeVerifier,
-    string CodeChallenge);
+    string CodeChallenge,
+    string FrcValue,
+    IReadOnlyList<ExternalSignInCookie> SignInCookies);
