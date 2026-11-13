@@ -589,8 +589,34 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
 
         var status = FindHttpStatusCode(exception);
         var statusText = status is { } code ? $", HTTP {code}" : string.Empty;
-        return $"Offline download failed at {stage} ({exceptionType}{statusText}). " +
+        var causeText = DescribeSafeExceptionChain(exception);
+        return $"Offline download failed at {stage} ({exceptionType}{statusText}; cause: {causeText}). " +
                "Verified encrypted segments are preserved; tap Retry.";
+    }
+
+    // A platform HttpClient/Media3 failure is sometimes wrapped in a generic
+    // System.Exception by the Android binding. Include only exception type names
+    // and numeric HTTP status codes so the real failing boundary is visible
+    // without exposing signed URLs, tokens, cookies, manifests or DRM messages.
+    private static string DescribeSafeExceptionChain(Exception exception)
+    {
+        var parts = new List<string>();
+        var depth = 0;
+        for (Exception? current = exception.InnerException;
+             current is not null && depth < 4;
+             current = current.InnerException, depth++)
+        {
+            var name = current.GetType().Name;
+            if (name.Length > 48 || name.Any(character => !char.IsAsciiLetterOrDigit(character)))
+                name = "PlatformException";
+
+            var status = current is HttpRequestException request && request.StatusCode is { } code
+                ? $" HTTP {(int)code}"
+                : string.Empty;
+            parts.Add(name + status);
+        }
+
+        return parts.Count == 0 ? "none" : string.Join(" -> ", parts);
     }
 
     private static int? FindHttpStatusCode(Exception exception)
