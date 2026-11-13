@@ -46,11 +46,11 @@ public sealed class AudibleWidevineManifestParserTests
         var xml = CreateManifest(Convert.ToBase64String(pssh), "audio/mp4")
             .Replace(
                 "<Period>",
-                "<Period><AdaptationSet mimeType=\\"application/ttml+xml\\" contentType=\\"text\\"><Representation mimeType=\\"application/ttml+xml\\" /></AdaptationSet>",
+                "<Period><AdaptationSet mimeType=\"application/ttml+xml\" contentType=\"text\"><Representation mimeType=\"application/ttml+xml\" /></AdaptationSet>",
                 StringComparison.Ordinal)
             .Replace(
                 "</Period>",
-                "<AdaptationSet mimeType=\\"video/mp4\\"><Representation mimeType=\\"video/mp4\\" /></AdaptationSet></Period>",
+                "<AdaptationSet mimeType=\"video/mp4\"><Representation mimeType=\"video/mp4\" /></AdaptationSet></Period>",
                 StringComparison.Ordinal);
 
         var result = AudibleWidevineManifestParser.Parse(xml);
