@@ -56,7 +56,7 @@ public sealed class AudiblePkceRegistrationClientTests
         Assert.True(Convert.FromBase64String(frc!).Length > 32);
 
         var query = System.Web.HttpUtility.ParseQueryString(challenge.AuthorizationUri.Query);
-        Assert.Equal("www.audible.in", challenge.AuthorizationUri.Host);
+        Assert.Equal("www.amazon.in", challenge.AuthorizationUri.Host);
         Assert.Equal("www.audible.in", challenge.CallbackUri.Host);
         Assert.Equal("amzn_audible_android_aui_v2_dark_in", query["pageId"]);
         Assert.Equal("amzn_audible_android_aui_in", query["openid.assoc_handle"]);
