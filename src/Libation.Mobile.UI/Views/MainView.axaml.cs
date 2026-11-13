@@ -1046,12 +1046,12 @@ public partial class MainView : UserControl
             return;
         }
 
-        // Audible titles use the provider-authorized Widevine DASH path directly.
-        // Do not queue a second ADRM/AAXC copy through the generic file downloader.
-        await PlayProtectedAudibleBookAsync(book);
+        // The library action is a download action until VØRATH has a complete
+        // offline copy. Only a subsequent Play offline tap starts playback.
+        await RunProtectedAudibleOperationAsync(book, book.IsWidevineOfflineAvailable);
     }
 
-    private async Task PlayProtectedAudibleBookAsync(Audiobook book)
+    private async Task RunProtectedAudibleOperationAsync(Audiobook book, bool startPlayback)
     {
         if (_localAudioPlayer is null)
         {
@@ -1061,7 +1061,7 @@ public partial class MainView : UserControl
 
         if (PlatformWidevinePlaybackCoordinatorFactory is null)
         {
-            _viewModel.ReportAudioStatus("The Android Widevine playback service is not available in this build.");
+            _viewModel.ReportAudioStatus("The Android Widevine download service is not available in this build.");
             return;
         }
 
@@ -1075,32 +1075,46 @@ public partial class MainView : UserControl
         _protectedAudibleOperationCts = operationCts;
         _viewModel.SetProtectedAudibleOperationInProgress(true);
         var cancellationToken = operationCts.Token;
+        var phase = "initialization";
 
         try
         {
+            phase = "restoring your Audible account session";
             var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
             if (coordinator is null)
             {
-                _viewModel.ReportAudioStatus("Sign in to Audible again before playing this protected audiobook.");
+                _viewModel.ReportAudioStatus("Sign in to Audible again before downloading this protected audiobook.");
                 return;
             }
 
             var asin = book.Id["provider:".Length..];
+            phase = "checking the offline licence";
             if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken))
             {
                 _viewModel.ReportAudioStatus("Requesting an Audible-authorized Widevine offline licence…");
+                phase = "requesting the Audible offline licence";
                 await coordinator.AcquireOfflineLicenseAsync(asin, cancellationToken);
             }
 
+            phase = "checking saved encrypted audio";
             if (!await coordinator.HasOfflineMediaAsync(asin, cancellationToken))
             {
-                _viewModel.ReportAudioStatus(
-                    "Downloading Audible's encrypted DASH audio segments. You can cancel this operation here.");
+                _viewModel.ReportAudioStatus("Downloading Audible's encrypted audio into VØRATH. You can cancel here.");
+                phase = "downloading encrypted Audible audio";
                 await coordinator.DownloadOfflineMediaAsync(asin, cancellationToken);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            phase = "saving the offline status";
             await _viewModel.MarkWidevineOfflineAvailableAsync(book.Id, cancellationToken);
+
+            if (!startPlayback)
+            {
+                _viewModel.ReportAudioStatus("Download complete. This audiobook is saved in VØRATH and ready for offline playback.");
+                return;
+            }
+
+            phase = "starting offline playback";
             await coordinator.PlayAsync(
                 asin,
                 book.Title,
@@ -1114,22 +1128,23 @@ public partial class MainView : UserControl
             await _viewModel.MarkPlaybackStartedAsync(book.Id);
             BeginChapterMetadataLoad(book.Id);
             UpdatePlaybackProgressUi();
-            _viewModel.ReportAudioStatus(
-                "Playing the saved Audible audiobook offline through Android Widevine. The encrypted DASH media stays in VØRATH's private cache.");
+            _viewModel.ReportAudioStatus("Playing the saved Audible audiobook offline through Android Widevine.");
         }
-        catch (NotSupportedException)
+        catch (NotSupportedException ex)
         {
-            _viewModel.ReportAudioStatus(
-                "Audible or this device did not provide a supported Widevine licence for this title.");
+            _viewModel.ReportAudioStatus("Audible offline download is not supported for this title/device: " + ex.Message);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _viewModel.ReportAudioStatus("Audible offline operation cancelled. Any partial encrypted segments are retained for retry.");
+            _viewModel.ReportAudioStatus("Audible offline operation cancelled. Partial encrypted segments are retained for retry.");
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _viewModel.ReportAudioStatus(
-                "Could not start protected Audible playback. Check the Audible account, connection and device registration.");
+            var detail = ex is InvalidOperationException or IOException
+                ? " " + ex.Message
+                : " " + ex.GetType().Name;
+            if (detail.Length > 220) detail = detail[..220];
+            _viewModel.ReportAudioStatus("Audible download failed while " + phase + "." + detail);
         }
         finally
         {
@@ -1139,6 +1154,9 @@ public partial class MainView : UserControl
             operationCts.Dispose();
         }
     }
+
+    private async Task PlayProtectedAudibleBookAsync(Audiobook book) =>
+        await RunProtectedAudibleOperationAsync(book, startPlayback: true);
 
     private void CancelProtectedAudibleOperationClicked(
         object? sender,
