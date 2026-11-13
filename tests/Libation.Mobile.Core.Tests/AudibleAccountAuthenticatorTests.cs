@@ -18,9 +18,9 @@ public sealed class AudibleAccountAuthenticatorTests
         Assert.Equal(Uri.UriSchemeHttps, challenge.AuthorizationUri.Scheme);
         var returnTo = HttpUtility.ParseQueryString(challenge.AuthorizationUri.Query)["openid.return_to"];
         Assert.True(Uri.TryCreate(returnTo, UriKind.Absolute, out var callback));
-        Assert.Equal("www.audible.in", callback!.Host);
+        Assert.Equal("www.amazon.in", callback!.Host);
         Assert.Equal("/ap/maplanding", callback.AbsolutePath);
-        Assert.Equal("https://www.audible.in/ap/maplanding", callback.AbsoluteUri);
+        Assert.Equal("https://www.amazon.in/ap/maplanding", callback.AbsoluteUri);
         var fixedNow = new DateTimeOffset(2026, 11, 10, 12, 0, 0, TimeSpan.Zero);
         Assert.Equal(fixedNow.AddMinutes(10), challenge.ExpiresAtUtc);
     }
@@ -72,7 +72,7 @@ public sealed class AudibleAccountAuthenticatorTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => authenticator.CompleteSignInAsync(
-                challenge.ChallengeId, "https://www.audible.com/ap/maplanding"));
+                challenge.ChallengeId, "https://www.amazon.com/ap/maplanding"));
 
         Assert.Contains("authorization code", error.Message);
         Assert.Equal(0, secrets.SetCalls);
