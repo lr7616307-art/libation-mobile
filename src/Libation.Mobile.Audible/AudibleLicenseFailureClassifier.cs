@@ -18,6 +18,27 @@ public sealed class AudibleWidevineNotAvailableException : NotSupportedException
 /// diagnostics. Provider messages, ASINs, customer identifiers and response
 /// bodies are deliberately never copied into the UI or Android notifications.
 /// </summary>
+/// <summary>
+/// A non-granted Audible Widevine content response. Only bounded status and
+/// DRM-category codes are retained; no title, account, URL or response body.
+/// </summary>
+public sealed class AudibleWidevineContentGrantException : InvalidOperationException
+{
+    public string StatusCode { get; }
+    public string DrmType { get; }
+
+    public AudibleWidevineContentGrantException(string statusCode, string drmType)
+        : base("Audible did not grant a Widevine content licence for this title/device.")
+    {
+        StatusCode = SafeCode(statusCode, "Granted", "Missing", "Denied", "Rejected", "Unavailable", "Other");
+        DrmType = SafeCode(drmType, "Widevine", "Adrm", "Mpeg", "Unknown", "Other");
+    }
+
+    private static string SafeCode(string? value, params string[] allowed)
+        => allowed.FirstOrDefault(item => string.Equals(item, value, StringComparison.OrdinalIgnoreCase))
+            ?? "Other";
+}
+
 public static class AudibleLicenseFailureClassifier
 {
     public static string? GetSafeUserMessage(Exception exception)
@@ -26,6 +47,13 @@ public static class AudibleLicenseFailureClassifier
 
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
+            if (current is AudibleWidevineContentGrantException grant)
+            {
+                return $"Audible content grant was not successful (status: {grant.StatusCode}; DRM: {grant.DrmType}). " +
+                       "This is the provider's title/device response, not a download-transfer failure. " +
+                       "VØRATH did not retry or switch to another protected format.";
+            }
+
             if (current is AudibleAndroidRegistrationRequiredException)
             {
                 return "This Audible account was saved with an older or mismatched device registration. " +
