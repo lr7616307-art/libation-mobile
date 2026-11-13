@@ -52,6 +52,8 @@ jobs:
           java-version: 17
       - name: Install Android workload
         run: dotnet workload install android
+      - name: Fetch pinned LibriSync FFmpegKit runtime
+        run: bash scripts/fetch-librisync-ffmpeg-android.sh
       - name: Restore
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
       - name: Compile ${{ matrix.abi }} APK (CI only)
@@ -116,6 +118,8 @@ jobs:
             -keypass "$TEST_KEY_PASSWORD" >/dev/null
       - name: Install Android workload
         run: dotnet workload install android
+      - name: Fetch pinned LibriSync FFmpegKit runtime
+        run: bash scripts/fetch-librisync-ffmpeg-android.sh
       - name: Restore Android project
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
       - name: Build installable ARMv7 test APK
@@ -174,13 +178,13 @@ jobs:
                   summary.write("## VØRATH ARMv7 test APK\n\n")
                   summary.write(f"- Size: **{size:,} bytes ({size / 1048576:.2f} MiB)**\n")
                   summary.write(f"- Native ABI: **{', '.join(sorted(abis))}**\n")
-                  summary.write("- Size budget: **24,000,000 bytes**\n\n")
+                  summary.write("- Size budget: **40,000,000 bytes**\n\n")
                   summary.write("Largest compressed APK entries:\n\n")
                   for info in largest:
                       summary.write(f"- {info.compress_size:,} bytes — `{info.filename}`\n")
           if abis != {"armeabi-v7a"}:
               raise SystemExit(f"Expected only armeabi-v7a, got {sorted(abis)}")
-          if size > 24_000_000:
+          if size > 40_000_000:
               raise SystemExit(f"APK exceeds 24,000,000-byte size budget: {size:,}")
           PY
       - name: Save CI test signing key for future updates
@@ -240,6 +244,8 @@ jobs:
             -keypass "$TEST_KEY_PASSWORD" >/dev/null
       - name: Install Android workload
         run: dotnet workload install android
+      - name: Fetch pinned LibriSync FFmpegKit runtime
+        run: bash scripts/fetch-librisync-ffmpeg-android.sh
       - name: Restore optimized Pass 8 source
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
       - name: Build optimized Pass 8 APK with the existing install identity
@@ -292,7 +298,7 @@ jobs:
           print(f"Native ABIs: {sorted(abis)}")
           if abis != {"armeabi-v7a"}:
               raise SystemExit(f"Expected only armeabi-v7a, got {sorted(abis)}")
-          if size > 24_000_000:
+          if size > 40_000_000:
               raise SystemExit(f"APK exceeds 24,000,000-byte size budget: {size:,}")
           PY
       - name: Check out pre-optimization source
@@ -442,6 +448,8 @@ jobs:
       - name: Install Android workload
         if: steps.signing.outputs.enabled == 'true'
         run: dotnet workload install android
+      - name: Fetch pinned LibriSync FFmpegKit runtime
+        run: bash scripts/fetch-librisync-ffmpeg-android.sh
       - name: Restore both Android runtimes
         if: steps.signing.outputs.enabled == 'true'
         run: dotnet restore src/Libation.Mobile.Android/Libation.Mobile.Android.csproj
