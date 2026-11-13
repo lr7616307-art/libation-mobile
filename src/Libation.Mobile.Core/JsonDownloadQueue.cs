@@ -249,7 +249,7 @@ public sealed class JsonDownloadQueue : IDownloadQueue
     private static bool IsAllowedTransition(DownloadStatus current, DownloadStatus next)
         => current switch
         {
-            DownloadStatus.Queued => next is DownloadStatus.Downloading or DownloadStatus.Failed,
+            DownloadStatus.Queued => next is DownloadStatus.Downloading or DownloadStatus.Failed or DownloadStatus.Protected,
             DownloadStatus.Downloading => next is DownloadStatus.Completed or DownloadStatus.Protected or DownloadStatus.Failed or DownloadStatus.Queued or DownloadStatus.Paused,
             DownloadStatus.Paused => next is DownloadStatus.Downloading or DownloadStatus.Queued or DownloadStatus.Failed,
             DownloadStatus.Failed => next == DownloadStatus.Queued,
