@@ -47,8 +47,10 @@ public static class AudibleWidevineCacheIdentity
     public static string CreateCacheScope(string titleScope, string contentVersionKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(titleScope);
-        if (titleScope.Length > 128 || titleScope.Contains(':'))
+        if (titleScope.Contains(':'))
             throw new ArgumentException("The protected cache title scope is invalid.", nameof(titleScope));
+        if (titleScope.Length > 128)
+            throw new ArgumentOutOfRangeException(nameof(titleScope), "The protected cache title scope is too long.");
         if (!IsValidContentVersionKey(contentVersionKey))
             throw new ArgumentException("The Audible cache content-version key is invalid.", nameof(contentVersionKey));
 
