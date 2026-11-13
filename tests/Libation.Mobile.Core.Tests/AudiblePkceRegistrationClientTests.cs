@@ -157,7 +157,7 @@ public sealed class AudiblePkceRegistrationClientTests
     {
         var challenge = AudibleOAuthFlow.Create("in");
         var handler = new CapturingHandler(
-            """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600},"mac_dms":{"device_private_key":"private-key","adp_token":"{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}"}},"extensions":{"device_info":{"device_type":"A2CZJZGLK2JJVM","device_serial_number":"__SERIAL__"},"customer_info":{"user_id":"user"}}}}}"""
+            """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600},"mac_dms":{"device_private_key":"private-key","adp_token":"{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}"}},"extensions":{"device_info":{"device_type":"A10KISP2GWF0E4","device_serial_number":"__SERIAL__"},"customer_info":{"user_id":"user"}}}}}"""
                 .Replace("__SERIAL__", challenge.DeviceSerial, StringComparison.Ordinal),
             HttpStatusCode.OK);
         using var http = new HttpClient(handler);
