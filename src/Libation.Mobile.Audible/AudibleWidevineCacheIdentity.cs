@@ -75,6 +75,13 @@ public static class AudibleWidevineCacheIdentity
             || candidate.StartsWith(titleScope + "-", StringComparison.Ordinal);
     }
 
+    public static bool IsContentCacheKey(string contentScope, string cacheKey)
+    {
+        if (string.IsNullOrWhiteSpace(contentScope) || string.IsNullOrWhiteSpace(cacheKey))
+            return false;
+        return cacheKey.StartsWith(contentScope + ":", StringComparison.Ordinal);
+    }
+
     public static string CreateResourceFingerprint(Uri resourceUri, string contentVersionKey)
     {
         ArgumentNullException.ThrowIfNull(resourceUri);
