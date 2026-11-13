@@ -221,6 +221,38 @@ public sealed class DownloadQueueWorkerTests
         Assert.All(await queue.GetItemsAsync(), item => Assert.Equal(DownloadStatus.Completed, item.Status));
     }
 
+
+    [Fact]
+    public async Task RecoverInterruptedDownloadsAsync_LeavesAudibleProviderJobsForForegroundService()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("provider:B012345678");
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book"), Path.Combine(directory.Path, "book.m4b")));
+
+        var recovered = await worker.RecoverInterruptedDownloadsAsync();
+
+        Assert.Equal(0, recovered);
+        Assert.Equal(DownloadStatus.Downloading, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
+    [Fact]
+    public async Task ProcessNextAsync_SkipsAudibleProviderJobs()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("provider:B012345678");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book"), Path.Combine(directory.Path, "book.m4b")));
+
+        Assert.False(await worker.ProcessNextAsync());
+        Assert.Equal(DownloadStatus.Queued, Assert.Single(await queue.GetItemsAsync()).Status);
+    }
+
     private sealed class ProtectedStubSource(
         Uri uri,
         string path,
