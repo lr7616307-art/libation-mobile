@@ -210,50 +210,14 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             var coordinator = await factory(cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("Sign in to Audible again before downloading.");
 
-            currentStage = "checking the existing offline audio cache";
-            if (await coordinator.HasOfflineMediaAsync(asin, cancellationToken).ConfigureAwait(false))
-            {
-                await RecoveryStore.MarkCompletedAsync(asin, CancellationToken.None).ConfigureAwait(false);
-                await UpdateQueueStatusAsync(asin, DownloadStatus.Protected).ConfigureAwait(false);
-                MainView.PlatformWidevineOfflineDownloadCompletedAction?.Invoke(asin);
-                advanceQueue = true;
-                FinishWithNotification(
-                    startId,
-                    "This audiobook is already verified for offline playback in VØRATH.",
-                    100,
-                    actionLabel: null,
-                    stopService: false);
-                return;
-            }
-
-            currentStage = "checking the saved offline DRM licence";
-            if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false))
-            {
-                currentStage = "requesting an Audible offline DRM licence";
-                UpdateNotification(
-                    "Requesting Audible-authorized Widevine offline licence…",
-                    null,
-                    indeterminate: true,
-                    ongoing: true,
-                    actionLabel: "Pause");
-                await coordinator.AcquireOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            UpdateNotification(
-                "Audible licence granted. Preparing encrypted audio transfer…",
-                null,
-                indeterminate: true,
-                ongoing: true,
-                actionLabel: "Pause");
-
+            currentStage = "reconciling the protected download";
             var lastPersistedBytes = 0L;
             var lastPersistedAt = DateTimeOffset.MinValue;
-            var progress = new InlineProgress<WidevineOfflineDownloadProgress>(value =>
+            var transferProgress = new InlineProgress<WidevineOfflineDownloadProgress>(value =>
             {
                 var detail = value.ContentLength is > 0
-                    ? $"{FormatBytes(value.BytesDownloaded)} of {FormatBytes(value.ContentLength.Value)}"
-                    : $"{FormatBytes(value.BytesDownloaded)} received";
+                    ? $\"{FormatBytes(value.BytesDownloaded)} of {FormatBytes(value.ContentLength.Value)}\"
+                    : $\"{FormatBytes(value.BytesDownloaded)} received\";
                 UpdateNotification(
                     detail,
                     value.Percentage is { } percentage ? (int)Math.Clamp(percentage, 0d, 100d) : null,
@@ -271,43 +235,28 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                     _ = PersistProgressAsync(asin, value);
                 }
             });
-
-            // Retry only transient transport errors. Media3's cache keeps completed
-            // encrypted segments, and the coordinator obtains a fresh manifest on
-            // each attempt, so the next pass resumes without requesting a new licence.
-            currentStage = "downloading encrypted DASH audio segments";
-            var retryNumber = 0;
-            while (true)
+            var stageProgress = new InlineProgress<AudibleOfflineDownloadStage>(value =>
             {
-                try
-                {
-                    await coordinator.DownloadOfflineMediaWithProgressAsync(
-                        asin, progress, cancellationToken).ConfigureAwait(false);
-                    break;
-                }
-                catch (Exception exception) when (
-                    !cancellationToken.IsCancellationRequested &&
-                    retryNumber < OfflineDownloadRetryPolicy.MaximumAutomaticRetries &&
-                    IsRetryableMediaFailure(exception))
-                {
-                    retryNumber++;
-                    var delay = OfflineDownloadRetryPolicy.GetDelay(retryNumber);
-                    UpdateNotification(
-                        $"Connection interrupted. Reusing saved encrypted segments; retry {retryNumber}/{OfflineDownloadRetryPolicy.MaximumAutomaticRetries} in {delay.TotalSeconds:0}s…",
-                        null,
-                        indeterminate: true,
-                        ongoing: true,
-                        actionLabel: "Pause");
-                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-                }
-            }
+                currentStage = value.Stage;
+                UpdateNotification(
+                    value.Message,
+                    value.Stage == "completed" ? 100 : null,
+                    indeterminate: value.Stage != "completed",
+                    ongoing: value.Stage != "completed",
+                    actionLabel: value.Stage == "completed" ? null : "Pause");
+            });
 
-            currentStage = "verifying the offline licence and all downloaded audio segments";
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false) ||
-                !await coordinator.HasOfflineMediaAsync(asin, cancellationToken).ConfigureAwait(false))
-                throw new InvalidDataException(
-                    "Android could not verify both the offline licence and the complete cached audiobook.");
+            // One pipeline owns the full lifecycle: reconcile saved state, obtain
+            // an Audible grant, download encrypted media, then verify both halves.
+            // The backend is Android MediaDrm + Media3; no protected bytes are
+            // decrypted or exposed to the ordinary audio importer/player.
+            await new AudibleOfflineDownloadPipeline().ExecuteAsync(
+                asin,
+                coordinator,
+                stageProgress,
+                transferProgress,
+                cancellationToken,
+                IsRetryableMediaFailure).ConfigureAwait(false);
 
             await RecoveryStore.MarkCompletedAsync(asin, CancellationToken.None).ConfigureAwait(false);
             await UpdateQueueStatusAsync(asin, DownloadStatus.Protected).ConfigureAwait(false);
