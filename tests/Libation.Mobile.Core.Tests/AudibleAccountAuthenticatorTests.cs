@@ -104,8 +104,14 @@ public sealed class AudibleAccountAuthenticatorTests
             new AudibleIdentitySnapshotStore(secrets),
             new AudiblePkceRegistrationClient(new HttpClient()),
             new AudibleTokenRefreshClient(new HttpClient(), clock),
-            clock);
+            clock,
+            TestDeviceInfo);
     }
+
+    private static AudibleAndroidDeviceInfo TestDeviceInfo() => new(
+        "Test Manufacturer", "Test Brand", "Test Model", "test-device", "test-product",
+        "test/test/test:14/UP1A.1/test:user/release-keys", "14", "34",
+        "Test Android Device", "en-IN", 1080, 2400);
 
     private sealed class FixedClock(DateTime utcNow) : ISystemDateTime
     {
