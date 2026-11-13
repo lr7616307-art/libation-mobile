@@ -1,8 +1,5 @@
 using AudibleApi;
 using Libation.Mobile.Core;
-using System.IO.Compression;
-using System.Net;
-using System.Net.NetworkInformation;
 using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
@@ -154,116 +151,6 @@ public static class AudibleOAuthFlow
             throw new InvalidOperationException("Amazon returned the sign-in page without an authorization code.");
         return code;
     }
-
-    private static string CreateAndroidMapMd()
-    {
-        var mapMd = new JObject
-        {
-            ["device_registration_data"] = new JObject
-            {
-                ["software_version"] = SoftwareVersion
-            },
-            ["app_identifier"] = new JObject
-            {
-                ["package"] = AppName,
-                ["SHA-256"] = JValue.CreateNull(),
-                ["app_version"] = AppVersion,
-                ["app_version_name"] = AppVersionName,
-                ["app_sms_hash"] = JValue.CreateNull(),
-                ["map_version"] = MapVersion
-            },
-            ["app_info"] = new JObject
-            {
-                ["auto_pv"] = 0,
-                ["auto_pv_with_smsretriever"] = 1,
-                ["smartlock_supported"] = 0,
-                ["permission_runtime_grant"] = 2
-            }
-        };
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(mapMd.ToString(Formatting.None)));
-    }
-
-    private static string CreateAndroidFrc(string serial, Locale locale)
-    {
-        var deviceInfo = new JObject
-        {
-            ["ApplicationName"] = AppName,
-            ["ApplicationVersion"] = AppVersion,
-            ["DeviceOSVersion"] = OsVersion,
-            ["DeviceName"] = DeviceName,
-            ["ScreenWidthPixels"] = "1080",
-            ["ThirdPartyDeviceId"] = serial,
-            ["FirstPartyDeviceId"] = serial,
-            ["ScreenHeightPixels"] = "2400",
-            ["DeviceLanguage"] = locale.Language,
-            ["TimeZone"] = FormatOffset(DateTimeOffset.Now.Offset),
-            ["Carrier"] = "T-Mobile",
-            ["IpAddress"] = GetLocalIpAddress()
-        };
-        return EncodeFrc(serial, deviceInfo.ToString(Formatting.None));
-    }
-
-    private static string GetLocalIpAddress()
-    {
-        try
-        {
-            var addresses = NetworkInterface.GetAllNetworkInterfaces()
-                .SelectMany(network => network.GetIPProperties().UnicastAddresses)
-                .Select(entry => entry.Address)
-                .Where(address => !IPAddress.IsLoopback(address) && !address.Equals(IPAddress.IPv6Any))
-                .OrderBy(address => address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
-                .OrderByDescending(address => !address.IsIPv6LinkLocal && !address.IsIPv6SiteLocal)
-                .FirstOrDefault();
-            return addresses?.ToString() ?? "0.0.0.0";
-        }
-        catch
-        {
-            return "0.0.0.0";
-        }
-    }
-
-    // Same FRC encoding used by AudibleApi's Android registration profile.
-    private static string EncodeFrc(string serial, string json)
-    {
-        byte[] compressed;
-        using (var output = new MemoryStream())
-        {
-            using (var gzip = new GZipStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
-            {
-                var jsonBytes = Encoding.UTF8.GetBytes(json);
-                gzip.Write(jsonBytes, 0, jsonBytes.Length);
-            }
-            compressed = output.ToArray();
-        }
-
-        var iv = RandomNumberGenerator.GetBytes(16);
-        var aesKey = Rfc2898DeriveBytes.Pbkdf2(serial.AsSpan(), "AES/CBC/PKCS7Padding"u8,
-            1000, HashAlgorithmName.SHA1, 16);
-        byte[] encrypted;
-        using (var aes = Aes.Create())
-        {
-            aes.Key = aesKey;
-            encrypted = aes.EncryptCbc(compressed, iv, PaddingMode.PKCS7);
-        }
-
-        var hmacKey = Rfc2898DeriveBytes.Pbkdf2(serial.AsSpan(), "HmacSHA256"u8,
-            1000, HashAlgorithmName.SHA1, 16);
-        byte[] signature;
-        using (var hmac = new HMACSHA256(hmacKey))
-            signature = hmac.ComputeHash(iv.Concat(encrypted).ToArray())[..8];
-
-        var result = new byte[1 + signature.Length + iv.Length + encrypted.Length];
-        signature.CopyTo(result, 1);
-        iv.CopyTo(result, 1 + signature.Length);
-        encrypted.CopyTo(result, 1 + signature.Length + iv.Length);
-        CryptographicOperations.ZeroMemory(aesKey);
-        CryptographicOperations.ZeroMemory(hmacKey);
-        CryptographicOperations.ZeroMemory(compressed);
-        return Convert.ToBase64String(result);
-    }
-
-    private static string FormatOffset(TimeSpan offset)
-        => (offset.Ticks < 0 ? "-" : "") + offset.Duration().ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture);
 
     private static string Base64Url(byte[] bytes)
         => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
