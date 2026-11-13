@@ -49,7 +49,7 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
             Build.VERSION.Release ?? "Unknown",
             ((int)Build.VERSION.SdkInt).ToString(System.Globalization.CultureInfo.InvariantCulture),
             $"{Build.Manufacturer} {Build.Model}".Trim(),
-            System.Globalization.CultureInfo.CurrentUICulture.Name,
+            System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName,
             displayMetrics?.WidthPixels ?? 0,
             displayMetrics?.HeightPixels ?? 0);
         var registrationClient = new AudiblePkceRegistrationClient(new HttpClient());
