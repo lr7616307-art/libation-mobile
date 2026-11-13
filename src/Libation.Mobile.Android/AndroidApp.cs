@@ -82,8 +82,16 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
             return new AndroidWidevineOfflinePlaybackCoordinator(
                 source, manifestClient, keySetStore, savedIdentity.AmazonAccountId);
         };
-        AndroidAudibleOfflineDownloadService.CoordinatorFactory =
-            MainView.PlatformWidevinePlaybackCoordinatorFactory;
+        // The foreground transfer now uses the provider-issued ADRM/AAC-LC
+        // voucher from LibriSync's iPhone registration path. It no longer asks
+        // for Widevine DASH media.
+        AndroidAudibleOfflineDownloadService.DownloadDirectory = audibleDownloadDirectory;
+        AndroidAudibleOfflineDownloadService.SourceFactory = cancellationToken =>
+            AudibleAudioDownloadSource.FromSavedIdentityAsync(
+                snapshots,
+                audibleDownloadDirectory,
+                AudibleDownloadQuality.High,
+                cancellationToken);
         MainView.PlatformAudibleOfflineDownloadStartAction =
             (asin, title) => AndroidAudibleOfflineDownloadService.Start(this, asin, title);
         signInViewModel.SetBeforeDisconnectCleanup(async cancellationToken =>
