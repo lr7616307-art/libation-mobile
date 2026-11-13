@@ -176,7 +176,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                 100,
                 actionLabel: null);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (System.OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             FinishWithNotification(
                 startId,
