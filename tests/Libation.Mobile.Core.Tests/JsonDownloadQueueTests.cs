@@ -238,6 +238,22 @@ public sealed class JsonDownloadQueueTests
         Assert.Equal(DownloadStatus.Paused, item.Status);
     }
 
+
+    [Fact]
+    public async Task ExistingAudibleOfflineMediaCanBeDisplayedAsProtectedInQueue()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("provider:B012345678");
+
+        await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Protected);
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Protected, item.Status);
+        Assert.Equal("Downloaded (protected)", item.StatusLabel);
+        Assert.False(item.CanToggleAudibleDownload);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
