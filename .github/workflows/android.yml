@@ -207,7 +207,7 @@ jobs:
     env:
       TEST_STORE_PASSWORD: vorath-ci-test-store
       TEST_KEY_PASSWORD: vorath-ci-test-key
-      EXPECTED_TEST_CERT_SHA256: d642fdba3b5c14c126c24627594de6a608d7162481be731664be2f38dab7929c
+      EXPECTED_TEST_CERT_SHA256: d642fdba3bc514c126c24627594de6a608d7162481be731664be2f38dab7929c
     steps:
       - uses: actions/checkout@v4
       - name: Install .NET
