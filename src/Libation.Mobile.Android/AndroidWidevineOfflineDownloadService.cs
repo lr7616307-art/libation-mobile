@@ -1,6 +1,7 @@
 using Android.App;
 using Android.Content;
 using Android.OS;
+using Libation.Mobile.Core;
 using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.Android;
@@ -160,8 +161,34 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
                     actionLabel: "Pause");
             });
 
-            await coordinator.DownloadOfflineMediaWithProgressAsync(
-                asin, progress, cancellationToken).ConfigureAwait(false);
+            // Retry only transient transport errors. Media3's cache keeps completed
+            // encrypted segments, and the coordinator obtains a fresh manifest on
+            // each attempt, so the next pass resumes without requesting a new licence.
+            var retryNumber = 0;
+            while (true)
+            {
+                try
+                {
+                    await coordinator.DownloadOfflineMediaWithProgressAsync(
+                        asin, progress, cancellationToken).ConfigureAwait(false);
+                    break;
+                }
+                catch (Exception exception) when (
+                    !cancellationToken.IsCancellationRequested &&
+                    retryNumber < OfflineDownloadRetryPolicy.MaximumAutomaticRetries &&
+                    IsRetryableMediaFailure(exception))
+                {
+                    retryNumber++;
+                    var delay = OfflineDownloadRetryPolicy.GetDelay(retryNumber);
+                    UpdateNotification(
+                        $"Connection interrupted. Reusing saved encrypted segments; retry {retryNumber}/{OfflineDownloadRetryPolicy.MaximumAutomaticRetries} in {delay.TotalSeconds:0}s…",
+                        null,
+                        indeterminate: true,
+                        ongoing: true,
+                        actionLabel: "Pause");
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false) ||
@@ -198,6 +225,24 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
             runCancellation?.Dispose();
             runCancellation = null;
         }
+    }
+
+    private static bool IsRetryableMediaFailure(Exception exception)
+    {
+        if (OfflineDownloadRetryPolicy.IsRetryable(exception))
+            return true;
+
+        // Media3 reports HTTP transport failures as Java IOException subclasses.
+        // HTTP status failures are not retried: 401/403/404 often indicate a
+        // provider denial or an expired resource, not a transient connection.
+        if (exception is Java.IO.IOException)
+            return !string.Equals(
+                exception.GetType().Name,
+                "InvalidResponseCodeException",
+                StringComparison.Ordinal);
+
+        return exception.InnerException is not null
+            && IsRetryableMediaFailure(exception.InnerException);
     }
 
     private static string SafeFailureMessage(Exception exception)
