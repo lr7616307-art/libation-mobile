@@ -49,7 +49,8 @@ public sealed class AudibleOfflineDownloadPipeline
         IAudibleOfflineDownloadBackend backend,
         IProgress<AudibleOfflineDownloadStage>? stageProgress = null,
         IProgress<WidevineOfflineDownloadProgress>? transferProgress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<Exception, bool>? isRetryableTransferFailure = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(asin);
         ArgumentNullException.ThrowIfNull(backend);
@@ -74,8 +75,30 @@ public sealed class AudibleOfflineDownloadPipeline
         if (!hasMedia)
         {
             Report(stageProgress, "transferring", "Downloading encrypted audiobook audio…");
-            await backend.DownloadOfflineMediaWithProgressAsync(
-                asin, transferProgress, cancellationToken).ConfigureAwait(false);
+            var shouldRetry = isRetryableTransferFailure ?? OfflineDownloadRetryPolicy.IsRetryable;
+            var retryNumber = 0;
+            while (true)
+            {
+                try
+                {
+                    await backend.DownloadOfflineMediaWithProgressAsync(
+                        asin, transferProgress, cancellationToken).ConfigureAwait(false);
+                    break;
+                }
+                catch (Exception exception) when (
+                    !cancellationToken.IsCancellationRequested &&
+                    retryNumber < OfflineDownloadRetryPolicy.MaximumAutomaticRetries &&
+                    shouldRetry(exception))
+                {
+                    retryNumber++;
+                    var delay = OfflineDownloadRetryPolicy.GetDelay(retryNumber);
+                    Report(
+                        stageProgress,
+                        "retrying",
+                        $"Connection interrupted. Preserved encrypted segments will be reused; retry {retryNumber}/{OfflineDownloadRetryPolicy.MaximumAutomaticRetries} in {delay.TotalSeconds:0}s…");
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
