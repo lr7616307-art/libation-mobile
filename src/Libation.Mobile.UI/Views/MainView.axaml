@@ -403,7 +403,7 @@
                           VerticalAlignment="Center" Click="CycleAudibleDownloadQualityClicked"/>
                 </Grid>
                 <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
-                <TextBlock Text="VØRATH requests Audible-issued offline licences. Unprotected audio is added to your playable library; DRM-protected files are saved encrypted in this folder and are not sent to the normal player." FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+                <TextBlock Text="Audible downloads stay encrypted in VØRATH’s private offline cache and play inside VØRATH using Android’s saved offline licence. They are not exported as ordinary MP3/M4B files. Unprotected audio downloads are saved to the selected folder." FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
               </StackPanel>
             </Border>
             <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
