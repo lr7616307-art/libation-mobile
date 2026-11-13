@@ -9,7 +9,7 @@ namespace Libation.Mobile.Core.Tests;
 public sealed class AudiblePkceRegistrationClientTests
 {
     [Fact]
-    public async Task RegisterAsync_SendsAudibleCurrentAndroidWidevineProfile()
+    public async Task RegisterAsync_SendsLibriSyncIPhoneAdrmProfile()
     {
         var handler = new CapturingHandler("{\"error\":\"test\"}", HttpStatusCode.BadRequest);
         using var http = new HttpClient(handler);
@@ -23,17 +23,16 @@ public sealed class AudiblePkceRegistrationClientTests
         using var body = JsonDocument.Parse(handler.Body!);
         var root = body.RootElement;
         Assert.Equal(".amazon.in", root.GetProperty("cookies").GetProperty("domain").GetString());
-        Assert.Equal("DeviceLegacy", root.GetProperty("registration_data").GetProperty("domain").GetString());
-        Assert.Equal("2090263407", root.GetProperty("registration_data").GetProperty("app_version").GetString());
-        Assert.Equal("130050002", root.GetProperty("registration_data").GetProperty("software_version").GetString());
-        Assert.Equal(@"google\/raven\/raven:14\/UPB5.230623.003\/10615560:user\/release-keys",
-            root.GetProperty("registration_data").GetProperty("os_version").GetString());
-        Assert.Equal(AudibleOAuthFlow.AndroidDeviceType,
+        Assert.Equal("Device", root.GetProperty("registration_data").GetProperty("domain").GetString());
+        Assert.Equal("4.60", root.GetProperty("registration_data").GetProperty("app_version").GetString());
+        Assert.Equal("46000856", root.GetProperty("registration_data").GetProperty("software_version").GetString());
+        Assert.Equal("26.2", root.GetProperty("registration_data").GetProperty("os_version").GetString());
+        Assert.Equal(AudibleOAuthFlow.IPhoneDeviceType,
             root.GetProperty("registration_data").GetProperty("device_type").GetString());
-        Assert.Equal("%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android",
+        Assert.Equal("%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for iPhone",
             root.GetProperty("registration_data").GetProperty("device_name").GetString());
-        Assert.Equal("sdk_gphone64_x86_64", root.GetProperty("registration_data").GetProperty("device_model").GetString());
-        Assert.Equal("com.audible.application", root.GetProperty("registration_data").GetProperty("app_name").GetString());
+        Assert.Equal("iPhone", root.GetProperty("registration_data").GetProperty("device_model").GetString());
+        Assert.Equal("Audible", root.GetProperty("registration_data").GetProperty("app_name").GetString());
         Assert.Equal(challenge.DeviceSerial, root.GetProperty("registration_data").GetProperty("device_serial").GetString());
         Assert.Equal("authorization-code-test", root.GetProperty("auth_data").GetProperty("authorization_code").GetString());
 
@@ -43,24 +42,17 @@ public sealed class AudiblePkceRegistrationClientTests
         var expectedClientId = Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(
             challenge.DeviceSerial + "#" + AudibleOAuthFlow.AndroidDeviceType)).ToLowerInvariant();
         Assert.Equal(expectedClientId, auth.GetProperty("client_id").GetString());
-        Assert.Equal("true", auth.GetProperty("use_global_authentication").GetString());
+        Assert.Equal("DeviceLegacy", auth.GetProperty("client_domain").GetString());
 
-        var deviceMetadata = root.GetProperty("device_metadata");
-        Assert.Equal("android", deviceMetadata.GetProperty("device_os_family").GetString());
-        Assert.Equal("Google", deviceMetadata.GetProperty("manufacturer").GetString());
-        Assert.Equal("34", deviceMetadata.GetProperty("os_version").GetString());
-        Assert.Equal("sdk_gphone64_x86_64", deviceMetadata.GetProperty("product").GetString());
-
-        var frc = root.GetProperty("user_context_map").GetProperty("frc").GetString();
-        Assert.False(string.IsNullOrWhiteSpace(frc));
-        Assert.True(Convert.FromBase64String(frc!).Length > 32);
+        Assert.False(root.TryGetProperty("device_metadata", out _));
+        Assert.False(root.TryGetProperty("user_context_map", out _));
 
         var query = System.Web.HttpUtility.ParseQueryString(challenge.AuthorizationUri.Query);
         Assert.Equal("www.amazon.in", challenge.AuthorizationUri.Host);
-        Assert.Equal("www.audible.in", challenge.CallbackUri.Host);
-        Assert.Equal("amzn_audible_android_aui_v2_dark_in", query["pageId"]);
-        Assert.Equal("amzn_audible_android_aui_in", query["openid.assoc_handle"]);
-        Assert.Equal("1", query["disableLoginPrepopulate"]);
+        Assert.Equal("www.amazon.in", challenge.CallbackUri.Host);
+        Assert.Equal("amzn_audible_ios", query["pageId"]);
+        Assert.Equal("amzn_audible_ios_in", query["openid.assoc_handle"]);
+        Assert.Equal("true", query["forceMobileLayout"]);
         Assert.Equal("device:" + expectedClientId, query["openid.oa2.client_id"]);
         Assert.Equal(challenge.CallbackUri.AbsoluteUri, query["openid.return_to"]);
     }
@@ -117,7 +109,7 @@ public sealed class AudiblePkceRegistrationClientTests
     }
 
     [Fact]
-    public async Task RegisterAsync_MapsCompleteAndroidRegistrationResponseIntoRestorableIdentity()
+    public async Task RegisterAsync_MapsCompleteIPhoneRegistrationResponseIntoRestorableIdentity()
     {
         using var rsa = RSA.Create(2048);
         var privateKey = rsa.ExportRSAPrivateKeyPem();
@@ -129,7 +121,7 @@ public sealed class AudiblePkceRegistrationClientTests
           "mac_dms":{"device_private_key":__KEY__,"adp_token":__ADP__},
           "website_cookies":[{"Name":"session","Value":"cookie-one"},{"Name":"session","Value":"cookie-two"}],
           "store_authentication_cookie":{"cookie":"store-cookie"}},
-          "extensions":{"device_info":{"device_name":"Audible for Android","device_serial_number":"__SERIAL__","device_type":"A10KISP2GWF0E4"},
+          "extensions":{"device_info":{"device_name":"Audible for iPhone","device_serial_number":"__SERIAL__","device_type":"A10KISP2GWF0E4"},
           "customer_info":{"user_id":"amazon-user-123"}}}}}
         """.Replace("__KEY__", JsonSerializer.Serialize(privateKey), StringComparison.Ordinal)
           .Replace("__ADP__", JsonSerializer.Serialize(adp), StringComparison.Ordinal)
@@ -161,11 +153,11 @@ public sealed class AudiblePkceRegistrationClientTests
     }
 
     [Fact]
-    public async Task RegisterAsync_RejectsRegistrationResponseWithNonAndroidDeviceType()
+    public async Task RegisterAsync_RejectsRegistrationResponseWithNonIPhoneDeviceType()
     {
         var challenge = AudibleOAuthFlow.Create("in");
         var handler = new CapturingHandler(
-            """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600},"mac_dms":{"device_private_key":"private-key","adp_token":"{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}"}},"extensions":{"device_info":{"device_type":"A2CZJZGLK2JJVM","device_serial_number":"__SERIAL__"},"customer_info":{"user_id":"user"}}}}}"""
+            """{"response":{"success":{"tokens":{"bearer":{"access_token":"Atna|x","refresh_token":"Atnr|y","expires_in":3600},"mac_dms":{"device_private_key":"private-key","adp_token":"{enc:YWJj}{key:ZGVm}{iv:Z2hp}{name:QURQVG9rZW5FbmNyeXB0aW9uS2V5}{serial:Mg==}"}},"extensions":{"device_info":{"device_type":"A10KISP2GWF0E4","device_serial_number":"__SERIAL__"},"customer_info":{"user_id":"user"}}}}}"""
                 .Replace("__SERIAL__", challenge.DeviceSerial, StringComparison.Ordinal),
             HttpStatusCode.OK);
         using var http = new HttpClient(handler);
@@ -174,7 +166,7 @@ public sealed class AudiblePkceRegistrationClientTests
         var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
             client.RegisterAsync(challenge, "authorization-code"));
 
-        Assert.Contains("Android device type", error.Message);
+        Assert.Contains("iPhone device type", error.Message);
     }
 
     [Fact]
