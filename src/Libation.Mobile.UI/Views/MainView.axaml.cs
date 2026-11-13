@@ -1053,9 +1053,9 @@ public partial class MainView : UserControl
 
     private async Task RunProtectedAudibleOperationAsync(Audiobook book, bool startPlayback)
     {
-        if (_localAudioPlayer is null)
+        if (startPlayback && _localAudioPlayer is null)
         {
-            _viewModel.ReportAudioStatus("Protected Audible playback is unavailable on this platform.");
+            _viewModel.ReportAudioStatus("Protected Audible playback is unavailable on this platform. The offline download itself does not require the player.");
             return;
         }
 
