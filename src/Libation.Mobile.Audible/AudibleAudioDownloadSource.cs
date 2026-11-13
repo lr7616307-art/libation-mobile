@@ -136,8 +136,7 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
                 "Audible did not grant a Widevine content licence for this audiobook.");
 
         if (!string.Equals(license.DrmType.ToString(), "Widevine", StringComparison.OrdinalIgnoreCase))
-            throw new NotSupportedException(
-                "Audible did not issue a Widevine licence for this device registration. No DRM fallback was used.");
+            throw new AudibleWidevineNotAvailableException();
 
         // For Widevine, AudibleApi's LicenseResponse is the DASH manifest URL.
         // The separate WidevineDrmLicense call exchanges the platform-generated

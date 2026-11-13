@@ -2,6 +2,7 @@ using Android.App;
 using Android.Content;
 using Android.OS;
 using Libation.Mobile.Core;
+using Libation.Mobile.Audible;
 using DownloadStatus = Libation.Mobile.Core.DownloadStatus;
 using Libation.Mobile.UI.Views;
 
@@ -615,20 +616,27 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
 
     private static string SafeFailureMessage(Exception exception)
     {
-        var message = exception.Message ?? string.Empty;
-        if (exception is NotSupportedException ||
-            message.Contains("denied", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("did not grant", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("licence", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("license", StringComparison.OrdinalIgnoreCase))
-            return "Audible did not grant a usable Widevine offline licence for this title/device. No playable download was completed.";
+        // Prefer structured, allow-listed provider denial categories. Never surface
+        // Audible's raw exception message because it may contain account identifiers
+        // or other response details.
+        var providerMessage = AudibleLicenseFailureClassifier.GetSafeUserMessage(exception);
+        if (!string.IsNullOrWhiteSpace(providerMessage))
+            return providerMessage;
 
+        var message = exception.Message ?? string.Empty;
         if (message.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("challenge", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("bearer", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("key-set", StringComparison.OrdinalIgnoreCase) ||
             message.Contains("key set", StringComparison.OrdinalIgnoreCase))
             return "The protected offline authorization could not be completed. Sensitive provider details were hidden.";
+
+        if (message.Contains("denied", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("did not grant", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("licence", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("license", StringComparison.OrdinalIgnoreCase) ||
+            exception is NotSupportedException)
+            return "Audible could not authorize this title for the Widevine offline playback route. Check title eligibility and the account's Android device registration.";
 
         return "Offline download failed. Any verified cached segments are preserved; tap Retry.";
     }
