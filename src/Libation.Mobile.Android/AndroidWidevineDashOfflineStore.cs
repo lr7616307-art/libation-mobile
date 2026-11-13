@@ -107,7 +107,13 @@ public sealed class AndroidWidevineDashOfflineStore
         {
             progress.Report(new AudioDownloadProgress(
                 Math.Max(0, bytesDownloaded),
-                contentLength > 0 ? contentLength : null));
+                contentLength > 0 ? contentLength : null)
+            {
+                ReportedPercentage = float.IsFinite(percentDownloaded) &&
+                    percentDownloaded >= 0f && percentDownloaded <= 100f
+                        ? percentDownloaded
+                        : null
+            });
         }
     }
 
