@@ -672,7 +672,7 @@ public sealed class MainViewModelTests
         await vm.InitializeAsync();
         await vm.SyncLibraryAsync();
 
-        var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:audible-asin"));
+        var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:B012345678"));
         Assert.False(book.CanQueueDownload); // Audible IDs cannot be sent to the generic direct-URL form.
         Assert.Equal("⇩  Download offline", book.DownloadActionLabel);
         Assert.Equal("⇩  Download offline",
