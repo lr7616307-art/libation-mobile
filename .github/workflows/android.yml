@@ -7,6 +7,7 @@ on:
       - fix/pass-5-current-librisync-iphone-profile
       - feat/pass-7-audible-download-quality
       - feat/pass-8-widevine-license-bridge
+      - feat/pass-41-safe-widevine-grant-diagnostics
   pull_request:
   workflow_dispatch:
 
@@ -71,7 +72,7 @@ jobs:
   # cached CI test key so successive test builds can update in place. This is not
   # the production/release signing identity.
   build_test_apk:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/fix/pass-5-current-librisync-iphone-profile' || github.ref == 'refs/heads/feat/pass-7-audible-download-quality')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/fix/pass-5-current-librisync-iphone-profile' || github.ref == 'refs/heads/feat/pass-7-audible-download-quality' || github.ref == 'refs/heads/feat/pass-41-safe-widevine-grant-diagnostics')
     needs: test
     runs-on: ubuntu-latest
     env:
@@ -93,7 +94,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/vorath-ci-test.jks
-          key: vorath-ci-test-key-v1-${{ github.base_ref }}
+          key: vorath-ci-test-key-v1-${{ github.ref_name }}
       - name: Create CI test signing key when needed
         shell: bash
         run: |
@@ -188,7 +189,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/vorath-ci-test.jks
-          key: vorath-ci-test-key-v1-${{ github.event.pull_request.base.ref }}
+          key: vorath-ci-test-key-v1-${{ github.ref_name }}
       - name: Upload installable ARMv7 APK
         uses: actions/upload-artifact@v4
         with:
