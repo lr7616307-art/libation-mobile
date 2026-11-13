@@ -24,6 +24,10 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     private const string ExtraAsin = "asin";
     private const string ExtraTitle = "title";
 
+    private static AndroidWidevineOfflineDownloadService? currentService;
+
+    public static bool IsDownloadActive => currentService?.runTask is { IsCompleted: false };
+
     private CancellationTokenSource? runCancellation;
     private Task? runTask;
     private string? activeAsin;
@@ -76,6 +80,7 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     public override void OnCreate()
     {
         base.OnCreate();
+        currentService = this;
         EnsureNotificationChannel();
     }
 
@@ -357,6 +362,12 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     {
         try
         {
+            // MainActivity invokes recovery from OnResume. Never interpret an
+            // already-running download as a process-death recovery: doing so
+            // during a Pause transition could immediately resume that title.
+            if (IsDownloadActive)
+                return;
+
             var path = Path.Combine(context.FilesDir!.AbsolutePath!, RecoveryFileName);
             var state = await new JsonWidevineOfflineDownloadStateStore(path)
                 .GetAsync(CancellationToken.None).ConfigureAwait(false);
@@ -595,6 +606,8 @@ public sealed class AndroidWidevineOfflineDownloadService : Service
     {
         try { runCancellation?.Cancel(); }
         catch (ObjectDisposedException) { }
+        if (ReferenceEquals(currentService, this))
+            currentService = null;
         base.OnDestroy();
     }
 
