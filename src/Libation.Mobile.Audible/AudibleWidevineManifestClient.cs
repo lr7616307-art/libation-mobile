@@ -31,9 +31,15 @@ public sealed class AudibleWidevineManifestClient(HttpClient httpClient)
         cancellationToken.ThrowIfCancellationRequested();
 
         using var request = new HttpRequestMessage(HttpMethod.Get, manifestUri);
+        request.Headers.UserAgent.Clear();
+        request.Headers.UserAgent.ParseAdd(AudibleAudioDownloadSource.AndroidDownloadUserAgent);
         request.Headers.Accept.ParseAdd("application/dash+xml");
         request.Headers.Accept.ParseAdd("application/xml");
         request.Headers.Accept.ParseAdd("text/xml");
+        request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue
+        {
+            NoCache = true
+        };
 
         using var response = await httpClient.SendAsync(
             request,

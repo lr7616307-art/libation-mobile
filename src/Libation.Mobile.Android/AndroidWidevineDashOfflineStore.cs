@@ -408,6 +408,7 @@ public sealed class AndroidWidevineDashOfflineStore
         {
             factory.SetUpstreamDataSourceFactory(
                 new DefaultHttpDataSource.Factory()
+                    .SetUserAgent(AudibleAudioDownloadSource.AndroidDownloadUserAgent)
                     .SetAllowCrossProtocolRedirects(false));
         }
 

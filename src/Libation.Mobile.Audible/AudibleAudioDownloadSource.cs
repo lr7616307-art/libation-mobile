@@ -25,6 +25,11 @@ public sealed record AudibleWidevineContent(
 /// </summary>
 public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 {
+    // Audible's Android media CDN varies responses by User-Agent. Use the
+    // official Audible Player SDK identity on both the MPD request and Media3
+    // segment requests, matching AudibleApi.Resources.Download_User_Agent.
+    public const string AndroidDownloadUserAgent =
+        "com.audible.playersdk.player/3.96.1 (Linux;Android 14) AndroidXMedia3/1.3.0";
     private static readonly Regex AsinPattern = new(
         "^[A-Za-z0-9]{10}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
