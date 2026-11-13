@@ -120,9 +120,10 @@ public sealed class AudibleLoginActivity : Activity
                     && !string.Equals(cookie.Name, "map-md", StringComparison.Ordinal)
                     && !string.Equals(cookie.Name, "sid", StringComparison.Ordinal)
                 || string.IsNullOrWhiteSpace(cookie.Domain)
-                || !authorizationUri.Host.EndsWith(cookieDomain, StringComparison.OrdinalIgnoreCase)
-                || cookie.Value.Contains(';', StringComparison.Ordinal)
-                || cookie.Value.Contains('\\n', StringComparison.Ordinal)
+                || !(string.Equals(authorizationUri.Host, cookieDomain, StringComparison.OrdinalIgnoreCase) || authorizationUri.Host.EndsWith("." + cookieDomain, StringComparison.OrdinalIgnoreCase))
+                || cookie.Value is null
+                || cookie.Value.Contains(';')
+                || cookie.Value.Contains('\\n')
                 || (cookie.Path != "/ap" && cookie.Path != "/"))
             {
                 FinishLogin(null);
