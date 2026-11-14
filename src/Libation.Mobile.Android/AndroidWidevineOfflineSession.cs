@@ -1,8 +1,11 @@
 using System.Security.Cryptography;
+using System.Net;
+using System.Net.Http;
 using Android.Media;
 using Android.OS;
 using Java.Util;
 using Libation.Mobile.Audible;
+using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Android;
 
@@ -26,8 +29,26 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
     private bool hasPendingOfflineRequest;
     private bool disposed;
 
-    public AndroidWidevineOfflineSession()
+    private const int MaximumProvisionResponseBytes = 1024 * 1024;
+
+    private AndroidWidevineOfflineSession(MediaDrm drm, byte[] openedSessionId)
     {
+        mediaDrm = drm;
+        sessionId = openedSessionId;
+    }
+
+    /// <summary>
+    /// Creates a Widevine session and performs Android's standard device
+    /// provisioning exchange when the plugin reports that a certificate is
+    /// required. Provisioning uses only the opaque request and HTTPS endpoint
+    /// returned by MediaDrm; it does not request or alter an Audible content key.
+    /// </summary>
+    public static async Task<AndroidWidevineOfflineSession> CreateAsync(
+        CancellationToken cancellationToken = default,
+        IProgress<AudibleOfflineDownloadStage>? stageProgress = null)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (Build.VERSION.SdkInt < BuildVersionCodes.Q)
             throw new NotSupportedException(
                 "VØRATH offline DRM storage requires Android 10 (API 29) or later.");
@@ -36,26 +57,179 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
             throw new NotSupportedException(
                 "This device does not report support for the Widevine DRM scheme.");
 
-        mediaDrm = new MediaDrm(WidevineUuid);
+        var drm = new MediaDrm(WidevineUuid);
+        byte[]? openedSessionId = null;
         try
         {
-            sessionId = mediaDrm.OpenSession();
-            if (sessionId is null || sessionId.Length == 0)
+            ReportStage(stageProgress, "opening-drm-session", "Opening Android's Widevine DRM session…");
+            try
+            {
+                openedSessionId = drm.OpenSession();
+            }
+            catch (ResourceBusyException exception)
+            {
+                throw new InvalidOperationException(
+                    "Android's available Widevine DRM sessions are currently in use. Close other protected playback and retry.",
+                    exception);
+            }
+            catch (Exception exception) when (RequiresProvisioning(exception))
+            {
+                ReportStage(
+                    stageProgress,
+                    "widevine-provisioning",
+                    "Android requires a Widevine device certificate. Provisioning this device…");
+
+                await ProvisionDeviceAsync(drm, cancellationToken, stageProgress)
+                    .ConfigureAwait(false);
+
+                cancellationToken.ThrowIfCancellationRequested();
+                ReportStage(
+                    stageProgress,
+                    "reopening-drm-session",
+                    "Widevine device provisioning succeeded. Reopening the DRM session…");
+
+                try
+                {
+                    openedSessionId = drm.OpenSession();
+                }
+                catch (Exception retryException)
+                {
+                    throw new InvalidOperationException(
+                        "Android accepted the Widevine provisioning response but still could not open a DRM session. The device DRM plugin may be unavailable or out of session capacity.",
+                        retryException);
+                }
+            }
+
+            if (openedSessionId is null || openedSessionId.Length == 0)
                 throw new InvalidOperationException(
                     "Android MediaDrm returned an empty Widevine session identifier.");
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return new AndroidWidevineOfflineSession(drm, openedSessionId);
         }
         catch
         {
-            try
+            if (openedSessionId is not null)
             {
-                mediaDrm.Close();
+                try { drm.CloseSession(openedSessionId); }
+                catch (Exception) { /* Preserve the session-open/provisioning failure. */ }
+                CryptographicOperations.ZeroMemory(openedSessionId);
             }
-            finally
-            {
-                mediaDrm.Dispose();
-            }
+
+            try { drm.Close(); }
+            finally { drm.Dispose(); }
             throw;
         }
+    }
+
+    private static bool RequiresProvisioning(Exception exception)
+    {
+        if (exception is NotProvisionedException)
+            return true;
+
+        // Some vendor MediaDrm plugins surface the missing-certificate condition
+        // through the generic JNI "Failed to open session" exception instead of
+        // the typed NotProvisionedException. Attempt the standard provisioning
+        // exchange once, then retry OpenSession exactly once.
+        var message = exception.Message ?? string.Empty;
+        return message.Contains("Failed to open session", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not provisioned", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("certificate missing", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task ProvisionDeviceAsync(
+        MediaDrm drm,
+        CancellationToken cancellationToken,
+        IProgress<AudibleOfflineDownloadStage>? stageProgress)
+    {
+        using var provisionRequest = drm.GetProvisionRequest();
+        var requestData = provisionRequest.GetData();
+        if (requestData is null || requestData.Length == 0)
+            throw new InvalidDataException("Android Widevine returned an empty device-provisioning request.");
+
+        byte[]? provisionResponse = null;
+        try
+        {
+            var requestUri = WidevineProvisioningRequestUri.Create(
+                provisionRequest.GetDefaultUrl(),
+                requestData);
+
+            // Android's documented MediaDrm provisioning protocol sends the
+            // opaque signedRequest query value with an HTTP POST and no body.
+            using var httpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(60)
+            };
+            using var message = new HttpRequestMessage(HttpMethod.Post, requestUri);
+            ReportStage(
+                stageProgress,
+                "widevine-provisioning-request",
+                "Sending the signed device-provisioning request to the Widevine server…");
+
+            using var response = await httpClient.SendAsync(
+                message,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException(
+                    $"The Widevine device-provisioning server returned HTTP {(int)response.StatusCode}.",
+                    null,
+                    response.StatusCode);
+
+            if (response.Content.Headers.ContentLength is long contentLength &&
+                contentLength > MaximumProvisionResponseBytes)
+                throw new InvalidDataException(
+                    "The Widevine device-provisioning response exceeds the supported size.");
+
+            ReportStage(
+                stageProgress,
+                "widevine-provisioning-response",
+                "Receiving the device certificate from Widevine…");
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken)
+                .ConfigureAwait(false);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[8192];
+            while (true)
+            {
+                var read = await stream.ReadAsync(chunk.AsMemory(), cancellationToken)
+                    .ConfigureAwait(false);
+                if (read == 0)
+                    break;
+                if (buffer.Length + read > MaximumProvisionResponseBytes)
+                    throw new InvalidDataException(
+                        "The Widevine device-provisioning response exceeds the supported size.");
+                await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            provisionResponse = buffer.ToArray();
+            if (provisionResponse.Length == 0)
+                throw new InvalidDataException("The Widevine device-provisioning response was empty.");
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ReportStage(
+                stageProgress,
+                "installing-device-certificate",
+                "Installing the Widevine device certificate in Android…");
+            drm.ProvideProvisionResponse(provisionResponse);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(requestData);
+            if (provisionResponse is not null)
+                CryptographicOperations.ZeroMemory(provisionResponse);
+        }
+    }
+
+    private static void ReportStage(
+        IProgress<AudibleOfflineDownloadStage>? progress,
+        string stage,
+        string message)
+    {
+        try { progress?.Report(new AudibleOfflineDownloadStage(stage, message)); }
+        catch (Exception) { /* Notification observers must not fail DRM provisioning. */ }
     }
 
     /// <summary>
