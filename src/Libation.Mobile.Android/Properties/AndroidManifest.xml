@@ -16,5 +16,8 @@
     <service android:name="org.libationmobile.app.AndroidWidevineOfflineDownloadService"
              android:exported="false"
              android:foregroundServiceType="dataSync" />
+    <service android:name="org.libationmobile.app.AndroidDownloadNotificationService"
+             android:exported="false"
+             android:foregroundServiceType="dataSync" />
   </application>
 </manifest>
