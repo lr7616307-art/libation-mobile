@@ -25,6 +25,26 @@ public sealed class JsonDownloadQueueTests
     }
 
     [Fact]
+    public async Task EnqueueProvider_ResumesPausedItemAndPreservesProgress()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        const string id = "provider:1234567890";
+        await queue.EnqueueProviderAsync(id, "Example audiobook");
+        await queue.UpdateStatusAsync(id, DownloadStatus.Downloading);
+        await queue.UpdateProgressAsync(id, 15 * 1024 * 1024, 100 * 1024 * 1024);
+        await queue.UpdateStatusAsync(id, DownloadStatus.Paused);
+
+        await queue.EnqueueProviderAsync(id, "Example audiobook");
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Queued, item.Status);
+        Assert.Equal(15 * 1024 * 1024, item.BytesReceived);
+        Assert.Equal(100 * 1024 * 1024, item.TotalBytes);
+        Assert.Equal("Example audiobook", item.DisplayTitle);
+    }
+
+    [Fact]
     public async Task EnqueueAuthorizedDownload_PersistsDirectUrlAndDisplayTitle()
     {
         using var directory = new TemporaryDirectory();
