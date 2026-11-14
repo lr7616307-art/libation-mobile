@@ -115,20 +115,21 @@ public sealed class DownloadQueueWorker
                 cancellationToken: cancellationToken);
 
             AuthorizedAudioDownload? target = null;
+            QueueProgressReporter? transferProgress = null;
             try
             {
                 target = await _source.ResolveAsync(item, cancellationToken);
                 if (target is null)
                     throw new InvalidOperationException("The audio provider returned no download target.");
 
+                transferProgress = new QueueProgressReporter(_queue, item.AudiobookId, progress);
                 var result = await _downloader.DownloadAsync(
                     target.DownloadUri,
                     target.DestinationPath,
-                    new Progress<AudioDownloadProgress>(value =>
-                        progress?.Report(new DownloadQueueProgress(
-                            item.AudiobookId, value.BytesReceived, value.TotalBytes, value.Percentage))),
+                    transferProgress,
                     cancellationToken,
                     target.RequestHeaders);
+                await transferProgress.FlushAsync();
 
                 if (target.Protection.RequiresProtectedMediaPipeline)
                 {
@@ -155,6 +156,8 @@ public sealed class DownloadQueueWorker
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                if (transferProgress is not null)
+                    await transferProgress.FlushAsync();
                 await _queue.UpdateStatusAsync(
                     item.AudiobookId, DownloadStatus.Queued,
                     cancellationToken: CancellationToken.None);
@@ -162,6 +165,8 @@ public sealed class DownloadQueueWorker
             }
             catch (Exception exception)
             {
+                if (transferProgress is not null)
+                    await transferProgress.FlushAsync();
                 // Provider/network exceptions can include signed media URLs or query tokens.
                 // Persist only a stable, user-safe category; never store raw exception text.
                 await _queue.UpdateStatusAsync(
@@ -193,6 +198,60 @@ public sealed class DownloadQueueWorker
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
+    }
+
+    private sealed class QueueProgressReporter(
+        IDownloadQueue queue,
+        string audiobookId,
+        IProgress<DownloadQueueProgress>? progress) : IProgress<AudioDownloadProgress>
+    {
+        private readonly object _gate = new();
+        private Task _pendingWrite = Task.CompletedTask;
+        private long _lastPersistedBytes;
+        private long? _lastPersistedTotal;
+        private DateTimeOffset _lastPersistedAt = DateTimeOffset.MinValue;
+
+        public void Report(AudioDownloadProgress value)
+        {
+            progress?.Report(new DownloadQueueProgress(
+                audiobookId, value.BytesReceived, value.TotalBytes, value.Percentage));
+
+            var now = DateTimeOffset.UtcNow;
+            lock (_gate)
+            {
+                if (value.BytesReceived - _lastPersistedBytes < 1024 * 1024 &&
+                    value.TotalBytes == _lastPersistedTotal &&
+                    now - _lastPersistedAt < TimeSpan.FromSeconds(1))
+                    return;
+
+                _lastPersistedBytes = value.BytesReceived;
+                _lastPersistedTotal = value.TotalBytes;
+                _lastPersistedAt = now;
+                _pendingWrite = _pendingWrite.ContinueWith(
+                    async _ =>
+                    {
+                        try
+                        {
+                            await queue.UpdateProgressAsync(
+                                audiobookId, value.BytesReceived, value.TotalBytes,
+                                CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (Exception)
+                        {
+                            // A progress checkpoint must never interrupt the media stream.
+                        }
+                    },
+                    CancellationToken.None,
+                    TaskContinuationOptions.None,
+                    TaskScheduler.Default).Unwrap();
+            }
+        }
+
+        public Task FlushAsync()
+        {
+            lock (_gate)
+                return _pendingWrite;
+        }
     }
 
     private static string GetSafeFailureMessage(Exception exception) => exception switch
