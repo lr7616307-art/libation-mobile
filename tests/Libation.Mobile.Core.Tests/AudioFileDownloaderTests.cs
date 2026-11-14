@@ -116,6 +116,7 @@ public sealed class AudioFileDownloaderTests
     public async Task DownloadAsync_ResumesExistingPartWithRangeAndRequestHeaders()
     {
         using var directory = new TemporaryDirectory();
+        Directory.CreateDirectory(directory.Path);
         var destination = Path.Combine(directory.Path, "book.aaxc");
         await File.WriteAllBytesAsync(destination + ".part", [1, 2]);
         var handler = new StubHandler((request, _) =>
@@ -151,6 +152,7 @@ public sealed class AudioFileDownloaderTests
     public async Task DownloadAsync_RestartsWhenServerIgnoresRange()
     {
         using var directory = new TemporaryDirectory();
+        Directory.CreateDirectory(directory.Path);
         var destination = Path.Combine(directory.Path, "book.aax");
         await File.WriteAllBytesAsync(destination + ".part", [1, 2]);
         using var client = new HttpClient(new StubHandler((request, _) =>
