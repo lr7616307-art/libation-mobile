@@ -255,7 +255,7 @@ public sealed class JsonDownloadQueueTests
         Assert.Equal(DownloadStatus.Downloading, resumed.Status);
         Assert.Equal(5_000, resumed.BytesReceived);
         Assert.Equal("Pause", resumed.DownloadActionLabel);
-        Assert.False(resumed.CanRemove);
+        Assert.True(resumed.CanRemove); // UI requires confirmation and pauses before removal.
     }
 
     [Fact]
