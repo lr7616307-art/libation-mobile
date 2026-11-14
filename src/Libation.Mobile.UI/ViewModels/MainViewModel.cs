@@ -776,7 +776,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         _pendingQueueRemovalId = audiobookId;
         _queueRemovalConfirmationMessage =
-            $"Remove “{displayTitle}” from the download queue? Any partial download data will be kept on this device, so adding it again can resume without downloading those bytes again.";
+            $"Remove “{displayTitle}” from this list? This only removes the queue entry. It does not delete the audiobook file or any partial download data.";
         _isQueueRemovalConfirmationVisible = true;
         OnPropertyChanged(nameof(QueueRemovalConfirmationMessage));
         OnPropertyChanged(nameof(IsQueueRemovalConfirmationVisible));
