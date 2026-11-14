@@ -31,7 +31,7 @@ public sealed record Audiobook(
         : IsWidevineOfflineAvailable
             ? "Protected offline copy is ready for authorized playback in VØRATH"
             : !string.IsNullOrWhiteSpace(ProtectedAudioFileName)
-                ? "Protected backup saved in VØRATH (not a normal playable audio file)"
+                ? "An encrypted AAX/AAXC backup exists. It is not playable in a normal audio app; request an Audible-authorized offline copy to play inside VØRATH."
                 : !string.IsNullOrWhiteSpace(AudioFilePath)
                     ? "Downloaded to VØRATH and ready to play"
                     : IsPlayableOnAudible == true
@@ -60,8 +60,7 @@ public sealed record Audiobook(
     public string DownloadActionLabel => IsProviderCatalogueEntry
         ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶  Play"
             : IsWidevineOfflineAvailable ? "▶  Play offline"
-            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "Protected backup saved"
-            : "⇩  Download offline"
+            : "⇩  Download & play offline"
         : "Add to queue";
 
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>
