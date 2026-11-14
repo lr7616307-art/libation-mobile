@@ -84,6 +84,16 @@ public partial class MainView : UserControl
             ?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         AttachPlaybackStateNotifications();
         _activeView = new WeakReference<MainView>(this);
+        PlatformDownloadQueuePauseAction = () =>
+        {
+            if (_activeView is not null && _activeView.TryGetTarget(out var activeView))
+                Dispatcher.UIThread.Post(async () => await activeView.PauseDownloadQueueAsync());
+        };
+        PlatformDownloadQueueResumeAction = () =>
+        {
+            if (_activeView is not null && _activeView.TryGetTarget(out var activeView))
+                Dispatcher.UIThread.Post(async () => await activeView.StartPendingDownloadsAsync());
+        };
         PlatformWidevineOfflineDownloadCompletedAction = asin =>
         {
             if (_activeView is null || !_activeView.TryGetTarget(out var activeView))
@@ -1663,15 +1673,37 @@ public partial class MainView : UserControl
 
     public async void DownloadQueueActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_downloadRunCts is { IsCancellationRequested: false })
+        if (_downloadRunCts is not null)
         {
-            _downloadRunCts.Cancel();
-            _viewModel.ReportDownloadSettingsStatus("Download paused. Partial media bytes are kept; starting the queue again will request resume where the provider supports HTTP Range.");
+            await PauseDownloadQueueAsync();
             return;
         }
 
         await StartPendingDownloadsAsync();
     }
+
+    private async Task PauseDownloadQueueAsync()
+    {
+        var completionTask = _downloadRunCompletion?.Task;
+        _downloadRunCts?.Cancel();
+        if (completionTask is not null)
+            await completionTask;
+        await _viewModel.RefreshDownloadQueueAsync();
+        _viewModel.ReportDownloadSettingsStatus(
+            "Downloads paused. Partial data is saved and will resume from the retained bytes.");
+    }
+
+    private void OpenDownloadsPageClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.OpenDownloadsPage();
+
+    private void CloseDownloadsPageClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CloseDownloadsPage();
+
+    private void CancelQueueRemovalClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CancelQueueRemoval();
+
+    private async void ConfirmQueueRemovalClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => await _viewModel.ConfirmQueueRemovalAsync();
 
     private async Task StartPendingDownloadsAsync()
     {
@@ -1685,8 +1717,14 @@ public partial class MainView : UserControl
             _viewModel.ReportDownloadSettingsStatus("Choose a download folder in Settings before starting downloads.");
             return;
         }
-        if (_downloadRunCts is { IsCancellationRequested: false })
-            return;
+        if (_downloadRunCts is { } existingRun)
+        {
+            if (!existingRun.IsCancellationRequested)
+                return;
+            var completionTask = _downloadRunCompletion?.Task;
+            if (completionTask is not null)
+                await completionTask;
+        }
 
         var queued = (await _downloadQueue.GetItemsAsync())
             .Any(item => item.Status == DownloadStatus.Queued);
@@ -1703,7 +1741,30 @@ public partial class MainView : UserControl
         _downloadRunCompletion = completion;
         _viewModel.SetDownloadQueueRunning(true);
         _viewModel.ReportDownloadSettingsStatus("Download queue started. Downloads run one at a time.");
-        var progress = new Progress<DownloadQueueProgress>(_viewModel.ReportDownloadProgress);
+        PlatformDownloadNotificationStartAction?.Invoke("VØRATH · Audiobook downloads");
+        var lastProgressBytes = 0L;
+        var lastProgressAt = DateTimeOffset.UtcNow;
+        var progress = new Progress<DownloadQueueProgress>(value =>
+        {
+            _viewModel.ReportDownloadProgress(value);
+            var title = _viewModel.QueueItems.FirstOrDefault(item => item.AudiobookId == value.AudiobookId)?.DisplayTitle
+                ?? "Downloading audiobook";
+            var now = DateTimeOffset.UtcNow;
+            var elapsed = Math.Max(0.1, (now - lastProgressAt).TotalSeconds);
+            var speed = Math.Max(0, value.BytesReceived - lastProgressBytes) / elapsed;
+            lastProgressBytes = value.BytesReceived;
+            lastProgressAt = now;
+            var percent = value.Percentage is { } p ? (int)Math.Clamp(Math.Round(p), 0, 100) : (int?)null;
+            var detail = value.TotalBytes is > 0
+                ? $"{value.Percentage:0}% · {FormatTransferBytes(value.BytesReceived)} of {FormatTransferBytes(value.TotalBytes.Value)} · {FormatTransferBytes((long)speed)}/s"
+                : $"{FormatTransferBytes(value.BytesReceived)} downloaded · {FormatTransferBytes((long)speed)}/s";
+            if (speed > 0 && value.TotalBytes is > 0 && value.TotalBytes.Value > value.BytesReceived)
+            {
+                var remaining = TimeSpan.FromSeconds((value.TotalBytes.Value - value.BytesReceived) / speed);
+                detail += $" · {FormatTransferEta(remaining)} left";
+            }
+            PlatformDownloadNotificationUpdateAction?.Invoke(title, detail, percent, percent is null);
+        });
 
         try
         {
@@ -1739,6 +1800,10 @@ public partial class MainView : UserControl
         {
             _viewModel.ReportDownloadProgress(null);
             _viewModel.SetDownloadQueueRunning(false);
+            if (cancellation.IsCancellationRequested)
+                PlatformDownloadNotificationPausedAction?.Invoke();
+            else
+                PlatformDownloadNotificationFinishAction?.Invoke();
             if (ReferenceEquals(_downloadRunCts, cancellation))
             {
                 _downloadRunCts = null;
@@ -1747,6 +1812,21 @@ public partial class MainView : UserControl
             completion.TrySetResult();
             cancellation.Dispose();
         }
+    }
+
+    private static string FormatTransferBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024d:0.0} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024d * 1024):0.0} MB";
+        return $"{bytes / (1024d * 1024 * 1024):0.00} GB";
+    }
+
+    private static string FormatTransferEta(TimeSpan remaining)
+    {
+        if (remaining.TotalHours >= 1) return $"~{(int)remaining.TotalHours}h {remaining.Minutes}m";
+        if (remaining.TotalMinutes >= 1) return $"~{(int)remaining.TotalMinutes}m {remaining.Seconds}s";
+        return $"~{Math.Max(1, remaining.Seconds)}s";
     }
 
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1774,10 +1854,10 @@ public partial class MainView : UserControl
         }
     }
 
-    private async void RemoveQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void RemoveQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: DownloadQueueItem item })
-            await _viewModel.RemoveFromQueueAsync(item.AudiobookId);
+            _viewModel.RequestQueueRemoval(item.AudiobookId, item.DisplayTitle ?? "this audiobook");
     }
 
     private async void QueueAudibleDownloadActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1800,11 +1880,16 @@ public partial class MainView : UserControl
             return;
         }
 
-        // Wait for a just-cancelled worker to return the item to Queued before
-        // starting it again; never invoke the old Widevine foreground service.
-        if (_downloadRunCts is { IsCancellationRequested: true } &&
-            _downloadRunCompletion is { } completion)
-            await completion.Task;
+        // Wait for any previous queue run to fully unwind before trying to
+        // resume. This prevents the first tap being swallowed by a stale CTS.
+        if (_downloadRunCts is { } running)
+        {
+            if (!running.IsCancellationRequested)
+                return;
+            var completion = _downloadRunCompletion?.Task;
+            if (completion is not null)
+                await completion;
+        }
 
         await _viewModel.EnqueueAudibleDownloadAsync(
             item.AudiobookId, item.DisplayTitle ?? "Audible audiobook");
