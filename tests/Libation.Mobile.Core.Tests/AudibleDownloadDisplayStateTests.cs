@@ -24,7 +24,7 @@ public sealed class AudibleDownloadDisplayStateTests
         Assert.Equal("PROTECTED BACKUP ONLY", book.AudibleAvailabilityShortLabel);
         Assert.Contains("not playable in a normal audio app", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("Protected backup saved", book.DownloadActionLabel);
+        Assert.Equal("⇩  Download & play offline", book.DownloadActionLabel);
         Assert.DoesNotContain("Widevine", book.AudibleAvailabilityLabel, StringComparison.OrdinalIgnoreCase);
     }
 
