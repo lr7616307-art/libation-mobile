@@ -20,11 +20,11 @@ public static class AudibleOAuthFlow
     // AudibleApi CurrentAndroid registration profile. Audible expects the
     // official Android app/emulator identity here, not the physical host phone.
     public const string AndroidDeviceModel = "sdk_gphone64_x86_64";
-    public const string AndroidOsVersion = @"google\\/raven\\/raven:14\\/UPB5.230623.003\\/10615560:user\\/release-keys";
+    public const string AndroidOsVersion = @"google\/raven\/raven:14\/UPB5.230623.003\/10615560:user\/release-keys";
     public const string AndroidOsVersionNumber = "34";
     public const string AndroidManufacturer = "Google";
     public const string AndroidDeviceProduct = "sdk_gphone64_x86_64";
-    public const string AndroidFrcDeviceName = @"ranchu\\/Google\\/sdk_gphone64_x86_64";
+    public const string AndroidFrcDeviceName = @"ranchu\/Google\/sdk_gphone64_x86_64";
     public const string AndroidUserAgent = "Mozilla/5.0 (Linux; Android 14; sdk_gphone64_x86_64 Build/UPB5.230623.003; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/113.0.5672.136 Mobile Safari/537.36";
     private const string AndroidDeviceNameTemplate = "%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android";
 
@@ -166,15 +166,28 @@ public static class AudibleOAuthFlow
 
     private static string GetLocalIpAddress()
     {
+        IPAddress? address;
         try
         {
-            var addresses = NetworkInterface.GetAllNetworkInterfaces().SelectMany(network => network.GetIPProperties().UnicastAddresses)
-                .Select(entry => entry.Address).Where(address => !IPAddress.IsLoopback(address) && !address.Equals(IPAddress.IPv6Any))
-                .OrderBy(address => address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
-                .OrderByDescending(address => !address.IsIPv6LinkLocal && !address.IsIPv6SiteLocal).FirstOrDefault();
-            return addresses?.ToString() ?? "0.0.0.0";
+            address = NetworkInterface.GetAllNetworkInterfaces()
+                .Select(network => network.GetIPProperties())
+                .SelectMany(GetAllIpAddresses)
+                .OrderBy(value => value.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+                .OrderByDescending(value =>
+                    !value.IsIPv6LinkLocal && !value.IsIPv6SiteLocal && !value.IsIPv6UniqueLocal)
+                .FirstOrDefault();
         }
-        catch { return "0.0.0.0"; }
+        catch
+        {
+            address = IPAddress.IPv6Any;
+        }
+
+        return address?.ToString() ?? "0.0.0.0";
+
+        static IEnumerable<IPAddress> GetAllIpAddresses(IPInterfaceProperties properties)
+            => properties.DnsAddresses
+                .Concat(properties.GatewayAddresses.Select(entry => entry.Address))
+                .Concat(properties.UnicastAddresses.Select(entry => entry.Address));
     }
 
     private static string EncodeFrc(string serial, string json)
