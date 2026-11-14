@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Libation.Mobile.Core;
 
 /// <summary>
