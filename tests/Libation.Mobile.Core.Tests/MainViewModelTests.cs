@@ -37,6 +37,30 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task OpeningBookDetails_ClearsStaleDownloadFailureFromPreviousTitle()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.UpsertAsync(new Audiobook(
+            "provider:1234567890",
+            "Example audiobook",
+            "Example author",
+            "Example narrator",
+            "1h",
+            "Not started"));
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+        vm.ReportAudioStatus("The download request failed. Check your connection and retry.");
+
+        vm.OpenBookDetails("provider:1234567890");
+
+        Assert.Equal(string.Empty, vm.AudioImportStatus);
+        Assert.Equal("Available to download in VØRATH", vm.DetailAudibleAvailabilityLabel);
+    }
+
+    [Fact]
     public async Task AudibleDownloadQuality_CyclesAndPersistsGlobalPreference()
     {
         using var directory = new TemporaryDirectory();
