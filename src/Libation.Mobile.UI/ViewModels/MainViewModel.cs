@@ -417,6 +417,33 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasDetailBookChapters));
         OnPropertyChanged(nameof(HasNoDetailBookChapters));
     }
+    public async Task<Audiobook?> RefreshAudiobookStateAsync(
+        string audiobookId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(audiobookId);
+        _allBooks = await _repository.GetBooksAsync(cancellationToken).ConfigureAwait(false);
+        ApplyFilter(_allBooks);
+        RefreshAudibleBooks(_allBooks);
+
+        if (SelectedBook?.Id == audiobookId)
+            SelectedBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+
+        if (_detailBook?.Id == audiobookId)
+        {
+            _detailBook = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+            OnPropertyChanged(nameof(DetailBook));
+            OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
+            OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
+            OnPropertyChanged(nameof(HasPlayableDetailAudio));
+            OnPropertyChanged(nameof(HasProtectedDetailDownload));
+            OnPropertyChanged(nameof(DetailFileSizeLabel));
+            OnPropertyChanged(nameof(DetailDurationLabel));
+        }
+
+        return _allBooks.FirstOrDefault(item => item.Id == audiobookId);
+    }
+
     public async Task LoadProviderBookDetailsAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         if (!audiobookId.StartsWith("provider:", StringComparison.Ordinal))
