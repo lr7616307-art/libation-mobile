@@ -1491,19 +1491,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void ReportDownloadProgress(DownloadQueueProgress? progress)
     {
         _activeDownloadProgress = progress;
-        if (progress is not null)
+        if (progress is not null && _isDownloadQueueRunning)
         {
-            var index = QueueItems.ToList().FindIndex(item => item.AudiobookId == progress.AudiobookId);
-            if (index >= 0)
+            for (var index = 0; index < QueueItems.Count; index++)
             {
                 var current = QueueItems[index];
-                QueueItems[index] = current with
+                if (!string.Equals(current.AudiobookId, progress.AudiobookId, StringComparison.Ordinal))
+                    continue;
+                if (current.Status is DownloadStatus.Queued or DownloadStatus.Downloading)
                 {
-                    Status = DownloadStatus.Downloading,
-                    BytesReceived = Math.Max(current.BytesReceived, progress.BytesReceived),
-                    TotalBytes = progress.TotalBytes is > 0 ? progress.TotalBytes : current.TotalBytes
-                };
-                OnPropertyChanged(nameof(QueueSummaryLabel));
+                    QueueItems[index] = current with
+                    {
+                        Status = DownloadStatus.Downloading,
+                        BytesReceived = Math.Max(current.BytesReceived, progress.BytesReceived),
+                        TotalBytes = progress.TotalBytes is > 0 ? progress.TotalBytes : current.TotalBytes
+                    };
+                    OnPropertyChanged(nameof(QueueSummaryLabel));
+                }
+                break;
             }
         }
         OnPropertyChanged(nameof(HasActiveDownloadProgress));
