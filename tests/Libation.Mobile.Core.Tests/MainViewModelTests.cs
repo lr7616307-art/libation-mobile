@@ -57,7 +57,7 @@ public sealed class MainViewModelTests
         vm.OpenBookDetails("provider:1234567890");
 
         Assert.Equal(string.Empty, vm.AudioImportStatus);
-        Assert.Equal("Available to download in VØRATH", vm.DetailAudibleAvailabilityLabel);
+        Assert.Equal("Availability not reported by Audible", vm.DetailAudibleAvailabilityLabel);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class MainViewModelTests
         Assert.Equal("Example audiobook.aax", refreshed?.ProtectedAudioFileName);
         Assert.Equal("Example audiobook.aax", vm.DetailBook?.ProtectedAudioFileName);
         Assert.Equal("PROTECTED BACKUP ONLY", vm.DetailBook?.AudibleAvailabilityShortLabel);
-        Assert.Contains("not a normal playable audio file", vm.DetailProtectedDownloadLabel,
+        Assert.Contains("not an ordinary MP3/M4B", vm.DetailProtectedDownloadLabel,
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Widevine DASH", vm.DetailProtectedDownloadLabel,
             StringComparison.OrdinalIgnoreCase);
@@ -737,7 +737,7 @@ public sealed class MainViewModelTests
         var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:B012345678"));
         Assert.False(book.CanQueueDownload); // Audible IDs cannot be sent to the generic direct-URL form.
         Assert.Equal("⇩  Download offline", book.DownloadActionLabel);
-        Assert.Equal("⇩  Download offline",
+        Assert.Equal("Protected backup saved",
             (book with { ProtectedAudioFileName = "audible-title.aaxc" }).DownloadActionLabel);
         Assert.Equal("▶  Play offline",
             (book with { IsWidevineOfflineAvailable = true }).DownloadActionLabel);
