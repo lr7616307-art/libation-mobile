@@ -353,8 +353,12 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         cancellationToken.ThrowIfCancellationRequested();
 
         if (response.StatusCode != HttpStatusCode.OK)
-            throw new HttpRequestException(
-                $"Audible Widevine licence request failed with HTTP status {(int)response.StatusCode}.");
+        {
+            var errorBody = await ReadBoundedWidevineErrorBodyAsync(
+                response.Content, cancellationToken).ConfigureAwait(false);
+            throw AudibleWidevineLicenseHttpException.FromResponse(
+                response.StatusCode, errorBody);
+        }
 
         var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         JObject parsed;
@@ -372,6 +376,35 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             throw new InvalidDataException("Audible returned no Widevine licence value.");
 
         return license;
+    }
+
+    private const int MaximumWidevineErrorBodyBytes = 16 * 1024;
+
+    private static async Task<string?> ReadBoundedWidevineErrorBodyAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength is long length && length > MaximumWidevineErrorBodyBytes)
+            return null;
+
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[4096];
+
+        while (true)
+        {
+            var read = await stream.ReadAsync(chunk.AsMemory(), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+                break;
+            if (buffer.Length + read > MaximumWidevineErrorBodyBytes)
+                return null;
+            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private static void ValidateAsin(string audiobookId)
