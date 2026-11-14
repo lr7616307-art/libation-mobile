@@ -247,7 +247,7 @@ public sealed class DownloadQueueWorkerTests
         await queue.EnqueueProviderAsync("provider:B012345678", "Test title");
         var staging = Path.Combine(directory.Path, "book.aaxc");
         var payload = new byte[] { 8, 6, 7, 5 };
-        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.PartialContent)
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new ByteArrayContent(payload)
         }));
