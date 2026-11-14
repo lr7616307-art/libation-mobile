@@ -153,7 +153,9 @@ public sealed class AndroidDownloadNotificationService : Service
         {
             paused = true;
             statusText = "Pausing · saving partial download data";
-            Notify("Resume");
+            // Hide actions until the worker has fully unwound. MainView will
+            // publish the Resume action only after the .part checkpoint is flushed.
+            Notify(null);
             MainView.PlatformDownloadQueuePauseAction?.Invoke();
             return StartCommandResult.Sticky;
         }
