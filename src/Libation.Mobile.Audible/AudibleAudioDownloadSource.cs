@@ -25,6 +25,11 @@ public sealed record AudibleWidevineContent(
 /// </summary>
 public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 {
+    // Audible's Android media CDN varies responses by User-Agent. Use the
+    // official Audible Player SDK identity on both the MPD request and Media3
+    // segment requests, matching AudibleApi.Resources.Download_User_Agent.
+    public const string AndroidDownloadUserAgent =
+        "com.audible.playersdk.player/3.96.1 (Linux;Android 14) AndroidXMedia3/1.3.0";
     private static readonly Regex AsinPattern = new(
         "^[A-Za-z0-9]{10}$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -132,8 +137,9 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 
         if (license is null ||
             !string.Equals(license.StatusCode, "Granted", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException(
-                "Audible did not grant a Widevine content licence for this audiobook.");
+            throw new AudibleWidevineContentGrantException(
+                license?.StatusCode ?? "Missing",
+                license?.DrmType.ToString() ?? "Unknown");
 
         if (!string.Equals(license.DrmType.ToString(), "Widevine", StringComparison.OrdinalIgnoreCase))
             throw new AudibleWidevineNotAvailableException();
@@ -204,7 +210,11 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 
         return new AuthorizedAudioDownload(downloadUri, destinationPath)
         {
-            Protection = protection
+            Protection = protection,
+            RequestHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["User-Agent"] = "Audible/671 CFNetwork/1240.0.4 Darwin/20.6.0"
+            }
         };
     }
 
@@ -347,8 +357,12 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
         cancellationToken.ThrowIfCancellationRequested();
 
         if (response.StatusCode != HttpStatusCode.OK)
-            throw new HttpRequestException(
-                $"Audible Widevine licence request failed with HTTP status {(int)response.StatusCode}.");
+        {
+            var errorBody = await ReadBoundedWidevineErrorBodyAsync(
+                response.Content, cancellationToken).ConfigureAwait(false);
+            throw AudibleWidevineLicenseHttpException.FromResponse(
+                response.StatusCode, errorBody);
+        }
 
         var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         JObject parsed;
@@ -366,6 +380,35 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
             throw new InvalidDataException("Audible returned no Widevine licence value.");
 
         return license;
+    }
+
+    private const int MaximumWidevineErrorBodyBytes = 16 * 1024;
+
+    private static async Task<string?> ReadBoundedWidevineErrorBodyAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength is long length && length > MaximumWidevineErrorBodyBytes)
+            return null;
+
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[4096];
+
+        while (true)
+        {
+            var read = await stream.ReadAsync(chunk.AsMemory(), cancellationToken)
+                .ConfigureAwait(false);
+            if (read == 0)
+                break;
+            if (buffer.Length + read > MaximumWidevineErrorBodyBytes)
+                return null;
+            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private static void ValidateAsin(string audiobookId)

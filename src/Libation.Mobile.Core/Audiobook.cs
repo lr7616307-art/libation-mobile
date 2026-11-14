@@ -29,24 +29,24 @@ public sealed record Audiobook(
     public string AudibleAvailabilityLabel => !IsProviderCatalogueEntry
         ? string.Empty
         : IsWidevineOfflineAvailable
-            ? "Downloaded to VØRATH for offline Widevine playback"
+            ? "Protected offline copy is ready for authorized playback in VØRATH"
             : !string.IsNullOrWhiteSpace(ProtectedAudioFileName)
-            ? "Downloaded to VØRATH as a DRM-protected file"
-            : !string.IsNullOrWhiteSpace(AudioFilePath)
-                ? "Downloaded to VØRATH and ready to play"
-                : IsPlayableOnAudible == true
-                ? (IsDownloadedOnAudible == true
-                    ? "Audible reports this title downloaded"
-                    : "Available to download in VØRATH")
-                : IsPlayableOnAudible == false
-                    ? "Not currently playable in Audible"
-                    : "Availability not reported by Audible";
+                ? "An encrypted AAX/AAXC backup exists. It is not playable in a normal audio app; request an Audible-authorized offline copy to play inside VØRATH."
+                : !string.IsNullOrWhiteSpace(AudioFilePath)
+                    ? "Downloaded to VØRATH and ready to play"
+                    : IsPlayableOnAudible == true
+                        ? (IsDownloadedOnAudible == true
+                            ? "Audible reports this title downloaded"
+                            : "Available to download in VØRATH")
+                        : IsPlayableOnAudible == false
+                            ? "Not currently playable in Audible"
+                            : "Availability not reported by Audible";
 
     [JsonIgnore]
     public string AudibleAvailabilityShortLabel => !IsProviderCatalogueEntry
         ? string.Empty
-        : IsWidevineOfflineAvailable ? "OFFLINE IN VØRATH"
-        : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "SAVED IN VØRATH"
+        : IsWidevineOfflineAvailable ? "OFFLINE PLAYBACK READY"
+        : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "PROTECTED BACKUP ONLY"
         : !string.IsNullOrWhiteSpace(AudioFilePath) ? "READY TO PLAY"
         : IsDownloadedOnAudible == true ? "DOWNLOADED ON AUDIBLE"
         : IsPlayableOnAudible == true ? "AVAILABLE"
@@ -60,7 +60,7 @@ public sealed record Audiobook(
     public string DownloadActionLabel => IsProviderCatalogueEntry
         ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶  Play"
             : IsWidevineOfflineAvailable ? "▶  Play offline"
-            : "⇩  Download offline"
+            : "⇩  Download & play offline"
         : "Add to queue";
 
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>

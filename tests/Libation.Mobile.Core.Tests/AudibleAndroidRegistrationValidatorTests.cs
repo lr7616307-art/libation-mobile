@@ -17,6 +17,18 @@ public sealed class AudibleAndroidRegistrationValidatorTests
     }
 
     [Fact]
+    public void EnsureCurrentAndroidRegistration_RejectsPreviousMalformedFrcProfile()
+    {
+        var snapshot = CreateSnapshot(
+            "audible-android-current-v26.34.07",
+            AudibleOAuthFlow.AndroidDeviceType);
+
+        Assert.False(AudibleAndroidRegistrationValidator.IsCurrentAndroidRegistration(snapshot));
+        Assert.Throws<AudibleAndroidRegistrationRequiredException>(() =>
+            AudibleAndroidRegistrationValidator.EnsureCurrentAndroidRegistration(snapshot));
+    }
+
+    [Fact]
     public void EnsureCurrentAndroidRegistration_RejectsLegacyIPhoneProfile()
     {
         var snapshot = CreateSnapshot(
