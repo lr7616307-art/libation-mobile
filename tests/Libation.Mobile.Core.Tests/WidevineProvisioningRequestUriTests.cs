@@ -1,3 +1,4 @@
+using System.Text;
 using Libation.Mobile.Core;
 using Xunit;
 
