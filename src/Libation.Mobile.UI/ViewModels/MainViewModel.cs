@@ -330,9 +330,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ? _detailBook!.AudibleAvailabilityLabel
         : string.Empty;
     public string DetailProtectedDownloadLabel => _detailBook?.IsWidevineOfflineAvailable == true
-        ? "Encrypted Audible DASH audio is stored in VØRATH's private offline cache and ready to play."
+        ? "A provider-protected offline stream and its saved playback licence are available in VØRATH. Playback uses the protected offline player; no unprotected MP3/M4B export has been created."
         : !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
-            ? $"Saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. Audible protection is preserved. Tap Download offline to cache encrypted DASH audio with a Widevine licence."
+            ? $"Protected backup saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. This encrypted file is not an ordinary MP3/M4B and cannot be opened by a normal audio player. VØRATH has not created a playable M4B from it."
             : string.Empty;
     public bool HasPlayableDetailAudio => IsDetailProviderBook && !string.IsNullOrWhiteSpace(_detailBook?.AudioFilePath);
     public bool HasProtectedDetailDownload => IsDetailProviderBook &&
