@@ -1,5 +1,7 @@
 using AudibleApi;
 using AudibleApi.Common;
+using System.Net;
+using Newtonsoft.Json.Linq;
 
 namespace Libation.Mobile.Audible;
 
@@ -13,11 +15,6 @@ public sealed class AudibleWidevineNotAvailableException : NotSupportedException
         : base("Audible returned a non-Widevine content licence for this title/device.") { }
 }
 
-/// <summary>
-/// Converts Audible's typed licence-denial categories into short user-facing
-/// diagnostics. Provider messages, ASINs, customer identifiers and response
-/// bodies are deliberately never copied into the UI or Android notifications.
-/// </summary>
 /// <summary>
 /// A non-granted Audible Widevine content response. Only bounded status and
 /// DRM-category codes are retained; no title, account, URL or response body.
@@ -39,6 +36,109 @@ public sealed class AudibleWidevineContentGrantException : InvalidOperationExcep
             ?? "Other";
 }
 
+/// <summary>
+/// Represents an HTTP rejection from Audible's Widevine DRM-licence endpoint.
+/// The provider response body is inspected in memory only; the exception retains
+/// a fixed, allow-listed reason category and never retains raw provider text.
+/// </summary>
+public sealed class AudibleWidevineLicenseHttpException : HttpRequestException
+{
+    public string FailureCode { get; }
+
+    private AudibleWidevineLicenseHttpException(HttpStatusCode statusCode, string failureCode)
+        : base($"Audible rejected the Widevine licence request (HTTP {(int)statusCode}; {failureCode}).",
+            inner: null, statusCode)
+    {
+        FailureCode = failureCode;
+    }
+
+    public static AudibleWidevineLicenseHttpException FromResponse(
+        HttpStatusCode statusCode,
+        string? responseBody)
+    {
+        var reason = ExtractReason(responseBody);
+        return new AudibleWidevineLicenseHttpException(statusCode, ClassifyReason(reason));
+    }
+
+    private static string? ExtractReason(string? responseBody)
+    {
+        // Error bodies are untrusted and may contain account/title data. Parse
+        // only the documented reason field, plus common nested error envelopes.
+        if (string.IsNullOrWhiteSpace(responseBody) || responseBody.Length > 16 * 1024)
+            return null;
+
+        try
+        {
+            var root = JObject.Parse(responseBody);
+            return ReadString(root["reason"])
+                ?? ReadString(root["response"]?["reason"])
+                ?? ReadString(root["error"]?["reason"])
+                ?? ReadString(root["error"]?["code"])
+                ?? ReadString(root["response"]?["error"]?["code"]);
+        }
+        catch (Newtonsoft.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ReadString(JToken? token)
+        => token?.Type == JTokenType.String ? token.Value<string>() : null;
+
+    private static string ClassifyReason(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            return "Unclassified";
+
+        // Reduce provider text to letters and digits for matching. Never return
+        // the provider's original text, even when it contains a known phrase.
+        var normalized = new string(reason
+            .Where(char.IsAsciiLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
+
+        if (normalized.Contains("challenge", StringComparison.Ordinal) &&
+            (normalized.Contains("invalid", StringComparison.Ordinal) ||
+             normalized.Contains("malformed", StringComparison.Ordinal) ||
+             normalized.Contains("bad", StringComparison.Ordinal) ||
+             normalized.Contains("missing", StringComparison.Ordinal)))
+            return "InvalidChallenge";
+
+        if (normalized.Contains("device", StringComparison.Ordinal) &&
+            (normalized.Contains("invalid", StringComparison.Ordinal) ||
+             normalized.Contains("unsupported", StringComparison.Ordinal) ||
+             normalized.Contains("unregistered", StringComparison.Ordinal) ||
+             normalized.Contains("notregistered", StringComparison.Ordinal) ||
+             normalized.Contains("registration", StringComparison.Ordinal)))
+            return "DeviceRegistration";
+
+        if (normalized.Contains("throttl", StringComparison.Ordinal) ||
+            normalized.Contains("ratelimit", StringComparison.Ordinal))
+            return "RateLimited";
+
+        if (normalized.Contains("unauthorized", StringComparison.Ordinal) ||
+            normalized.Contains("authentication", StringComparison.Ordinal) ||
+            normalized.Contains("authorization", StringComparison.Ordinal) ||
+            normalized.Contains("accesstoken", StringComparison.Ordinal) ||
+            normalized.Contains("signature", StringComparison.Ordinal))
+            return "Authentication";
+
+        if (normalized.Contains("entitlement", StringComparison.Ordinal) ||
+            normalized.Contains("ownership", StringComparison.Ordinal) ||
+            normalized.Contains("membership", StringComparison.Ordinal) ||
+            normalized.Contains("noteligible", StringComparison.Ordinal) ||
+            normalized.Contains("licensedenied", StringComparison.Ordinal))
+            return "TitleEligibility";
+
+        if (normalized.Contains("region", StringComparison.Ordinal) ||
+            normalized.Contains("marketplace", StringComparison.Ordinal) ||
+            normalized.Contains("country", StringComparison.Ordinal))
+            return "MarketplaceRestriction";
+
+        return "Unclassified";
+    }
+}
+
 public static class AudibleLicenseFailureClassifier
 {
     public static string? GetSafeUserMessage(Exception exception)
@@ -52,6 +152,13 @@ public static class AudibleLicenseFailureClassifier
                 return $"Audible content grant was not successful (status: {grant.StatusCode}; DRM: {grant.DrmType}). " +
                        "This is the provider's title/device response, not a download-transfer failure. " +
                        "VØRATH did not retry or switch to another protected format.";
+            }
+
+            if (current is AudibleWidevineLicenseHttpException widevineHttp)
+            {
+                return $"{widevineHttp.Message} " +
+                       "The failure occurred during Audible licence authorization, before audio transfer. " +
+                       "The app did not expose or store the provider response or DRM challenge.";
             }
 
             if (current is AudibleAndroidRegistrationRequiredException)
