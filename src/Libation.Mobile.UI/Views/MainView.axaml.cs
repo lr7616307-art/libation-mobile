@@ -23,6 +23,7 @@ public partial class MainView : UserControl
     private readonly IDownloadQueue? _downloadQueue;
     private readonly DownloadQueueWorker? _downloadWorker;
     private CancellationTokenSource? _downloadRunCts;
+    private TaskCompletionSource? _downloadRunCompletion;
     private CancellationTokenSource? _protectedAudibleOperationCts;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -1697,7 +1698,9 @@ public partial class MainView : UserControl
         }
 
         var cancellation = new CancellationTokenSource();
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _downloadRunCts = cancellation;
+        _downloadRunCompletion = completion;
         _viewModel.SetDownloadQueueRunning(true);
         _viewModel.ReportDownloadSettingsStatus("Download queue started. Downloads run one at a time.");
         var progress = new Progress<DownloadQueueProgress>(_viewModel.ReportDownloadProgress);
@@ -1737,7 +1740,11 @@ public partial class MainView : UserControl
             _viewModel.ReportDownloadProgress(null);
             _viewModel.SetDownloadQueueRunning(false);
             if (ReferenceEquals(_downloadRunCts, cancellation))
+            {
                 _downloadRunCts = null;
+                _downloadRunCompletion = null;
+            }
+            completion.TrySetResult();
             cancellation.Dispose();
         }
     }
@@ -1779,17 +1786,30 @@ public partial class MainView : UserControl
             !item.AudiobookId.StartsWith("provider:", StringComparison.Ordinal))
             return;
 
-        var asin = item.AudiobookId["provider:".Length..];
         if (item.Status == DownloadStatus.Downloading)
         {
-            PlatformAudibleOfflineDownloadPauseAction?.Invoke(asin, item.DisplayTitle ?? "Audible audiobook");
-            _viewModel.ReportDownloadSettingsStatus("Pausing Audible download. Completed encrypted segments are kept for Resume.");
+            // Audible ADRM transfers run through the shared queue worker. Pause
+            // that worker so the .part file remains available for HTTP Range resume.
+            var completionTask = _downloadRunCompletion?.Task;
+            _downloadRunCts?.Cancel();
+            if (completionTask is not null)
+                await completionTask;
+            await _viewModel.RefreshDownloadQueueAsync();
+            _viewModel.ReportDownloadSettingsStatus(
+                "Audible ADRM download paused. Partial bytes are retained for resume.");
+            return;
         }
-        else
-        {
-            PlatformAudibleOfflineDownloadStartAction?.Invoke(asin, item.DisplayTitle ?? "Audible audiobook");
-            _viewModel.ReportDownloadSettingsStatus("Resuming Audible download from VØRATH's protected cache.");
-        }
+
+        // Wait for a just-cancelled worker to return the item to Queued before
+        // starting it again; never invoke the old Widevine foreground service.
+        if (_downloadRunCts is { IsCancellationRequested: true } &&
+            _downloadRunCompletion is { } completion)
+            await completion.Task;
+
+        await _viewModel.EnqueueAudibleDownloadAsync(
+            item.AudiobookId, item.DisplayTitle ?? "Audible audiobook");
+        await _viewModel.RefreshDownloadQueueAsync();
+        await StartPendingDownloadsAsync();
     }
 
     private void HomeTabClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => _viewModel.SelectTab(0);
