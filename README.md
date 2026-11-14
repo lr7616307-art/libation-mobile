@@ -1,5 +1,9 @@
 # Libation Mobile
 
+> **PROJECT ABANDONED**
+>
+> This project has been abandoned due to ChatGPT incompetency. Please do not visit this repository expecting ongoing development, support, fixes, or releases. You will just waste your time here.
+
 An independent, unofficial Android community client project exploring a mobile interface for compatible Libation functionality. It is not affiliated with Audible or the upstream Libation maintainers.
 
 ## Project status
