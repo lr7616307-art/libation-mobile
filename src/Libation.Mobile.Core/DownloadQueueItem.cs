@@ -53,8 +53,14 @@ public sealed record DownloadQueueItem(
         Status is DownloadStatus.Queued or DownloadStatus.Downloading or DownloadStatus.Paused;
 
     [JsonIgnore]
-    public string DownloadActionLabel =>
-        Status == DownloadStatus.Downloading ? "Pause" : "Resume";
+    public string DownloadActionLabel => Status switch
+    {
+        DownloadStatus.Downloading => "Pause",
+        DownloadStatus.Paused => "Resume",
+        DownloadStatus.Queued when BytesReceived > 0 => "Resume",
+        DownloadStatus.Queued => "Start",
+        _ => "Download"
+    };
 
     private static string FormatBytes(long bytes)
     {
