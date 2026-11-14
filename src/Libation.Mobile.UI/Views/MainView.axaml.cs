@@ -22,6 +22,7 @@ public partial class MainView : UserControl
     private ILocalAudioPlayer? _localAudioPlayer;
     private readonly IDownloadQueue? _downloadQueue;
     private readonly DownloadQueueWorker? _downloadWorker;
+    private readonly IAudioDownloadCompletionHandler? _downloadCompletionHandler;
     private CancellationTokenSource? _downloadRunCts;
     private TaskCompletionSource? _downloadRunCompletion;
     private CancellationTokenSource? _protectedAudibleOperationCts;
@@ -64,6 +65,7 @@ public partial class MainView : UserControl
         var downloadPublisher = new StorageFolderAudioDownloadPublisher(
             () => TopLevel.GetTopLevel(this)?.StorageProvider,
             downloadSettingsStore, repository, audioImport);
+        _downloadCompletionHandler = downloadPublisher;
         var ordinaryDownloadSource = new QueuedHttpsAudioDownloadSource(Path.Combine(dataDirectory, "download-staging"));
         var routedDownloadSource = new RoutedAudioDownloadSource(
             ordinaryDownloadSource,
@@ -246,6 +248,72 @@ public partial class MainView : UserControl
     {
         if (_viewModel.DetailBook is { } book)
             await PlayAudiobookAsync(book);
+    }
+
+    private async void ExportM4bClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (_viewModel.DetailBook is not { } book ||
+            string.IsNullOrWhiteSpace(book.AudioFilePath) ||
+            !_viewModel.CanExportDetailM4b)
+        {
+            _viewModel.ReportAudioStatus("Choose an existing, unprotected local audio file before exporting M4B.");
+            return;
+        }
+
+        if (!LocalAudioConversionPolicy.IsSupportedUnprotectedInput(book.AudioFilePath))
+        {
+            _viewModel.ReportAudioStatus(
+                "M4B export accepts unprotected local audio only. Protected Audible AAX/AAXC files are not converted.");
+            return;
+        }
+
+        var converter = PlatformUnprotectedAudioConverterFactory?.Invoke();
+        if (converter is null || _downloadCompletionHandler is null)
+        {
+            _viewModel.ReportAudioStatus("The local M4B exporter is unavailable in this Android build.");
+            return;
+        }
+
+        var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var exportDirectory = Path.Combine(dataDirectory, "m4b-export-staging");
+        var outputPath = Path.Combine(exportDirectory, Guid.NewGuid().ToString("N") + ".m4b");
+        try
+        {
+            _viewModel.ReportAudioStatus("Converting unprotected audio to an AAC/M4B-compatible file…");
+            _viewModel.ReportDownloadSettingsStatus("M4B export is running. Keep VØRATH open until it finishes.");
+            await converter.ConvertToM4bAsync(book.AudioFilePath, outputPath);
+
+            var now = DateTimeOffset.UtcNow;
+            var queueItem = new DownloadQueueItem(
+                book.Id, DownloadStatus.Queued, now, now,
+                DisplayTitle: book.Title);
+            await _downloadCompletionHandler.PublishAsync(queueItem, outputPath);
+            await _viewModel.RefreshAudiobookStateAsync(book.Id);
+
+            _viewModel.ReportAudioStatus(
+                "M4B export complete. The unprotected AAC audio was saved to your selected download folder and added to VØRATH's playable library. Existing VØRATH chapter markers remain in the catalogue; this export does not embed chapter atoms in the file.");
+            _viewModel.ReportDownloadSettingsStatus("Playable M4B export completed successfully.");
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.ReportAudioStatus("M4B export was cancelled. The original audio was not changed.");
+            _viewModel.ReportDownloadSettingsStatus("M4B export cancelled.");
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine($"Unprotected M4B export failed: {exception}");
+            _viewModel.ReportAudioStatus(
+                exception is NotSupportedException
+                    ? exception.Message
+                    : "M4B export failed. The original audio was kept unchanged; check the source format and selected download folder.");
+            _viewModel.ReportDownloadSettingsStatus("M4B export failed. No completed export was reported.");
+        }
+        finally
+        {
+            try { if (File.Exists(outputPath)) File.Delete(outputPath); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     private async Task PlayAudiobookAsync(Audiobook book)

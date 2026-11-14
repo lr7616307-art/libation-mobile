@@ -147,6 +147,8 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         });
 
         MainView.PlatformLocalAudioPlayerFactory = () => new AndroidLocalAudioPlayer();
+        MainView.PlatformUnprotectedAudioConverterFactory =
+            () => new AndroidUnprotectedAudioConverter(this);
         MainView.PlatformWidevineDiagnosticFactory = () =>
         {
             var result = new AndroidWidevineCapabilityProbe().Probe();

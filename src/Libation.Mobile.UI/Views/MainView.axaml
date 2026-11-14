@@ -215,6 +215,10 @@
                   <Button Grid.Column="0" Content="▶  Play audiobook" FontSize="16" Click="PlayDetailBookClicked"/>
                   <Button Grid.Column="1" Content="⋮" FontSize="22" Click="DetailBookMenuClicked"/>
                 </Grid>
+                <Button Content="Export playable M4B"
+                        IsVisible="{Binding CanExportDetailM4b}"
+                        HorizontalAlignment="Stretch"
+                        Click="ExportM4bClicked"/>
                 <Border CornerRadius="12" Padding="12" Background="#211A2D"
                         IsVisible="{Binding IsDetailProviderBook}">
                   <StackPanel Spacing="7">
@@ -229,6 +233,10 @@
                                Foreground="#F0C6A8" TextWrapping="Wrap"/>
                     <Button Content="▶  Play audiobook in VØRATH" HorizontalAlignment="Stretch"
                             IsVisible="{Binding HasPlayableDetailAudio}" Click="PlayDetailBookClicked"/>
+                    <Button Content="Export playable M4B"
+                            IsVisible="{Binding CanExportDetailM4b}"
+                            HorizontalAlignment="Stretch"
+                            Click="ExportM4bClicked"/>
                     <TextBlock Text="{Binding DetailProtectedDownloadLabel}"
                                IsVisible="{Binding HasProtectedDetailDownload}"
                                FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>

@@ -74,6 +74,9 @@ public partial class MainView
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
 
+    /// <summary>Creates a converter for already-unprotected local audio. Protected AAX/AAXC is rejected.</summary>
+    public static Func<IUnprotectedAudioConverter>? PlatformUnprotectedAudioConverterFactory { get; set; }
+
     public static MainView CreatePlatformView()
     {
         var view = new MainView();
