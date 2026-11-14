@@ -108,6 +108,7 @@ public sealed class AudibleWidevineLicenseHttpException : HttpRequestException
             (normalized.Contains("invalid", StringComparison.Ordinal) ||
              normalized.Contains("unsupported", StringComparison.Ordinal) ||
              normalized.Contains("unregistered", StringComparison.Ordinal) ||
+             normalized.Contains("notregistered", StringComparison.Ordinal) ||
              normalized.Contains("registration", StringComparison.Ordinal)))
             return "DeviceRegistration";
 
