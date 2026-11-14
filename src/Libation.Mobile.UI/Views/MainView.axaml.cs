@@ -166,7 +166,18 @@ public partial class MainView : UserControl
         await _viewModel.InitializeAsync();
         if (_downloadWorker is not null)
         {
-            var recovered = await _downloadWorker.RecoverInterruptedDownloadsAsync();
+            // Returning from the background must not mark this view's live
+            // foreground-service transfer as interrupted or queued a second time.
+            var recovered = 0;
+            if (_downloadRunCts is { } activeRun)
+            {
+                if (activeRun.IsCancellationRequested && _downloadRunCompletion is { } completion)
+                    await completion.Task;
+            }
+            else
+            {
+                recovered = await _downloadWorker.RecoverInterruptedDownloadsAsync();
+            }
             await _viewModel.RefreshDownloadQueueAsync();
             if (recovered > 0)
                 _viewModel.ReportDownloadSettingsStatus(
