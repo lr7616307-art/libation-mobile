@@ -1090,12 +1090,28 @@ public partial class MainView : UserControl
             return;
         }
 
-        // Do not route the primary Audible action through the ADRM/AAX file
-        // queue: that creates an encrypted backup which ordinary players cannot
-        // open. Use Audible's provider-authorized Widevine offline licence,
-        // Android MediaDrm key-set and Media3 protected player instead.
-        // If an older ADRM/AAX backup exists, leave it untouched and still try
-        // the separate authorized offline playback path.
+        var asin = book.Id["provider:".Length..];
+        if (book.IsWidevineOfflineAvailable)
+        {
+            await PlayProtectedAudibleBookAsync(book);
+            return;
+        }
+
+        // Start Android's foreground service. It requests an Audible-authorized
+        // Widevine offline licence, downloads encrypted DASH segments into the
+        // app-private Media3 cache, verifies the cache, and exposes progress /
+        // Pause / Resume in the notification shade. It does not publish an AAX
+        // export that an ordinary audio player cannot open.
+        if (PlatformAudibleOfflineDownloadStartAction is { } startDownload)
+        {
+            startDownload(asin, book.Title);
+            _viewModel.ReportAudioStatus(
+                "Starting Audible-authorized offline playback download. Watch the VØRATH notification for progress. When verified, VØRATH will open the audiobook in its player.");
+            return;
+        }
+
+        // Non-Android fallback: use the same authorized offline sequence and
+        // begin playback once the encrypted cache has been verified.
         await RunProtectedAudibleOperationAsync(book, startPlayback: true);
     }
 
@@ -1103,13 +1119,31 @@ public partial class MainView : UserControl
     {
         try
         {
-            await _viewModel.MarkWidevineOfflineAvailableAsync("provider:" + asin);
+            var audiobookId = "provider:" + asin;
+            await _viewModel.MarkWidevineOfflineAvailableAsync(audiobookId);
             await _viewModel.RefreshDownloadQueueAsync();
-            _viewModel.ReportAudioStatus("Download complete. Audible's encrypted audio and offline licence are verified and ready to play.");
+            var book = await _viewModel.RefreshAudiobookStateAsync(audiobookId);
+            if (book is null)
+            {
+                _viewModel.ReportAudioStatus(
+                    "Audible's protected offline copy is verified. Reopen the title in VØRATH to play it.");
+                return;
+            }
+
+            // The foreground service reports completion only after the offline
+            // licence and all encrypted media ranges have been verified.
+            // Start the DRM-capable player now instead of leaving the user with
+            // an encrypted cache and another button to discover.
+            await PlayProtectedAudibleBookAsync(book);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _viewModel.ReportAudioStatus("The offline copy was verified, but the library status could not refresh. Reopen the title to check it.");
+            var message = string.IsNullOrWhiteSpace(ex.Message)
+                ? "the saved playback session could not be opened"
+                : ex.Message;
+            if (message.Length > 300) message = message[..300];
+            _viewModel.ReportAudioStatus(
+                "The offline download is verified, but playback did not start: " + message);
         }
     }
 
