@@ -1,7 +1,6 @@
 using Android.App;
 using Android.Content;
 using Android.OS;
-using AndroidX.Core.App;
 using Libation.Mobile.UI.Views;
 
 namespace Libation.Mobile.Android;
@@ -35,6 +34,7 @@ public sealed class AndroidDownloadNotificationService : Service
     private int? percentage;
     private bool indeterminate = true;
     private bool paused;
+    private bool isForeground;
 
     public static void Start(Context context, string title)
     {
@@ -85,6 +85,7 @@ public sealed class AndroidDownloadNotificationService : Service
         {
             service.Notify(null, "Download queue finished");
             service.StopForeground(StopForegroundFlags.Detach);
+            service.isForeground = false;
             service.StopSelf();
             return;
         }
@@ -120,6 +121,7 @@ public sealed class AndroidDownloadNotificationService : Service
         if (action == ActionFinish)
         {
             StopForeground(StopForegroundFlags.Remove);
+            isForeground = false;
             StopSelf(startId);
             return StartCommandResult.NotSticky;
         }
@@ -135,10 +137,15 @@ public sealed class AndroidDownloadNotificationService : Service
                 : action != ActionPaused && percentage is null;
             paused = action == ActionPaused;
             var notification = BuildNotification(paused ? "Resume" : "Pause");
-            if (action == ActionStart || current is null)
+            if (!isForeground)
+            {
                 StartForeground(NotificationId, notification);
+                isForeground = true;
+            }
             else
+            {
                 ((NotificationManager?)GetSystemService(NotificationService))?.Notify(NotificationId, notification);
+            }
             return StartCommandResult.Sticky;
         }
 
@@ -167,8 +174,16 @@ public sealed class AndroidDownloadNotificationService : Service
     {
         if (overrideText is not null)
             statusText = overrideText;
-        ((NotificationManager?)GetSystemService(NotificationService))?.Notify(
-            NotificationId, BuildNotification(actionLabel));
+        var notification = BuildNotification(actionLabel);
+        if (!isForeground)
+        {
+            StartForeground(NotificationId, notification);
+            isForeground = true;
+        }
+        else
+        {
+            ((NotificationManager?)GetSystemService(NotificationService))?.Notify(NotificationId, notification);
+        }
     }
 
     private Notification BuildNotification(string? actionLabel)
