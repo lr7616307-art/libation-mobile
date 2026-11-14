@@ -113,6 +113,10 @@ public sealed class DownloadQueueWorker
             await _queue.UpdateStatusAsync(
                 item.AudiobookId, DownloadStatus.Downloading,
                 cancellationToken: cancellationToken);
+            // Publish the state transition immediately, before provider URL
+            // resolution or the first network read. The UI can show Pause now.
+            progress?.Report(new DownloadQueueProgress(
+                item.AudiobookId, item.BytesReceived, item.TotalBytes, item.ProgressPercentage));
 
             AuthorizedAudioDownload? target = null;
             QueueProgressReporter? transferProgress = null;
