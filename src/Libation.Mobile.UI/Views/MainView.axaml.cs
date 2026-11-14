@@ -1771,6 +1771,10 @@ public partial class MainView : UserControl
         var lastNotificationPercent = -1;
         var progress = new Progress<DownloadQueueProgress>(value =>
         {
+            // Progress<T> posts to the UI context; discard callbacks that arrive
+            // after pause/completion so they cannot resurrect a stale notification.
+            if (!_viewModel.IsDownloadQueueRunning)
+                return;
             _viewModel.ReportDownloadProgress(value);
             var now = DateTimeOffset.UtcNow;
             var percent = value.Percentage is { } p ? (int)Math.Clamp(Math.Round(p), 0, 100) : (int?)null;
