@@ -368,92 +368,21 @@
             <TextBlock Text="Accounts" FontSize="30" FontWeight="Bold"/>
           </StackPanel>
 
-          <StackPanel IsVisible="{Binding IsSettingsTab}" Spacing="16">
+          <StackPanel IsVisible="{Binding IsSettingsHomeVisible}" Spacing="16">
             <TextBlock Text="Settings" FontSize="30" FontWeight="Bold"/>
-            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="11">
-                <TextBlock Text="Download storage" FontSize="19" FontWeight="Bold"/>
-                <TextBlock Text="Choose where VØRATH should save audio files from sources that provide an authorized, downloadable audio file." FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="Download directory" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding DownloadDirectoryLabel}" FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
+            <Border CornerRadius="16" Padding="14" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <Button Background="Transparent" BorderThickness="0" Padding="4"
+                      HorizontalContentAlignment="Stretch" Click="OpenDownloadsPageClicked">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                  <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="Downloads" FontSize="19" FontWeight="Bold"/>
+                    <TextBlock Text="Progress, active downloads, pause, resume and download settings"
+                               FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
                   </StackPanel>
-                  <Button Grid.Column="1" Content="Choose folder" Padding="12,9"
-                          VerticalAlignment="Center" Click="ChooseDownloadFolderClicked"/>
+                  <TextBlock Grid.Column="1" Text="›" FontSize="30" Foreground="#B9A5E8"
+                             VerticalAlignment="Center"/>
                 </Grid>
-                <TextBlock Text="Android will remember the folder permission. You can change it at any time." FontSize="11" Opacity="0.62" TextWrapping="Wrap"/>
-                <Border Height="1" Background="#40324F" Margin="0,2"/>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="File organization" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding DownloadFolderOrganizationLabel}" FontSize="12" Foreground="#C4B5FD"/>
-                  </StackPanel>
-                  <Button Grid.Column="1" Content="Change" Padding="16,9"
-                          VerticalAlignment="Center" Click="CycleDownloadFolderOrganizationClicked"/>
-                </Grid>
-                <TextBlock Text="{Binding DownloadFolderOrganizationExample}" FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
-                <Border Height="1" Background="#40324F" Margin="0,2"/>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="Audible download quality" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding AudibleDownloadQualityLabel}" FontSize="12" Foreground="#C4B5FD"/>
-                  </StackPanel>
-                  <Button Grid.Column="1" Content="Change" Padding="16,9"
-                          VerticalAlignment="Center" Click="CycleAudibleDownloadQualityClicked"/>
-                </Grid>
-                <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
-                <TextBlock Text="Audible downloads stay encrypted in VØRATH’s private offline cache and play inside VØRATH using Android’s saved offline licence. They are not exported as ordinary MP3/M4B files. Unprotected audio downloads are saved to the selected folder." FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
-              </StackPanel>
-            </Border>
-            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="10">
-                <Grid ColumnDefinitions="*,Auto">
-                  <TextBlock Text="{Binding QueueCountLabel}" FontSize="19" FontWeight="Bold"/>
-                  <Button Grid.Column="1" Content="{Binding DownloadQueueActionLabel}"
-                          Padding="12,8" Click="DownloadQueueActionClicked"/>
-                </Grid>
-                <TextBlock Text="{Binding QueueSummaryLabel}" FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
-                <StackPanel Spacing="4" IsVisible="{Binding HasActiveDownloadProgress}">
-                  <TextBlock Text="{Binding ActiveDownloadProgressTitle}" FontSize="13" FontWeight="SemiBold"/>
-                  <ProgressBar Minimum="0" Maximum="100" Value="{Binding ActiveDownloadProgressPercent}"/>
-                  <TextBlock Text="{Binding ActiveDownloadProgressLabel}" FontSize="11" Opacity="0.7"/>
-                </StackPanel>
-                <TextBlock Text="No downloads in the queue." FontSize="12" Opacity="0.65"
-                           IsVisible="{Binding IsQueueEmpty}"/>
-                <ItemsControl ItemsSource="{Binding QueueItems}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <Border CornerRadius="10" Padding="10" Margin="0,4"
-                              Background="#211A2D" BorderBrush="#40324F" BorderThickness="1">
-                        <StackPanel Spacing="6">
-                          <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0" Text="{Binding DisplayTitle}" FontSize="13"
-                                       FontWeight="SemiBold" TextWrapping="Wrap"/>
-                            <TextBlock Grid.Column="1" Text="{Binding StatusLabel}" FontSize="10"
-                                       Foreground="#C4B5FD" Margin="8,0,0,0"/>
-                          </Grid>
-                          <TextBlock Text="{Binding ErrorMessage}" FontSize="11" Foreground="#E89A9A"
-                                     TextWrapping="Wrap" IsVisible="{Binding HasErrorMessage}"/>
-                          <StackPanel Spacing="3" IsVisible="{Binding HasProgress}">
-                            <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercentage}" Height="5"/>
-                            <TextBlock Text="{Binding ProgressLabel}" FontSize="10" Opacity="0.72"/>
-                          </StackPanel>
-                          <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="{Binding DownloadActionLabel}" Padding="12,5"
-                                    IsVisible="{Binding CanToggleAudibleDownload}"
-                                    Click="QueueAudibleDownloadActionClicked"/>
-                            <Button Content="Retry" Padding="12,5" IsVisible="{Binding CanRetry}"
-                                    Click="RetryQueueClicked"/>
-                            <Button Content="Remove" Padding="12,5" IsVisible="{Binding CanRemove}"
-                                    Click="RemoveQueueClicked"/>
-                          </StackPanel>
-                        </StackPanel>
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </StackPanel>
+              </Button>
             </Border>
             <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="10">
@@ -475,6 +404,98 @@
               <StackPanel Spacing="8">
                 <TextBlock Text="App information" FontSize="18" FontWeight="Bold"/>
                 <TextBlock Text="VØRATH · Beyond the Silence" FontSize="13" Opacity="0.7"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsDownloadsPageVisible}" Spacing="16">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+              <Button Grid.Column="0" Content="‹  Back" Padding="12,8" Click="CloseDownloadsPageClicked"/>
+              <TextBlock Grid.Column="1" Text="Downloads" FontSize="28" FontWeight="Bold"
+                         VerticalAlignment="Center"/>
+            </Grid>
+            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="11">
+                <TextBlock Text="Download settings" FontSize="19" FontWeight="Bold"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="Download directory" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadDirectoryLabel}" FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Choose folder" Padding="12,9"
+                          VerticalAlignment="Center" Click="ChooseDownloadFolderClicked"/>
+                </Grid>
+                <TextBlock Text="Android will remember the folder permission. You can change it at any time."
+                           FontSize="11" Opacity="0.62" TextWrapping="Wrap"/>
+                <Border Height="1" Background="#40324F" Margin="0,2"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="File organization" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadFolderOrganizationLabel}" FontSize="12" Foreground="#C4B5FD"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Change" Padding="16,9"
+                          VerticalAlignment="Center" Click="CycleDownloadFolderOrganizationClicked"/>
+                </Grid>
+                <TextBlock Text="{Binding DownloadFolderOrganizationExample}" FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+                <Border Height="1" Background="#40324F" Margin="0,2"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="Audible download quality" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding AudibleDownloadQualityLabel}" FontSize="12" Foreground="#C4B5FD"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Change" Padding="16,9"
+                          VerticalAlignment="Center" Click="CycleAudibleDownloadQualityClicked"/>
+                </Grid>
+                <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
+                <TextBlock Text="Audible downloads remain encrypted and protected. Unprotected audio is saved to the selected folder."
+                           FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="12">
+                <TextBlock Text="Download queue" FontSize="21" FontWeight="Bold"/>
+                <TextBlock Text="{Binding QueueSummaryLabel}" FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
+                <Button Content="{Binding DownloadQueueActionLabel}" HorizontalAlignment="Stretch"
+                        Padding="14,11" Click="DownloadQueueActionClicked"/>
+                <StackPanel Spacing="5" IsVisible="{Binding HasActiveDownloadProgress}">
+                  <TextBlock Text="{Binding ActiveDownloadProgressTitle}" FontSize="13" FontWeight="SemiBold"/>
+                  <ProgressBar Minimum="0" Maximum="100" Value="{Binding ActiveDownloadProgressPercent}" Height="7"/>
+                  <TextBlock Text="{Binding ActiveDownloadProgressLabel}" FontSize="11" Opacity="0.72"/>
+                </StackPanel>
+                <TextBlock Text="No downloads yet. Start a download from an audiobook’s details page."
+                           FontSize="12" Opacity="0.65" IsVisible="{Binding IsQueueEmpty}"/>
+                <ItemsControl ItemsSource="{Binding QueueItems}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Border CornerRadius="12" Padding="12" Margin="0,4"
+                              Background="#211A2D" BorderBrush="#51416F" BorderThickness="1">
+                        <StackPanel Spacing="8">
+                          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBlock Grid.Column="0" Text="{Binding DisplayTitle}" FontSize="14"
+                                       FontWeight="SemiBold" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Column="1" Text="{Binding StatusLabel}" FontSize="11"
+                                       Foreground="#C4B5FD" VerticalAlignment="Top"/>
+                          </Grid>
+                          <TextBlock Text="{Binding ErrorMessage}" FontSize="11" Foreground="#E89A9A"
+                                     TextWrapping="Wrap" IsVisible="{Binding HasErrorMessage}"/>
+                          <StackPanel Spacing="4" IsVisible="{Binding HasProgress}">
+                            <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercentage}" Height="6"/>
+                            <TextBlock Text="{Binding ProgressLabel}" FontSize="11" Opacity="0.72"/>
+                          </StackPanel>
+                          <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                            <Button Grid.Column="0" Content="{Binding DownloadActionLabel}" Padding="8,8"
+                                    IsVisible="{Binding CanToggleAudibleDownload}"
+                                    Click="QueueAudibleDownloadActionClicked"/>
+                            <Button Grid.Column="1" Content="Retry" Padding="8,8"
+                                    IsVisible="{Binding CanRetry}" Click="RetryQueueClicked"/>
+                            <Button Grid.Column="2" Content="Remove" Padding="8,8"
+                                    IsVisible="{Binding CanRemove}" Click="RemoveQueueClicked"/>
+                          </Grid>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </StackPanel>
             </Border>
           </StackPanel>
@@ -606,6 +627,21 @@
               </StackPanel>
             </Border>
           </Border>
+
+    <Border Grid.Row="0" Background="#B8000000" IsVisible="{Binding IsQueueRemovalConfirmationVisible}" ZIndex="32">
+      <Border Background="#211A2D" CornerRadius="20" Padding="20" Margin="20"
+              VerticalAlignment="Center" HorizontalAlignment="Stretch"
+              BorderBrush="#69568D" BorderThickness="1">
+        <StackPanel Spacing="16">
+          <TextBlock Text="Remove download?" FontSize="20" FontWeight="Bold"/>
+          <TextBlock Text="{Binding QueueRemovalConfirmationMessage}" TextWrapping="Wrap"/>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <Button Grid.Column="0" Content="Keep download" Click="CancelQueueRemovalClicked"/>
+            <Button Grid.Column="1" Content="Remove from queue" Foreground="#FF7B83" Click="ConfirmQueueRemovalClicked"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+    </Border>
 
     <Border Grid.Row="0" Background="#B8000000" IsVisible="{Binding IsRemovalConfirmationVisible}" ZIndex="30">
       <Border Background="#211A2D" CornerRadius="20" Padding="20" Margin="20"

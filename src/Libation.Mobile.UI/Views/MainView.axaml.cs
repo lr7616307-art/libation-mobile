@@ -84,6 +84,16 @@ public partial class MainView : UserControl
             ?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         AttachPlaybackStateNotifications();
         _activeView = new WeakReference<MainView>(this);
+        PlatformDownloadQueuePauseAction = () =>
+        {
+            if (_activeView is not null && _activeView.TryGetTarget(out var activeView))
+                Dispatcher.UIThread.Post(async () => await activeView.PauseDownloadQueueAsync());
+        };
+        PlatformDownloadQueueResumeAction = () =>
+        {
+            if (_activeView is not null && _activeView.TryGetTarget(out var activeView))
+                Dispatcher.UIThread.Post(async () => await activeView.StartPendingDownloadsAsync());
+        };
         PlatformWidevineOfflineDownloadCompletedAction = asin =>
         {
             if (_activeView is null || !_activeView.TryGetTarget(out var activeView))
@@ -156,7 +166,18 @@ public partial class MainView : UserControl
         await _viewModel.InitializeAsync();
         if (_downloadWorker is not null)
         {
-            var recovered = await _downloadWorker.RecoverInterruptedDownloadsAsync();
+            // Returning from the background must not mark this view's live
+            // foreground-service transfer as interrupted or queued a second time.
+            var recovered = 0;
+            if (_downloadRunCts is { } activeRun)
+            {
+                if (activeRun.IsCancellationRequested && _downloadRunCompletion is { } completion)
+                    await completion.Task;
+            }
+            else
+            {
+                recovered = await _downloadWorker.RecoverInterruptedDownloadsAsync();
+            }
             await _viewModel.RefreshDownloadQueueAsync();
             if (recovered > 0)
                 _viewModel.ReportDownloadSettingsStatus(
@@ -496,7 +517,9 @@ public partial class MainView : UserControl
 
     private async void MainViewUnloaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        _downloadRunCts?.Cancel();
+        // Do not cancel the ADRM queue when the UI unloads or the activity
+        // moves to the background. The foreground notification service keeps
+        // the process alive while the worker continues independently of this view.
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
@@ -1663,14 +1686,47 @@ public partial class MainView : UserControl
 
     public async void DownloadQueueActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (_downloadRunCts is { IsCancellationRequested: false })
+        if (_downloadRunCts is not null)
         {
-            _downloadRunCts.Cancel();
-            _viewModel.ReportDownloadSettingsStatus("Download paused. Partial media bytes are kept; starting the queue again will request resume where the provider supports HTTP Range.");
+            await PauseDownloadQueueAsync();
             return;
         }
 
         await StartPendingDownloadsAsync();
+    }
+
+    private async Task PauseDownloadQueueAsync()
+    {
+        var completionTask = _downloadRunCompletion?.Task;
+        _downloadRunCts?.Cancel();
+        if (completionTask is not null)
+            await completionTask;
+        await _viewModel.RefreshDownloadQueueAsync();
+        _viewModel.ReportDownloadSettingsStatus(
+            "Downloads paused. Partial data is saved and will resume from the retained bytes.");
+    }
+
+    private void OpenDownloadsPageClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.OpenDownloadsPage();
+
+    private void CloseDownloadsPageClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CloseDownloadsPage();
+
+    private void CancelQueueRemovalClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.CancelQueueRemoval();
+
+    private async void ConfirmQueueRemovalClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var pendingId = _viewModel.PendingQueueRemovalId;
+        if (!string.IsNullOrWhiteSpace(pendingId) && _downloadQueue is not null)
+        {
+            var pendingItem = (await _downloadQueue.GetItemsAsync())
+                .FirstOrDefault(item => item.AudiobookId == pendingId);
+            if (pendingItem?.Status == DownloadStatus.Downloading)
+                await PauseDownloadQueueAsync();
+        }
+
+        await _viewModel.ConfirmQueueRemovalAsync();
     }
 
     private async Task StartPendingDownloadsAsync()
@@ -1685,8 +1741,14 @@ public partial class MainView : UserControl
             _viewModel.ReportDownloadSettingsStatus("Choose a download folder in Settings before starting downloads.");
             return;
         }
-        if (_downloadRunCts is { IsCancellationRequested: false })
-            return;
+        if (_downloadRunCts is { } existingRun)
+        {
+            if (!existingRun.IsCancellationRequested)
+                return;
+            var completionTask = _downloadRunCompletion?.Task;
+            if (completionTask is not null)
+                await completionTask;
+        }
 
         var queued = (await _downloadQueue.GetItemsAsync())
             .Any(item => item.Status == DownloadStatus.Queued);
@@ -1703,7 +1765,42 @@ public partial class MainView : UserControl
         _downloadRunCompletion = completion;
         _viewModel.SetDownloadQueueRunning(true);
         _viewModel.ReportDownloadSettingsStatus("Download queue started. Downloads run one at a time.");
-        var progress = new Progress<DownloadQueueProgress>(_viewModel.ReportDownloadProgress);
+        PlatformDownloadNotificationStartAction?.Invoke("VØRATH · Audiobook downloads");
+        var lastNotificationBytes = 0L;
+        var lastNotificationAt = DateTimeOffset.UtcNow;
+        var lastNotificationPercent = -1;
+        var progress = new Progress<DownloadQueueProgress>(value =>
+        {
+            // Progress<T> posts to the UI context; discard callbacks that arrive
+            // after pause/completion so they cannot resurrect a stale notification.
+            if (!_viewModel.IsDownloadQueueRunning)
+                return;
+            _viewModel.ReportDownloadProgress(value);
+            var now = DateTimeOffset.UtcNow;
+            var percent = value.Percentage is { } p ? (int)Math.Clamp(Math.Round(p), 0, 100) : (int?)null;
+            // Keep the live UI responsive, but throttle Android notification IPC
+            // to at most once per second unless the visible percentage changes.
+            if (now - lastNotificationAt < TimeSpan.FromSeconds(1) &&
+                percent == lastNotificationPercent)
+                return;
+
+            var title = _viewModel.QueueItems.FirstOrDefault(item => item.AudiobookId == value.AudiobookId)?.DisplayTitle
+                ?? "Downloading audiobook";
+            var elapsed = Math.Max(0.1, (now - lastNotificationAt).TotalSeconds);
+            var speed = Math.Max(0, value.BytesReceived - lastNotificationBytes) / elapsed;
+            lastNotificationBytes = value.BytesReceived;
+            lastNotificationAt = now;
+            lastNotificationPercent = percent ?? -1;
+            var detail = value.TotalBytes is > 0
+                ? $"{value.Percentage:0}% · {FormatTransferBytes(value.BytesReceived)} of {FormatTransferBytes(value.TotalBytes.Value)} · {FormatTransferBytes((long)speed)}/s"
+                : $"{FormatTransferBytes(value.BytesReceived)} downloaded · {FormatTransferBytes((long)speed)}/s";
+            if (speed > 0 && value.TotalBytes is > 0 && value.TotalBytes.Value > value.BytesReceived)
+            {
+                var remaining = TimeSpan.FromSeconds((value.TotalBytes.Value - value.BytesReceived) / speed);
+                detail += $" · {FormatTransferEta(remaining)} left";
+            }
+            PlatformDownloadNotificationUpdateAction?.Invoke(title, detail, percent, percent is null);
+        });
 
         try
         {
@@ -1739,6 +1836,10 @@ public partial class MainView : UserControl
         {
             _viewModel.ReportDownloadProgress(null);
             _viewModel.SetDownloadQueueRunning(false);
+            if (cancellation.IsCancellationRequested)
+                PlatformDownloadNotificationPausedAction?.Invoke();
+            else
+                PlatformDownloadNotificationFinishAction?.Invoke();
             if (ReferenceEquals(_downloadRunCts, cancellation))
             {
                 _downloadRunCts = null;
@@ -1747,6 +1848,21 @@ public partial class MainView : UserControl
             completion.TrySetResult();
             cancellation.Dispose();
         }
+    }
+
+    private static string FormatTransferBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024d:0.0} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024d * 1024):0.0} MB";
+        return $"{bytes / (1024d * 1024 * 1024):0.00} GB";
+    }
+
+    private static string FormatTransferEta(TimeSpan remaining)
+    {
+        if (remaining.TotalHours >= 1) return $"~{(int)remaining.TotalHours}h {remaining.Minutes}m";
+        if (remaining.TotalMinutes >= 1) return $"~{(int)remaining.TotalMinutes}m {remaining.Seconds}s";
+        return $"~{Math.Max(1, remaining.Seconds)}s";
     }
 
     private async void QueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1774,10 +1890,10 @@ public partial class MainView : UserControl
         }
     }
 
-    private async void RemoveQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void RemoveQueueClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is Button { DataContext: DownloadQueueItem item })
-            await _viewModel.RemoveFromQueueAsync(item.AudiobookId);
+            _viewModel.RequestQueueRemoval(item.AudiobookId, item.DisplayTitle ?? "this audiobook");
     }
 
     private async void QueueAudibleDownloadActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1800,11 +1916,16 @@ public partial class MainView : UserControl
             return;
         }
 
-        // Wait for a just-cancelled worker to return the item to Queued before
-        // starting it again; never invoke the old Widevine foreground service.
-        if (_downloadRunCts is { IsCancellationRequested: true } &&
-            _downloadRunCompletion is { } completion)
-            await completion.Task;
+        // Wait for any previous queue run to fully unwind before trying to
+        // resume. This prevents the first tap being swallowed by a stale CTS.
+        if (_downloadRunCts is { } running)
+        {
+            if (!running.IsCancellationRequested)
+                return;
+            var completion = _downloadRunCompletion?.Task;
+            if (completion is not null)
+                await completion;
+        }
 
         await _viewModel.EnqueueAudibleDownloadAsync(
             item.AudiobookId, item.DisplayTitle ?? "Audible audiobook");

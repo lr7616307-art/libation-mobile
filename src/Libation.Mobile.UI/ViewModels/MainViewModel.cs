@@ -55,6 +55,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private Audiobook? _nowPlayingBook;
     private string _audibleSearchText = string.Empty;
     private int _selectedTabIndex;
+    private bool _isDownloadsPageVisible;
+    private string? _pendingQueueRemovalId;
+    private string _queueRemovalConfirmationMessage = string.Empty;
+    private bool _isQueueRemovalConfirmationVisible;
     private bool _isFullPlayerVisible;
     private bool _isChaptersVisible;
     private Audiobook? _menuBook;
@@ -294,6 +298,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsAudibleLibraryTab => _selectedTabIndex == 1 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsAudibleAccountTab => _selectedTabIndex == 2 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsSettingsTab => _selectedTabIndex == 3 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
+    public bool IsSettingsHomeVisible => IsSettingsTab && !_isDownloadsPageVisible;
+    public bool IsDownloadsPageVisible => IsSettingsTab && _isDownloadsPageVisible && !IsFullPlayerVisible && !IsChaptersVisible;
+    public bool IsQueueRemovalConfirmationVisible => _isQueueRemovalConfirmationVisible;
+    public string? PendingQueueRemovalId => _pendingQueueRemovalId;
+    public string QueueRemovalConfirmationMessage => _queueRemovalConfirmationMessage;
     public bool IsFullPlayerVisible => _isFullPlayerVisible;
     public bool IsChaptersVisible => _isChaptersVisible;
     public bool IsBookDetailsVisible => _isBookDetailsVisible;
@@ -702,6 +711,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool TryNavigateBack()
     {
         if (_isAddAccountSheetVisible) { CloseAddAccountSheet(); return true; }
+        if (IsQueueRemovalConfirmationVisible) { CancelQueueRemoval(); return true; }
+        if (IsDownloadsPageVisible) { CloseDownloadsPage(); return true; }
         if (IsRemovalConfirmationVisible) { CancelPendingRemoval(); return true; }
         if (_isStatusPickerVisible) { CloseStatusPicker(); return true; }
         if (_isBookMenuVisible) { CloseBookMenu(); return true; }
@@ -738,11 +749,57 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void SelectTab(int index)
     {
         _selectedTabIndex = Math.Clamp(index, 0, 3);
+        _isDownloadsPageVisible = false;
         _isHomeSearchVisible = false;
         _isFullPlayerVisible = false;
         _isChaptersVisible = false;
         RaiseNavigationState();
     }
+    public void OpenDownloadsPage()
+    {
+        if (_selectedTabIndex != 3 || _isDownloadsPageVisible) return;
+        _isDownloadsPageVisible = true;
+        RaiseNavigationState();
+    }
+
+    public void CloseDownloadsPage()
+    {
+        if (!_isDownloadsPageVisible) return;
+        _isDownloadsPageVisible = false;
+        RaiseNavigationState();
+    }
+
+    public void RequestQueueRemoval(string audiobookId, string displayTitle)
+    {
+        if (string.IsNullOrWhiteSpace(audiobookId) ||
+            QueueItems.FirstOrDefault(item => item.AudiobookId == audiobookId)?.CanRemove != true)
+            return;
+
+        _pendingQueueRemovalId = audiobookId;
+        _queueRemovalConfirmationMessage =
+            $"Remove “{displayTitle}” from this list? This only removes the queue entry. It does not delete the audiobook file or any partial download data.";
+        _isQueueRemovalConfirmationVisible = true;
+        OnPropertyChanged(nameof(QueueRemovalConfirmationMessage));
+        OnPropertyChanged(nameof(IsQueueRemovalConfirmationVisible));
+    }
+
+    public void CancelQueueRemoval()
+    {
+        _pendingQueueRemovalId = null;
+        _isQueueRemovalConfirmationVisible = false;
+        OnPropertyChanged(nameof(IsQueueRemovalConfirmationVisible));
+    }
+
+    public async Task ConfirmQueueRemovalAsync(CancellationToken cancellationToken = default)
+    {
+        var audiobookId = _pendingQueueRemovalId;
+        if (string.IsNullOrWhiteSpace(audiobookId)) return;
+        await RemoveFromQueueAsync(audiobookId, cancellationToken);
+        _pendingQueueRemovalId = null;
+        _isQueueRemovalConfirmationVisible = false;
+        OnPropertyChanged(nameof(IsQueueRemovalConfirmationVisible));
+    }
+
     public void OpenFullPlayer()
     {
         if (NowPlayingBook is null) return;
@@ -776,6 +833,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsAudibleLibraryTab));
         OnPropertyChanged(nameof(IsAudibleAccountTab));
         OnPropertyChanged(nameof(IsSettingsTab));
+        OnPropertyChanged(nameof(IsSettingsHomeVisible));
+        OnPropertyChanged(nameof(IsDownloadsPageVisible));
         OnPropertyChanged(nameof(IsFullPlayerVisible));
         OnPropertyChanged(nameof(IsChaptersVisible));
         OnPropertyChanged(nameof(IsBookDetailsVisible));
@@ -1432,6 +1491,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void ReportDownloadProgress(DownloadQueueProgress? progress)
     {
         _activeDownloadProgress = progress;
+        if (progress is not null && _isDownloadQueueRunning)
+        {
+            for (var index = 0; index < QueueItems.Count; index++)
+            {
+                var current = QueueItems[index];
+                if (!string.Equals(current.AudiobookId, progress.AudiobookId, StringComparison.Ordinal))
+                    continue;
+                if (current.Status is DownloadStatus.Queued or DownloadStatus.Downloading)
+                {
+                    QueueItems[index] = current with
+                    {
+                        Status = DownloadStatus.Downloading,
+                        BytesReceived = Math.Max(current.BytesReceived, progress.BytesReceived),
+                        TotalBytes = progress.TotalBytes is > 0 ? progress.TotalBytes : current.TotalBytes
+                    };
+                    OnPropertyChanged(nameof(QueueSummaryLabel));
+                }
+                break;
+            }
+        }
         OnPropertyChanged(nameof(HasActiveDownloadProgress));
         OnPropertyChanged(nameof(ActiveDownloadProgressTitle));
         OnPropertyChanged(nameof(ActiveDownloadProgressLabel));

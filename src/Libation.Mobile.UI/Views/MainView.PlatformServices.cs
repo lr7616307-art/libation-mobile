@@ -16,6 +16,22 @@ public interface IAudibleWidevinePlaybackCoordinator : IAudibleOfflineDownloadBa
 
 public partial class MainView
 {
+    /// <summary>Starts the Android foreground notification for the regular ADRM download queue.</summary>
+    public static Action<string>? PlatformDownloadNotificationStartAction { get; set; }
+
+    /// <summary>Updates the active download notification with bytes, speed and ETA.</summary>
+    public static Action<string, string, int?, bool>? PlatformDownloadNotificationUpdateAction { get; set; }
+
+    /// <summary>Stops the foreground download notification after the queue finishes.</summary>
+    public static Action? PlatformDownloadNotificationFinishAction { get; set; }
+
+    /// <summary>Keeps a paused queue visible in notifications with a Resume action.</summary>
+    public static Action? PlatformDownloadNotificationPausedAction { get; set; }
+
+    /// <summary>Notification action callbacks routed to the same ADRM queue worker as the UI.</summary>
+    public static Action? PlatformDownloadQueuePauseAction { get; set; }
+    public static Action? PlatformDownloadQueueResumeAction { get; set; }
+
     /// <summary>Creates an authorized Widevine offline-licence/playback coordinator on demand.</summary>
     public static Func<CancellationToken, Task<IAudibleWidevinePlaybackCoordinator?>>? PlatformWidevinePlaybackCoordinatorFactory { get; set; }
 
