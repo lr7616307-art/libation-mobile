@@ -31,6 +31,15 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         var sharedDownloadQueue = new JsonDownloadQueue(queuePath);
         MainView.PlatformDownloadQueueFactory = () => sharedDownloadQueue;
         AndroidWidevineOfflineDownloadService.DownloadQueueFactory = () => sharedDownloadQueue;
+        MainView.PlatformDownloadNotificationStartAction =
+            title => AndroidDownloadNotificationService.Start(this, title);
+        MainView.PlatformDownloadNotificationUpdateAction =
+            (title, detail, percent, indeterminate) =>
+                AndroidDownloadNotificationService.Update(this, title, detail, percent, indeterminate);
+        MainView.PlatformDownloadNotificationFinishAction =
+            () => AndroidDownloadNotificationService.Finish(this);
+        MainView.PlatformDownloadNotificationPausedAction =
+            () => AndroidDownloadNotificationService.SetPaused(this);
 
         // Keep Android-only dependencies in the Android host. Both the complete
         // Audible identity and the minimum account session use encrypted storage.
