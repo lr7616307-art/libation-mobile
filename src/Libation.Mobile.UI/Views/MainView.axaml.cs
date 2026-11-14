@@ -1151,13 +1151,16 @@ public partial class MainView : UserControl
             }
 
             await StartPendingDownloadsAsync();
+            // The protected/unprotected publisher updates the catalogue on disk.
+            // Refresh the open detail record before reporting the final outcome.
+            var refreshedBook = await _viewModel.RefreshAudiobookStateAsync(book.Id) ?? book;
             var completedItem = (await _downloadQueue.GetItemsAsync())
                 .FirstOrDefault(item => item.AudiobookId == book.Id);
             switch (completedItem?.Status)
             {
                 case DownloadStatus.Protected:
                     _viewModel.ReportAudioStatus(
-                        "Download finished: Audible's protected AAX/AAXC backup was copied to your selected folder. It remains encrypted and is not a playable MP3/M4B. VØRATH has not created an unprotected export.");
+                        $"Download finished: protected backup {refreshedBook.ProtectedAudioFileName ?? "(.aax/.aaxc)"} was copied to {refreshedBook.ProtectedAudioFolderName ?? "the selected folder"}. It remains encrypted and is not a playable MP3/M4B. VØRATH has not created an unprotected export.");
                     _viewModel.ReportDownloadSettingsStatus(
                         "Protected backup saved. This is not a playable audio export.");
                     break;
@@ -1170,10 +1173,10 @@ public partial class MainView : UserControl
                     break;
 
                 case DownloadStatus.Failed:
-                    if (!string.IsNullOrWhiteSpace(book.ProtectedAudioFileName))
+                    if (!string.IsNullOrWhiteSpace(refreshedBook.ProtectedAudioFileName))
                     {
                         _viewModel.ReportAudioStatus(
-                            $"This download attempt failed: {completedItem.ErrorMessage ?? "check the connection and retry"}. Your previously saved protected backup ({book.ProtectedAudioFileName}) was not removed.");
+                            $"This download attempt failed: {completedItem.ErrorMessage ?? "check the connection and retry"}. Your previously saved protected backup ({refreshedBook.ProtectedAudioFileName}) was not removed.");
                     }
                     else
                     {
