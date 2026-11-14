@@ -151,7 +151,7 @@ public sealed class AndroidWidevineOfflineSession : IDisposable
         try
         {
             var requestUri = WidevineProvisioningRequestUri.Create(
-                provisionRequest.GetDefaultUrl(),
+                provisionRequest.DefaultUrl,
                 requestData);
 
             // Android's documented MediaDrm provisioning protocol sends the
