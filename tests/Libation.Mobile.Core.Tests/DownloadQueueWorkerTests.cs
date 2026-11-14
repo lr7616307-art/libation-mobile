@@ -223,34 +223,47 @@ public sealed class DownloadQueueWorkerTests
 
 
     [Fact]
-    public async Task RecoverInterruptedDownloadsAsync_LeavesAudibleProviderJobsForForegroundService()
+    public async Task RecoverInterruptedDownloadsAsync_RequeuesAudibleAdrmProviderJobs()
     {
         using var directory = new TemporaryDirectory();
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
-        await queue.EnqueueAsync("provider:B012345678");
+        await queue.EnqueueProviderAsync("provider:B012345678", "Test title");
         await queue.UpdateStatusAsync("provider:B012345678", DownloadStatus.Downloading);
         using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
         var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client),
-            new StubSource(new Uri("https://provider.example/book"), Path.Combine(directory.Path, "book.m4b")));
+            new StubSource(new Uri("https://provider.example/book"), Path.Combine(directory.Path, "book.aaxc")));
 
         var recovered = await worker.RecoverInterruptedDownloadsAsync();
 
-        Assert.Equal(0, recovered);
-        Assert.Equal(DownloadStatus.Downloading, Assert.Single(await queue.GetItemsAsync()).Status);
+        Assert.Equal(1, recovered);
+        Assert.Equal(DownloadStatus.Queued, Assert.Single(await queue.GetItemsAsync()).Status);
     }
 
     [Fact]
-    public async Task ProcessNextAsync_SkipsAudibleProviderJobs()
+    public async Task ProcessNextAsync_DownloadsAudibleAdrmProviderJobAndKeepsItProtected()
     {
         using var directory = new TemporaryDirectory();
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
-        await queue.EnqueueAsync("provider:B012345678");
-        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
-        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client),
-            new StubSource(new Uri("https://provider.example/book"), Path.Combine(directory.Path, "book.m4b")));
+        await queue.EnqueueProviderAsync("provider:B012345678", "Test title");
+        var staging = Path.Combine(directory.Path, "book.aaxc");
+        var payload = new byte[] { 8, 6, 7, 5 };
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.PartialContent)
+        {
+            Content = new ByteArrayContent(payload)
+        }));
+        var protection = new AudioProtectionDescriptor(AudioProtectionKind.AudibleAdrm, "AAXC");
+        var source = new ProtectedStubSource(
+            new Uri("https://audible.example/offline-media"), staging, protection);
+        var publisher = new RecordingProtectedCompletionHandler();
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source, publisher);
 
-        Assert.False(await worker.ProcessNextAsync());
-        Assert.Equal(DownloadStatus.Queued, Assert.Single(await queue.GetItemsAsync()).Status);
+        Assert.True(await worker.ProcessNextAsync());
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Protected, item.Status);
+        Assert.Equal(payload, publisher.PublishedProtectedBytes);
+        Assert.Equal(protection, publisher.PublishedProtection);
+        Assert.False(publisher.NormalPublishCalled);
     }
 
     private sealed class ProtectedStubSource(
