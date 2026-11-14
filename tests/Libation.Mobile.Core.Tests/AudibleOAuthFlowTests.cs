@@ -137,6 +137,16 @@ public sealed class AudibleOAuthFlowTests
             ScreenWidthPixels = 720,
             ScreenHeightPixels = 1600
         };
+        // Pin these values to AudibleApi's CurrentAndroid reference profile.
+        // Comparing only the generated FRC fields with the same app constants
+        // would not catch an incorrect virtual-device fingerprint.
+        Assert.Equal(
+            @"google\/raven\/raven:14\/UPB5.230623.003\/10615560:user\/release-keys",
+            AudibleOAuthFlow.AndroidOsVersion);
+        Assert.Equal(
+            @"ranchu\/Google\/sdk_gphone64_x86_64",
+            AudibleOAuthFlow.AndroidFrcDeviceName);
+
         var flow = AudibleOAuthFlow.Create("in", info);
         var bytes = Convert.FromBase64String(flow.FrcValue);
         var iv = bytes.AsSpan(9, 16).ToArray();
