@@ -42,6 +42,7 @@ public interface IProtectedAudioDownloadCompletionHandler
 public sealed record AuthorizedAudioDownload(Uri DownloadUri, string DestinationPath)
 {
     public AudioProtectionDescriptor Protection { get; init; } = AudioProtectionDescriptor.Unprotected;
+    public IReadOnlyDictionary<string, string>? RequestHeaders { get; init; }
 }
 
 public sealed record DownloadQueueProgress(
@@ -82,13 +83,11 @@ public sealed class DownloadQueueWorker
     {
         var items = await _queue.GetItemsAsync(cancellationToken);
         var recovered = 0;
-        foreach (var item in items.Where(x =>
-            x.Status == DownloadStatus.Downloading &&
-            !x.AudiobookId.StartsWith("provider:", StringComparison.Ordinal)))
+        foreach (var item in items.Where(x => x.Status == DownloadStatus.Downloading))
         {
-            // Audible Widevine downloads belong to Android's foreground service.
-            // Requeueing them here would send them through the ordinary HTTP worker
-            // and could discard the provider-specific recovery path.
+            // Provider IDs are routed through their own authorized source by
+            // RoutedAudioDownloadSource. Requeueing them here preserves the same
+            // restart behaviour as ordinary HTTPS downloads.
             await _queue.UpdateStatusAsync(
                 item.AudiobookId, DownloadStatus.Queued, cancellationToken: cancellationToken);
             recovered++;
@@ -104,8 +103,7 @@ public sealed class DownloadQueueWorker
         try
         {
             var item = (await _queue.GetItemsAsync(cancellationToken))
-                .Where(x => x.Status == DownloadStatus.Queued &&
-                    !x.AudiobookId.StartsWith("provider:", StringComparison.Ordinal))
+                .Where(x => x.Status == DownloadStatus.Queued)
                 .OrderBy(x => x.AddedAtUtc)
                 .FirstOrDefault();
 
@@ -129,7 +127,8 @@ public sealed class DownloadQueueWorker
                     new Progress<AudioDownloadProgress>(value =>
                         progress?.Report(new DownloadQueueProgress(
                             item.AudiobookId, value.BytesReceived, value.TotalBytes, value.Percentage))),
-                    cancellationToken);
+                    cancellationToken,
+                    target.RequestHeaders);
 
                 if (target.Protection.RequiresProtectedMediaPipeline)
                 {
