@@ -29,6 +29,30 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_PersistsFinalByteCheckpoint()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-progress");
+        var payload = new byte[300_000];
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload)
+        }));
+        var worker = new DownloadQueueWorker(
+            queue, new AudioFileDownloader(client),
+            new StubSource(new Uri("https://provider.example/book-progress"),
+                Path.Combine(directory.Path, "book-progress.m4b")));
+
+        Assert.True(await worker.ProcessNextAsync());
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Completed, item.Status);
+        Assert.Equal(payload.Length, item.BytesReceived);
+        Assert.Equal(payload.Length, item.TotalBytes);
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_PublishesDownloadedFileBeforeMarkingCompletedAndCleansStagingCopy()
     {
         using var directory = new TemporaryDirectory();
