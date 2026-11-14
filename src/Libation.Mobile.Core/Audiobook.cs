@@ -60,8 +60,7 @@ public sealed record Audiobook(
     public string DownloadActionLabel => IsProviderCatalogueEntry
         ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶  Play"
             : IsWidevineOfflineAvailable ? "▶  Play offline"
-            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "Protected backup saved"
-            : "⇩  Download offline"
+            : "⇩  Download & play offline"
         : "Add to queue";
 
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>
