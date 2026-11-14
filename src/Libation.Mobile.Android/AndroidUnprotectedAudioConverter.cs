@@ -2,7 +2,6 @@ using Android.App;
 using Android.OS;
 using AndroidX.Media3.Common;
 using AndroidX.Media3.Transformer;
-using Java.IO;
 using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Android;
@@ -43,6 +42,15 @@ public sealed class AndroidUnprotectedAudioConverter : IUnprotectedAudioConverte
             cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             TryDelete(destination);
+
+            // Do not re-encode an existing M4B; copy it byte-for-byte.
+            if (string.Equals(Path.GetExtension(source), ".m4b", StringComparison.OrdinalIgnoreCase))
+            {
+                VerifyMp4Output(source);
+                File.Copy(source, destination, overwrite: false);
+                VerifyMp4Output(destination);
+                return;
+            }
 
             var completion = new TaskCompletionSource<bool>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
