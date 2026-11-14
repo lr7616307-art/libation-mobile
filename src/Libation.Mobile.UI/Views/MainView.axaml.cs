@@ -1753,19 +1753,27 @@ public partial class MainView : UserControl
         _viewModel.SetDownloadQueueRunning(true);
         _viewModel.ReportDownloadSettingsStatus("Download queue started. Downloads run one at a time.");
         PlatformDownloadNotificationStartAction?.Invoke("VØRATH · Audiobook downloads");
-        var lastProgressBytes = 0L;
-        var lastProgressAt = DateTimeOffset.UtcNow;
+        var lastNotificationBytes = 0L;
+        var lastNotificationAt = DateTimeOffset.UtcNow;
+        var lastNotificationPercent = -1;
         var progress = new Progress<DownloadQueueProgress>(value =>
         {
             _viewModel.ReportDownloadProgress(value);
+            var now = DateTimeOffset.UtcNow;
+            var percent = value.Percentage is { } p ? (int)Math.Clamp(Math.Round(p), 0, 100) : (int?)null;
+            // Keep the live UI responsive, but throttle Android notification IPC
+            // to at most once per second unless the visible percentage changes.
+            if (now - lastNotificationAt < TimeSpan.FromSeconds(1) &&
+                percent == lastNotificationPercent)
+                return;
+
             var title = _viewModel.QueueItems.FirstOrDefault(item => item.AudiobookId == value.AudiobookId)?.DisplayTitle
                 ?? "Downloading audiobook";
-            var now = DateTimeOffset.UtcNow;
-            var elapsed = Math.Max(0.1, (now - lastProgressAt).TotalSeconds);
-            var speed = Math.Max(0, value.BytesReceived - lastProgressBytes) / elapsed;
-            lastProgressBytes = value.BytesReceived;
-            lastProgressAt = now;
-            var percent = value.Percentage is { } p ? (int)Math.Clamp(Math.Round(p), 0, 100) : (int?)null;
+            var elapsed = Math.Max(0.1, (now - lastNotificationAt).TotalSeconds);
+            var speed = Math.Max(0, value.BytesReceived - lastNotificationBytes) / elapsed;
+            lastNotificationBytes = value.BytesReceived;
+            lastNotificationAt = now;
+            lastNotificationPercent = percent ?? -1;
             var detail = value.TotalBytes is > 0
                 ? $"{value.Percentage:0}% · {FormatTransferBytes(value.BytesReceived)} of {FormatTransferBytes(value.TotalBytes.Value)} · {FormatTransferBytes((long)speed)}/s"
                 : $"{FormatTransferBytes(value.BytesReceived)} downloaded · {FormatTransferBytes((long)speed)}/s";
