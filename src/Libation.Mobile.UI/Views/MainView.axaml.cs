@@ -506,7 +506,9 @@ public partial class MainView : UserControl
 
     private async void MainViewUnloaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        _downloadRunCts?.Cancel();
+        // Do not cancel the ADRM queue when the UI unloads or the activity
+        // moves to the background. The foreground notification service keeps
+        // the process alive while the worker continues independently of this view.
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
