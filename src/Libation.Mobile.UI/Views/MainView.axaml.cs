@@ -1703,7 +1703,18 @@ public partial class MainView : UserControl
         => _viewModel.CancelQueueRemoval();
 
     private async void ConfirmQueueRemovalClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => await _viewModel.ConfirmQueueRemovalAsync();
+    {
+        var pendingId = _viewModel.PendingQueueRemovalId;
+        if (!string.IsNullOrWhiteSpace(pendingId) && _downloadQueue is not null)
+        {
+            var pendingItem = (await _downloadQueue.GetItemsAsync())
+                .FirstOrDefault(item => item.AudiobookId == pendingId);
+            if (pendingItem?.Status == DownloadStatus.Downloading)
+                await PauseDownloadQueueAsync();
+        }
+
+        await _viewModel.ConfirmQueueRemovalAsync();
+    }
 
     private async Task StartPendingDownloadsAsync()
     {
