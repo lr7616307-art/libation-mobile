@@ -31,7 +31,7 @@ public sealed record Audiobook(
         : IsWidevineOfflineAvailable
             ? "Protected offline copy is ready for authorized playback in VØRATH"
             : !string.IsNullOrWhiteSpace(ProtectedAudioFileName)
-                ? "Protected backup saved in VØRATH (not a normal playable audio file)"
+                ? "An encrypted AAX/AAXC backup exists. It is not playable in a normal audio app; request an Audible-authorized offline copy to play inside VØRATH."
                 : !string.IsNullOrWhiteSpace(AudioFilePath)
                     ? "Downloaded to VØRATH and ready to play"
                     : IsPlayableOnAudible == true
