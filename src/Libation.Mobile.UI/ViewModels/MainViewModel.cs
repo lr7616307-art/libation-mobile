@@ -388,6 +388,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         _detailBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
         if (_detailBook is null) return;
+        // AudioImportStatus is also used for one-off download errors. Clear it
+        // when opening a different detail page so an old failed request cannot
+        // appear beside a successfully saved protected backup.
+        AudioImportStatus = string.Empty;
         DetailMetadataStatus = string.Empty;
         _isBookDetailsVisible = true;
         _isBookMenuVisible = false;
