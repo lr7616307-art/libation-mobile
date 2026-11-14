@@ -22,14 +22,14 @@ public sealed class DownloadQueueItemTests
     }
 
     [Fact]
-    public void RemoveIsUnavailableWhileTransferIsActive()
+    public void ActiveDownloadCanRequestRemovalButMustUseConfirmationFlow()
     {
         var now = DateTimeOffset.UtcNow;
         var downloading = new DownloadQueueItem(
             "provider:1234567890", DownloadStatus.Downloading, now, now);
         var paused = downloading with { Status = DownloadStatus.Queued };
 
-        Assert.False(downloading.CanRemove);
+        Assert.True(downloading.CanRemove);
         Assert.True(paused.CanRemove);
     }
 }
