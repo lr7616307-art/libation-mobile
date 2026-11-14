@@ -32,7 +32,7 @@ public sealed record DownloadQueueItem(
     public bool HasErrorMessage => !string.IsNullOrWhiteSpace(ErrorMessage);
 
     [JsonIgnore]
-    public bool CanRemove => Status != DownloadStatus.Downloading;
+    public bool CanRemove => true;
 
     [JsonIgnore]
     public bool HasProgress => BytesReceived > 0;
