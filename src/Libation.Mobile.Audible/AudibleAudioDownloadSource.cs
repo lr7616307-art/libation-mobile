@@ -210,7 +210,11 @@ public sealed class AudibleAudioDownloadSource : IAuthorizedAudioDownloadSource
 
         return new AuthorizedAudioDownload(downloadUri, destinationPath)
         {
-            Protection = protection
+            Protection = protection,
+            RequestHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["User-Agent"] = "Audible/671 CFNetwork/1240.0.4 Darwin/20.6.0"
+            }
         };
     }
 
