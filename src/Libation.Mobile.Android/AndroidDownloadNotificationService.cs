@@ -35,6 +35,7 @@ public sealed class AndroidDownloadNotificationService : Service
     private bool indeterminate = true;
     private bool paused;
     private bool isForeground;
+    private PowerManager.WakeLock? downloadWakeLock;
 
     public static void Start(Context context, string title)
     {
@@ -52,6 +53,7 @@ public sealed class AndroidDownloadNotificationService : Service
             service.percentage = percent;
             service.indeterminate = isIndeterminate;
             service.paused = false;
+            service.AcquireDownloadWakeLock();
             service.Notify("Pause");
             return;
         }
@@ -70,6 +72,7 @@ public sealed class AndroidDownloadNotificationService : Service
         if (current is { } service)
         {
             service.paused = true;
+            service.ReleaseDownloadWakeLock();
             service.statusText = "Paused · partial download data is saved";
             service.indeterminate = false;
             service.Notify("Resume");
@@ -84,6 +87,7 @@ public sealed class AndroidDownloadNotificationService : Service
         if (current is { } service)
         {
             service.Notify(null, "Download queue finished");
+            service.ReleaseDownloadWakeLock();
             service.StopForeground(StopForegroundFlags.Detach);
             service.isForeground = false;
             service.StopSelf();
@@ -120,6 +124,7 @@ public sealed class AndroidDownloadNotificationService : Service
         var action = intent?.Action;
         if (action == ActionFinish)
         {
+            ReleaseDownloadWakeLock();
             StopForeground(StopForegroundFlags.Remove);
             isForeground = false;
             StopSelf(startId);
@@ -136,6 +141,10 @@ public sealed class AndroidDownloadNotificationService : Service
                 ? intent.GetBooleanExtra(ExtraIndeterminate, true)
                 : action != ActionPaused && percentage is null;
             paused = action == ActionPaused;
+            if (paused)
+                ReleaseDownloadWakeLock();
+            else
+                AcquireDownloadWakeLock();
             var notification = BuildNotification(paused ? "Resume" : "Pause");
             if (!isForeground)
             {
@@ -163,6 +172,7 @@ public sealed class AndroidDownloadNotificationService : Service
         if (action == ActionResume)
         {
             paused = false;
+            AcquireDownloadWakeLock();
             statusText = "Resuming download…";
             Notify("Pause");
             MainView.PlatformDownloadQueueResumeAction?.Invoke();
@@ -221,6 +231,21 @@ public sealed class AndroidDownloadNotificationService : Service
         return builder.Build();
     }
 
+    private void AcquireDownloadWakeLock()
+    {
+        var powerManager = (PowerManager?)GetSystemService(PowerService);
+        downloadWakeLock ??= powerManager?.NewWakeLock(
+            WakeLockFlags.Partial, "VORATH:ADRMDownload");
+        if (downloadWakeLock is { IsHeld: false })
+            downloadWakeLock.Acquire();
+    }
+
+    private void ReleaseDownloadWakeLock()
+    {
+        if (downloadWakeLock is { IsHeld: true })
+            downloadWakeLock.Release();
+    }
+
     private void EnsureNotificationChannel()
     {
         if (Build.VERSION.SdkInt < BuildVersionCodes.O)
@@ -237,6 +262,9 @@ public sealed class AndroidDownloadNotificationService : Service
 
     public override void OnDestroy()
     {
+        ReleaseDownloadWakeLock();
+        downloadWakeLock?.Dispose();
+        downloadWakeLock = null;
         if (ReferenceEquals(current, this))
             current = null;
         base.OnDestroy();
