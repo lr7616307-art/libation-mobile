@@ -177,6 +177,7 @@ public sealed class AudioFileDownloaderTests
     public async Task DownloadAsync_PromotesCompletePartialFileAfterRangeNotSatisfiable()
     {
         using var directory = new TemporaryDirectory();
+        Directory.CreateDirectory(directory.Path);
         var destination = Path.Combine(directory.Path, "book.aaxc");
         await File.WriteAllBytesAsync(destination + ".part", [5, 4, 3]);
         using var client = new HttpClient(new StubHandler((request, _) =>
