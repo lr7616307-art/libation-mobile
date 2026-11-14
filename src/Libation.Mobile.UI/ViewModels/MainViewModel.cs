@@ -310,6 +310,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsDetailProviderBook => _detailBook?.IsProviderCatalogueEntry == true;
     public bool IsDetailLocalBook => _detailBook is not null && !_detailBook.IsProviderCatalogueEntry;
     public bool CanEditDetailBook => IsDetailLocalBook;
+    public bool CanExportDetailM4b =>
+        _detailBook is not null &&
+        !string.IsNullOrWhiteSpace(_detailBook.AudioFilePath) &&
+        File.Exists(_detailBook.AudioFilePath) &&
+        LocalAudioConversionPolicy.IsSupportedUnprotectedInput(_detailBook.AudioFilePath);
     public string DetailMetadataStatus
     {
         get => _detailMetadataStatus;
@@ -406,6 +411,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsDetailProviderBook));
         OnPropertyChanged(nameof(IsDetailLocalBook));
         OnPropertyChanged(nameof(CanEditDetailBook));
+        OnPropertyChanged(nameof(CanExportDetailM4b));
         OnPropertyChanged(nameof(DetailAudibleAvailabilityLabel));
         OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
         OnPropertyChanged(nameof(HasPlayableDetailAudio));
@@ -437,6 +443,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(DetailProtectedDownloadLabel));
             OnPropertyChanged(nameof(HasPlayableDetailAudio));
             OnPropertyChanged(nameof(HasProtectedDetailDownload));
+            OnPropertyChanged(nameof(CanExportDetailM4b));
             OnPropertyChanged(nameof(DetailFileSizeLabel));
             OnPropertyChanged(nameof(DetailDurationLabel));
         }
