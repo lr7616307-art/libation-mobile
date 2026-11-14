@@ -141,7 +141,10 @@ public sealed class AudioFileDownloader
         }
 
         if (received == 0)
+        {
+            TryDelete(partialPath);
             throw new InvalidDataException("The provider returned an empty audiobook download.");
+        }
         if (totalBytes is { } expectedBytes && received != expectedBytes)
             throw new InvalidDataException("The downloaded audiobook is incomplete. Its partial data has been retained for resume.");
 
