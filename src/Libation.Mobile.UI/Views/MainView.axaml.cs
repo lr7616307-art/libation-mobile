@@ -1090,17 +1090,13 @@ public partial class MainView : UserControl
             return;
         }
 
-        if (!book.IsWidevineOfflineAvailable &&
-            !string.IsNullOrWhiteSpace(book.ProtectedAudioFileName))
-        {
-            _viewModel.ReportAudioStatus(
-                $"A protected backup is already saved as {book.ProtectedAudioFileName}. It is encrypted and is not a playable MP3/M4B. VØRATH will not download the same protected file again just because this title is opened.");
-            return;
-        }
-
-        // The library action starts an authorized download until VØRATH has a
-        // valid protected offline player copy or a genuinely unprotected file.
-        await RunProtectedAudibleOperationAsync(book, book.IsWidevineOfflineAvailable);
+        // Do not route the primary Audible action through the ADRM/AAX file
+        // queue: that creates an encrypted backup which ordinary players cannot
+        // open. Use Audible's provider-authorized Widevine offline licence,
+        // Android MediaDrm key-set and Media3 protected player instead.
+        // If an older ADRM/AAX backup exists, leave it untouched and still try
+        // the separate authorized offline playback path.
+        await RunProtectedAudibleOperationAsync(book, startPlayback: true);
     }
 
     private async Task MarkWidevineOfflineDownloadCompletedAsync(string asin)
