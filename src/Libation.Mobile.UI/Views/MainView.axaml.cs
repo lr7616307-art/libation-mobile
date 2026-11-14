@@ -1098,26 +1098,36 @@ public partial class MainView : UserControl
             var asin = book.Id.StartsWith("provider:", StringComparison.Ordinal)
                 ? book.Id["provider:".Length..]
                 : string.Empty;
-            var startDownload = PlatformAudibleOfflineDownloadStartAction;
-            if (string.IsNullOrWhiteSpace(asin) || startDownload is null)
+            if (string.IsNullOrWhiteSpace(asin) || _downloadQueue is null)
             {
-                _viewModel.ReportAudioStatus("The Android foreground download service is not available in this build.");
+                _viewModel.ReportAudioStatus("The Audible ADRM download queue is not available in this build.");
                 return;
             }
 
-            // Persist both the provider ID and title before starting the
-            // foreground service so queued items can be drained after this one.
+            // Use the same routed HTTPS downloader as LibriSync's normal ADRM
+            // content-licence path. That source requests ADRM/AAC-LC and does not
+            // create a Widevine challenge or call /drmlicense.
             await _viewModel.EnqueueAudibleDownloadAsync(book.Id, book.Title);
             await _viewModel.RefreshDownloadQueueAsync();
-            if (_downloadQueue is not null &&
-                !(await _downloadQueue.GetItemsAsync()).Any(item => item.AudiobookId == book.Id))
+            if (!(await _downloadQueue.GetItemsAsync()).Any(item => item.AudiobookId == book.Id))
             {
                 _viewModel.ReportAudioStatus("The Audible download could not be added to the persistent queue.");
                 return;
             }
 
-            startDownload(asin, book.Title);
-            _viewModel.ReportAudioStatus("Offline download started. Progress and Pause/Resume are now available in the queue and notification.");
+            await StartPendingDownloadsAsync();
+            var completedItem = (await _downloadQueue.GetItemsAsync())
+                .FirstOrDefault(item => item.AudiobookId == book.Id);
+            if (completedItem?.Status == DownloadStatus.Protected)
+            {
+                _viewModel.ReportAudioStatus(
+                    "Audible's authorized ADRM/AAX file was downloaded and saved as protected media. It is not yet playable inside VØRATH.");
+            }
+            else if (completedItem?.Status == DownloadStatus.Failed)
+            {
+                _viewModel.ReportAudioStatus(
+                    completedItem.ErrorMessage ?? "Audible did not authorize this download. The protected file was not published.");
+            }
             return;
         }
 
@@ -1678,8 +1688,7 @@ public partial class MainView : UserControl
             return;
 
         var queued = (await _downloadQueue.GetItemsAsync())
-            .Any(item => item.Status == DownloadStatus.Queued &&
-                !item.AudiobookId.StartsWith("provider:", StringComparison.Ordinal));
+            .Any(item => item.Status == DownloadStatus.Queued);
         if (!queued)
         {
             _viewModel.ReportDownloadSettingsStatus("There are no pending downloads.");
@@ -1705,9 +1714,13 @@ public partial class MainView : UserControl
             await _viewModel.RefreshLibraryAfterDownloadAsync(CancellationToken.None);
             var failed = (await _downloadQueue.GetItemsAsync(CancellationToken.None))
                 .Count(item => item.Status == DownloadStatus.Failed);
-            _viewModel.ReportDownloadSettingsStatus(failed == 0
-                ? "All queued downloads finished successfully."
-                : $"{failed} download(s) failed. Check the queue for details and retry options.");
+            var protectedCount = (await _downloadQueue.GetItemsAsync(CancellationToken.None))
+                .Count(item => item.Status == DownloadStatus.Protected);
+            _viewModel.ReportDownloadSettingsStatus(failed > 0
+                ? $"{failed} download(s) failed. Check the queue for details and retry options."
+                : protectedCount > 0
+                    ? $"{protectedCount} protected file(s) downloaded. They remain DRM-protected and are not playable in VØRATH yet."
+                    : "All queued downloads finished successfully.");
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -1741,9 +1754,10 @@ public partial class MainView : UserControl
         {
             if (item.AudiobookId.StartsWith("provider:", StringComparison.Ordinal))
             {
-                var asin = item.AudiobookId["provider:".Length..];
-                PlatformAudibleOfflineDownloadStartAction?.Invoke(asin, item.DisplayTitle ?? "Audible audiobook");
+                await _viewModel.EnqueueAudibleDownloadAsync(
+                    item.AudiobookId, item.DisplayTitle ?? "Audible audiobook");
                 await _viewModel.RefreshDownloadQueueAsync();
+                await StartPendingDownloadsAsync();
                 return;
             }
 
