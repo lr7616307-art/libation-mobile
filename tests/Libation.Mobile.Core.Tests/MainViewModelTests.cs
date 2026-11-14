@@ -37,6 +37,68 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task OpeningBookDetails_ClearsStaleDownloadFailureFromPreviousTitle()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.UpsertAsync(new Audiobook(
+            "provider:1234567890",
+            "Example audiobook",
+            "Example author",
+            "Example narrator",
+            "1h",
+            "Not started"));
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+        vm.ReportAudioStatus("The download request failed. Check your connection and retry.");
+
+        vm.OpenBookDetails("provider:1234567890");
+
+        Assert.Equal(string.Empty, vm.AudioImportStatus);
+        Assert.Equal("Availability not reported by Audible", vm.DetailAudibleAvailabilityLabel);
+    }
+
+    [Fact]
+    public async Task RefreshAudiobookState_UpdatesOpenDetailAfterProtectedFileIsPublished()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var book = new Audiobook(
+            "provider:1234567890",
+            "Example audiobook",
+            "Example author",
+            "Example narrator",
+            "1h",
+            "Not started");
+        await repository.UpsertAsync(book);
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+        vm.OpenBookDetails(book.Id);
+
+        await repository.UpsertAsync(book with
+        {
+            ProtectedAudioFileName = "Example audiobook.aax",
+            ProtectedAudioFolderName = "Downloads",
+            ProtectedAudioProtection = "AudibleAdrm",
+            FileSizeBytes = 12_345
+        });
+
+        var refreshed = await vm.RefreshAudiobookStateAsync(book.Id);
+
+        Assert.Equal("Example audiobook.aax", refreshed?.ProtectedAudioFileName);
+        Assert.Equal("Example audiobook.aax", vm.DetailBook?.ProtectedAudioFileName);
+        Assert.Equal("PROTECTED BACKUP ONLY", vm.DetailBook?.AudibleAvailabilityShortLabel);
+        Assert.Contains("not an ordinary MP3/M4B", vm.DetailProtectedDownloadLabel,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Widevine DASH", vm.DetailProtectedDownloadLabel,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task AudibleDownloadQuality_CyclesAndPersistsGlobalPreference()
     {
         using var directory = new TemporaryDirectory();
@@ -675,7 +737,7 @@ public sealed class MainViewModelTests
         var book = Assert.Single(vm.Books.Where(item => item.Id == "provider:B012345678"));
         Assert.False(book.CanQueueDownload); // Audible IDs cannot be sent to the generic direct-URL form.
         Assert.Equal("⇩  Download offline", book.DownloadActionLabel);
-        Assert.Equal("⇩  Download offline",
+        Assert.Equal("Protected backup saved",
             (book with { ProtectedAudioFileName = "audible-title.aaxc" }).DownloadActionLabel);
         Assert.Equal("▶  Play offline",
             (book with { IsWidevineOfflineAvailable = true }).DownloadActionLabel);
