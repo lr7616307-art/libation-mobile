@@ -301,6 +301,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsSettingsHomeVisible => IsSettingsTab && !_isDownloadsPageVisible;
     public bool IsDownloadsPageVisible => IsSettingsTab && _isDownloadsPageVisible && !IsFullPlayerVisible && !IsChaptersVisible;
     public bool IsQueueRemovalConfirmationVisible => _isQueueRemovalConfirmationVisible;
+    public string? PendingQueueRemovalId => _pendingQueueRemovalId;
     public string QueueRemovalConfirmationMessage => _queueRemovalConfirmationMessage;
     public bool IsFullPlayerVisible => _isFullPlayerVisible;
     public bool IsChaptersVisible => _isChaptersVisible;
