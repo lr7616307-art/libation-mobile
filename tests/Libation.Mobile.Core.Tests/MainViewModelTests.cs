@@ -61,6 +61,44 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task RefreshAudiobookState_UpdatesOpenDetailAfterProtectedFileIsPublished()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var book = new Audiobook(
+            "provider:1234567890",
+            "Example audiobook",
+            "Example author",
+            "Example narrator",
+            "1h",
+            "Not started");
+        await repository.UpsertAsync(book);
+        var vm = new MainViewModel(
+            repository,
+            new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+        vm.OpenBookDetails(book.Id);
+
+        await repository.UpsertAsync(book with
+        {
+            ProtectedAudioFileName = "Example audiobook.aax",
+            ProtectedAudioFolderName = "Downloads",
+            ProtectedAudioProtection = "AudibleAdrm",
+            FileSizeBytes = 12_345
+        });
+
+        var refreshed = await vm.RefreshAudiobookStateAsync(book.Id);
+
+        Assert.Equal("Example audiobook.aax", refreshed?.ProtectedAudioFileName);
+        Assert.Equal("Example audiobook.aax", vm.DetailBook?.ProtectedAudioFileName);
+        Assert.Equal("PROTECTED BACKUP ONLY", vm.DetailBook?.AudibleAvailabilityShortLabel);
+        Assert.Contains("not a normal playable audio file", vm.DetailProtectedDownloadLabel,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Widevine DASH", vm.DetailProtectedDownloadLabel,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task AudibleDownloadQuality_CyclesAndPersistsGlobalPreference()
     {
         using var directory = new TemporaryDirectory();
