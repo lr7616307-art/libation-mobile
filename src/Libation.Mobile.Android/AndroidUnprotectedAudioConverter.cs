@@ -1,23 +1,26 @@
-using Android.App;
 using Android.OS;
-using AndroidX.Media3.Common;
-using AndroidX.Media3.Transformer;
+using Android.Runtime;
 using Libation.Mobile.Core;
+using System.Runtime.InteropServices;
 
 namespace Libation.Mobile.Android;
 
 /// <summary>
-/// Uses Android Media3 Transformer to make an AAC-in-MP4 (.m4b) copy of
-/// an unprotected local audio file. This component deliberately rejects
-/// Audible AAX/AAXC; it does not extract keys or remove provider DRM.
+/// Exports unprotected local audio through Android Media3 Transformer.
+/// The Java bridge handles Transformer.Listener on Android's main looper.
+/// Protected Audible AAX/AAXC is rejected before native code is invoked.
 /// </summary>
 public sealed class AndroidUnprotectedAudioConverter : IUnprotectedAudioConverter
 {
-    private readonly Android.Content.Context _context;
+    private const string BridgeClassName = "org/libationmobile/app/UnprotectedM4bExporter";
+    private const string ExportMethodSignature =
+        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;";
+
+    private readonly global::Android.Content.Context _context;
     private readonly SemaphoreSlim _exportGate = new(1, 1);
 
-    public AndroidUnprotectedAudioConverter(Android.Content.Context? context = null)
-        => _context = context?.ApplicationContext ?? Application.Context;
+    public AndroidUnprotectedAudioConverter(global::Android.Content.Context? context = null)
+        => _context = context?.ApplicationContext ?? global::Android.App.Application.Context;
 
     public async Task ConvertToM4bAsync(
         string sourceFilePath,
@@ -43,7 +46,7 @@ public sealed class AndroidUnprotectedAudioConverter : IUnprotectedAudioConverte
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             TryDelete(destination);
 
-            // Do not re-encode an existing M4B; copy it byte-for-byte.
+            // Copy an existing M4B byte-for-byte; transcoding it again would be lossy.
             if (string.Equals(Path.GetExtension(source), ".m4b", StringComparison.OrdinalIgnoreCase))
             {
                 VerifyMp4Output(source);
@@ -52,52 +55,32 @@ public sealed class AndroidUnprotectedAudioConverter : IUnprotectedAudioConverte
                 return;
             }
 
-            var completion = new TaskCompletionSource<bool>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-            var listener = new ExportListener(completion, destination);
-            Transformer? transformer = null;
-            var mainHandler = new Handler(Looper.MainLooper!);
+            // Resolve the app Java class while on the calling (UI) thread, then
+            // promote it to a global reference before executing on a worker thread.
+            var localClass = JNIEnv.FindClass(BridgeClassName);
+            if (localClass == IntPtr.Zero)
+                throw new InvalidOperationException("The Android M4B export bridge was not packaged.");
 
-            void StartOnMainThread()
+            var globalClass = JNIEnv.NewGlobalRef(localClass);
+            var method = JNIEnv.GetStaticMethodID(globalClass, "export", ExportMethodSignature);
+            JNIEnv.DeleteLocalRef(localClass);
+            if (method == IntPtr.Zero)
             {
-                try
-                {
-                    // Media3 Transformer only exports decoded media samples. It is
-                    // not given Audible licence keys and cannot open protected AAXC.
-                    transformer = new Transformer.Builder(_context)
-                        .SetAudioMimeType("audio/mp4a-latm")
-                        .AddListener(listener)
-                        .Build();
-
-                    var mediaItem = MediaItem.FromUri(
-                        Android.Net.Uri.FromFile(new Java.IO.File(source)));
-                    transformer.Start(mediaItem, destination);
-                }
-                catch (Exception exception)
-                {
-                    completion.TrySetException(new InvalidOperationException(
-                        "Android could not start the unprotected M4B export.", exception));
-                }
+                JNIEnv.DeleteGlobalRef(globalClass);
+                throw new InvalidOperationException("The Android M4B export bridge method is unavailable.");
             }
-
-            if (Looper.MyLooper() == Looper.MainLooper)
-                StartOnMainThread();
-            else if (!mainHandler.Post(new Java.Lang.Runnable(StartOnMainThread)))
-                throw new InvalidOperationException("Android's media thread is unavailable.");
-
-            using var registration = cancellationToken.Register(() =>
-            {
-                mainHandler.Post(new Java.Lang.Runnable(() =>
-                {
-                    try { transformer?.Cancel(); }
-                    catch (Exception) { /* Cancellation still completes below. */ }
-                    completion.TrySetCanceled(cancellationToken);
-                }));
-            });
 
             try
             {
-                await completion.Task.ConfigureAwait(false);
+                // Media3 runs on Android's main looper and reports completion through
+                // the Java bridge. Do not block the UI while it encodes the file.
+                var safeError = await Task.Run(
+                    () => InvokeJavaExporter(globalClass, method, source, destination),
+                    CancellationToken.None).ConfigureAwait(false);
+
+                if (!string.IsNullOrWhiteSpace(safeError))
+                    throw new InvalidOperationException(safeError);
+
                 VerifyMp4Output(destination);
             }
             catch
@@ -105,10 +88,42 @@ public sealed class AndroidUnprotectedAudioConverter : IUnprotectedAudioConverte
                 TryDelete(destination);
                 throw;
             }
+            finally
+            {
+                JNIEnv.DeleteGlobalRef(globalClass);
+            }
         }
         finally
         {
             _exportGate.Release();
+        }
+    }
+
+    private string? InvokeJavaExporter(IntPtr globalClass, IntPtr method, string source, string destination)
+    {
+        IntPtr sourceString = IntPtr.Zero;
+        IntPtr destinationString = IntPtr.Zero;
+        IntPtr result = IntPtr.Zero;
+        try
+        {
+            sourceString = JNIEnv.NewString(source);
+            destinationString = JNIEnv.NewString(destination);
+            var arguments = new[]
+            {
+                new JValue(_context.Handle),
+                new JValue(sourceString),
+                new JValue(destinationString)
+            };
+            result = JNIEnv.CallStaticObjectMethod(globalClass, method, arguments);
+            return result == IntPtr.Zero
+                ? null
+                : JNIEnv.GetString(result, JniHandleOwnership.DoNotTransfer);
+        }
+        finally
+        {
+            if (result != IntPtr.Zero) JNIEnv.DeleteLocalRef(result);
+            if (sourceString != IntPtr.Zero) JNIEnv.DeleteLocalRef(sourceString);
+            if (destinationString != IntPtr.Zero) JNIEnv.DeleteLocalRef(destinationString);
         }
     }
 
@@ -130,42 +145,5 @@ public sealed class AndroidUnprotectedAudioConverter : IUnprotectedAudioConverte
         try { if (File.Exists(path)) File.Delete(path); }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
-    }
-
-    private sealed class ExportListener(
-        TaskCompletionSource<bool> completion,
-        string destination) : Java.Lang.Object, ITransformerListener
-    {
-        public void OnCompleted(Composition composition, ExportResult exportResult)
-        {
-            try
-            {
-                VerifyMp4Output(destination);
-                completion.TrySetResult(true);
-            }
-            catch (Exception exception)
-            {
-                completion.TrySetException(exception);
-            }
-        }
-
-        public void OnError(
-            Composition composition,
-            ExportResult exportResult,
-            ExportException exportException)
-        {
-            // Do not surface native logs or file URLs in the UI.
-            completion.TrySetException(new InvalidOperationException(
-                "Android could not convert this unprotected audio file to M4B."));
-        }
-
-        public void OnFallbackApplied(
-            Composition composition,
-            TransformationRequest originalTransformationRequest,
-            TransformationRequest fallbackTransformationRequest)
-        {
-            // The requested AAC output is explicitly configured. Any platform
-            // fallback is still validated by the final MP4 signature check.
-        }
     }
 }
