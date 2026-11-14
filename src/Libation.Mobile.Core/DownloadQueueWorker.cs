@@ -210,6 +210,7 @@ public sealed class DownloadQueueWorker
         private long _lastPersistedBytes;
         private long? _lastPersistedTotal;
         private DateTimeOffset _lastPersistedAt = DateTimeOffset.MinValue;
+        private AudioDownloadProgress? _lastValue;
 
         public void Report(AudioDownloadProgress value)
         {
@@ -219,38 +220,49 @@ public sealed class DownloadQueueWorker
             var now = DateTimeOffset.UtcNow;
             lock (_gate)
             {
+                _lastValue = value;
                 if (value.BytesReceived - _lastPersistedBytes < 1024 * 1024 &&
                     value.TotalBytes == _lastPersistedTotal &&
                     now - _lastPersistedAt < TimeSpan.FromSeconds(1))
                     return;
 
-                _lastPersistedBytes = value.BytesReceived;
-                _lastPersistedTotal = value.TotalBytes;
-                _lastPersistedAt = now;
-                _pendingWrite = _pendingWrite.ContinueWith(
-                    async _ =>
-                    {
-                        try
-                        {
-                            await queue.UpdateProgressAsync(
-                                audiobookId, value.BytesReceived, value.TotalBytes,
-                                CancellationToken.None).ConfigureAwait(false);
-                        }
-                        catch (Exception)
-                        {
-                            // A progress checkpoint must never interrupt the media stream.
-                        }
-                    },
-                    CancellationToken.None,
-                    TaskContinuationOptions.None,
-                    TaskScheduler.Default).Unwrap();
+                ScheduleWrite(value, now);
             }
         }
 
         public Task FlushAsync()
         {
             lock (_gate)
+            {
+                if (_lastValue is { } value &&
+                    (value.BytesReceived != _lastPersistedBytes || value.TotalBytes != _lastPersistedTotal))
+                    ScheduleWrite(value, DateTimeOffset.UtcNow);
                 return _pendingWrite;
+            }
+        }
+
+        private void ScheduleWrite(AudioDownloadProgress value, DateTimeOffset now)
+        {
+            _lastPersistedBytes = value.BytesReceived;
+            _lastPersistedTotal = value.TotalBytes;
+            _lastPersistedAt = now;
+            _pendingWrite = _pendingWrite.ContinueWith(
+                async _ =>
+                {
+                    try
+                    {
+                        await queue.UpdateProgressAsync(
+                            audiobookId, value.BytesReceived, value.TotalBytes,
+                            CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception)
+                    {
+                        // A progress checkpoint must never interrupt the media stream.
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default).Unwrap();
         }
     }
 
