@@ -20,6 +20,7 @@
     <PackageReference Include="Xamarin.AndroidX.Media3.ExoPlayer.Dash" Version="1.11.1" />
     <PackageReference Include="Xamarin.AndroidX.Media3.DataSource" Version="1.11.1" />
     <PackageReference Include="Xamarin.AndroidX.Media3.Database" Version="1.11.1" />
+    <PackageReference Include="Xamarin.AndroidX.Media3.Transformer" Version="1.11.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Libation.Mobile.UI\Libation.Mobile.UI.csproj" />
