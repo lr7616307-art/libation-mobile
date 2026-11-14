@@ -13,7 +13,7 @@ namespace Libation.Mobile.Audible;
 public static class AudibleOAuthFlow
 {
     public const string AndroidDeviceType = "A10KISP2GWF0E4";
-    public const string RegistrationProfileId = "audible-android-current-v26.34.07";
+    public const string RegistrationProfileId = "audible-android-current-v26.34.07-frc-v2";
     public const string LegacyIPhoneRegistrationProfileId = "audible-iphone-4.60-ios-26.2-46000856";
 
     // Keep this virtual device profile byte-for-byte aligned with the supported
