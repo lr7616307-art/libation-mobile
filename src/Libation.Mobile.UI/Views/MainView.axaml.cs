@@ -1665,7 +1665,7 @@ public partial class MainView : UserControl
         if (_downloadRunCts is { IsCancellationRequested: false })
         {
             _downloadRunCts.Cancel();
-            _viewModel.ReportDownloadSettingsStatus("Download stopped and returned to the queue. Starting it again restarts that file from the beginning.");
+            _viewModel.ReportDownloadSettingsStatus("Download paused. Partial media bytes are kept; starting the queue again will request resume where the provider supports HTTP Range.");
             return;
         }
 
