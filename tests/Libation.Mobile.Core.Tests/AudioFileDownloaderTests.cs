@@ -91,7 +91,7 @@ public sealed class AudioFileDownloaderTests
     }
 
     [Fact]
-    public async Task DownloadAsync_MidstreamReadFailurePreservesDestinationAndCleansPartialFile()
+    public async Task DownloadAsync_MidstreamReadFailurePreservesDestinationAndPartialFileForResume()
     {
         using var directory = new TemporaryDirectory();
         Directory.CreateDirectory(directory.Path);
