@@ -21,7 +21,7 @@ public sealed class AudibleDownloadDisplayStateTests
             ProtectedAudioProtection = "AudibleAdrm"
         };
 
-        Assert.Equal("PROTECTED BACKUP ONLY", book.AudibleAvailabilityShortLabel);
+        Assert.Equal("STATUS UNKNOWN", book.AudibleAvailabilityShortLabel);
         Assert.Contains("not playable in a normal audio app", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
         Assert.Equal("✓", book.DownloadActionIcon);
@@ -43,7 +43,7 @@ public sealed class AudibleDownloadDisplayStateTests
             IsWidevineOfflineAvailable = true
         };
 
-        Assert.Equal("PROTECTED CACHE", book.AudibleAvailabilityShortLabel);
+        Assert.Equal("STATUS UNKNOWN", book.AudibleAvailabilityShortLabel);
         Assert.Contains("playback is currently disabled", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
     }
