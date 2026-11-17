@@ -529,18 +529,25 @@
                 <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="16" TextAlignment="Center" Opacity="0.7"/>
                 <TextBlock x:Name="CurrentChapterTitleLabel" Text="Ready when you are" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
                 <TextBlock x:Name="ChapterProgressLabel" Text="{Binding NowPlayingChapterCountLabel}" FontSize="12" TextAlignment="Center" Opacity="0.65"/>
-                <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0" IsEnabled="False"/>
+                <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0"
+                        IsEnabled="False" MinHeight="36" Foreground="#FFFFFF"
+                        IsSnapToTickEnabled="False" TickFrequency="0"/>
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
-                  <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="11" HorizontalAlignment="Left"/>
-                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="11" HorizontalAlignment="Center"/>
-                  <TextBlock x:Name="PlaybackRemainingLabel" Grid.Column="2" Text="−--:--" FontSize="11" HorizontalAlignment="Right"/>
+                  <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="11" Foreground="#FFFFFF" HorizontalAlignment="Left"/>
+                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="11" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
+                  <TextBlock x:Name="PlaybackRemainingLabel" Grid.Column="2" Text="−--:--" FontSize="11" Foreground="#FFFFFF" HorizontalAlignment="Right"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="3">
-                  <Button Grid.Column="0" Content="⏮" FontSize="22" Click="PreviousChapterClicked"/>
-                  <Button Grid.Column="1" Content="↶" FontSize="22" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked"/>
-                  <Button x:Name="PlayPauseButton" Grid.Column="2" Content="▶" FontSize="25" Click="TogglePlaybackClicked"/>
-                  <Button Grid.Column="3" Content="↷" FontSize="22" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked"/>
-                  <Button Grid.Column="4" Content="⏭" FontSize="22" Click="NextChapterClicked"/>
+                  <Button Grid.Column="0" Content="⏮" FontSize="22" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" Click="PreviousChapterClicked"/>
+                  <Button Grid.Column="1" Content="↶" FontSize="22" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked"/>
+                  <Button x:Name="PlayPauseButton" Grid.Column="2" Content="▶" FontSize="25"
+                          Width="56" Height="56" MinWidth="56" MinHeight="56" Padding="0"
+                          Foreground="#FFFFFF" Background="Transparent" BorderBrush="#FFFFFF"
+                          BorderThickness="1" CornerRadius="28"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                          Click="TogglePlaybackClicked"/>
+                  <Button Grid.Column="3" Content="↷" FontSize="22" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked"/>
+                  <Button Grid.Column="4" Content="⏭" FontSize="22" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" Click="NextChapterClicked"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
                   <Button x:Name="PlaybackSpeedButton" Grid.Column="0" Content="Speed · 1.0×" Click="PlaybackSpeedClicked"/>
@@ -599,7 +606,12 @@
           </StackPanel>
         </Button>
         <Button x:Name="MiniRewindButton" Grid.Column="2" Content="↶" FontSize="20" ToolTip.Tip="Rewind 10 seconds" Padding="8" Click="RewindAudioClicked"/>
-        <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="20" Padding="10" Click="TogglePlaybackClicked"/>
+        <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="19"
+                Width="44" Height="44" MinWidth="44" MinHeight="44" Padding="0"
+                Foreground="#FFFFFF" Background="Transparent" BorderBrush="#FFFFFF"
+                BorderThickness="1" CornerRadius="22"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                Click="TogglePlaybackClicked"/>
       </Grid>
     </Border>
 
