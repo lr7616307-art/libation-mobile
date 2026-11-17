@@ -222,6 +222,33 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextAsync_PauseDoesNotWaitForUncancellableProviderResolution()
+    {
+        using var directory = new TemporaryDirectory();
+        var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
+        await queue.EnqueueAsync("book-slow-license");
+        using var client = new HttpClient(new StubHandler(() => new HttpResponseMessage(HttpStatusCode.OK)));
+        using var cancellation = new CancellationTokenSource();
+        var source = new BlockingUncancellableSource();
+        var worker = new DownloadQueueWorker(queue, new AudioFileDownloader(client), source);
+
+        var processing = worker.ProcessNextAsync(cancellationToken: cancellation.Token);
+        await source.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => processing.WaitAsync(TimeSpan.FromSeconds(2)));
+
+        var item = Assert.Single(await queue.GetItemsAsync());
+        Assert.Equal(DownloadStatus.Paused, item.Status);
+
+        // Release the provider request after the worker has stopped waiting for it.
+        source.Complete(new AuthorizedAudioDownload(
+            new Uri("https://provider.example/book-slow-license"),
+            Path.Combine(directory.Path, "unused.aaxc")));
+    }
+
+    [Fact]
     public async Task ProcessNextAsync_ConcurrentCallsNeverRunTwoDownloadsAtOnce()
     {
         using var directory = new TemporaryDirectory();
@@ -378,6 +405,24 @@ public sealed class DownloadQueueWorkerTests
             }
             while (Interlocked.CompareExchange(ref _maximumConcurrentCalls, active, observed) != observed);
         }
+    }
+
+    private sealed class BlockingUncancellableSource : IAuthorizedAudioDownloadSource
+    {
+        private readonly TaskCompletionSource<AuthorizedAudioDownload> _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<AuthorizedAudioDownload> ResolveAsync(
+            string audiobookId, CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult(true);
+            return _completion.Task; // Deliberately ignores cancellation.
+        }
+
+        public void Complete(AuthorizedAudioDownload result) => _completion.TrySetResult(result);
     }
 
     private sealed class CancellingSource(CancellationTokenSource cancellation) : IAuthorizedAudioDownloadSource
