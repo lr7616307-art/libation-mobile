@@ -4,23 +4,28 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Android;
 
 /// <summary>UI adapter for the playback service, including crash-safe session recovery.</summary>
-public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer, IPlaybackCompletionSource
+public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer, IPlaybackCompletionSource, IDeferredAudioSessionRecovery
 {
     private static Context AppContext => global::Android.App.Application.Context;
+    private bool _hasPendingRecovery;
 
     public AndroidLocalAudioPlayer()
     {
-        // Rehydrate the last session when the app is opened after a process death
-        // or device restart. The saved play/pause state is respected.
-        var snapshot = PlaybackRecoveryStore.Load(AppContext);
-        if (snapshot is not null)
-        {
-            var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionRestore);
-            if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
-                AppContext.StartForegroundService(intent);
-            else
-                AppContext.StartService(intent);
-        }
+        // Reading the saved checkpoint is safe during view initialization, but
+        // starting a foreground service is not. Defer service startup until the
+        // library screen has completed its first load.
+        _hasPendingRecovery = PlaybackRecoveryStore.Load(AppContext) is not null;
+    }
+
+    public void RestorePendingSession()
+    {
+        if (!_hasPendingRecovery) return;
+        _hasPendingRecovery = false;
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionRestore);
+        if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
+            AppContext.StartForegroundService(intent);
+        else
+            AppContext.StartService(intent);
     }
 
     private PlaybackRecoverySnapshot? Recovery => PlaybackRecoveryStore.Load(AppContext);
