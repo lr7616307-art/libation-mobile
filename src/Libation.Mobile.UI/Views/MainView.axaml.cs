@@ -26,6 +26,7 @@ public partial class MainView : UserControl
     private CancellationTokenSource? _downloadRunCts;
     private TaskCompletionSource? _downloadRunCompletion;
     private readonly System.Threading.SemaphoreSlim _downloadRunGate = new(1, 1);
+    private bool _downloadQueueRestartRequested;
     private CancellationTokenSource? _protectedAudibleOperationCts;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -1710,6 +1711,7 @@ public partial class MainView : UserControl
             {
                 // Cancel while holding the same gate used to reserve/clear a run.
                 // Start can no longer race with a stale or replaced CTS.
+                _downloadQueueRestartRequested = false;
                 running.Cancel();
                 requestedPause = true;
             }
@@ -1779,7 +1781,13 @@ public partial class MainView : UserControl
             if (_downloadRunCts is { } existingRun)
             {
                 if (!existingRun.IsCancellationRequested)
+                {
+                    // A caller may have enqueued an item just as the current loop
+                    // observed an empty queue. The current loop will process it if
+                    // possible; request one safe follow-up check after it exits.
+                    _downloadQueueRestartRequested = true;
                     return;
+                }
 
                 previousCompletion = _downloadRunCompletion?.Task;
             }
@@ -1897,6 +1905,7 @@ public partial class MainView : UserControl
             else
                 PlatformDownloadNotificationFinishAction?.Invoke();
 
+            var restartRequested = false;
             await _downloadRunGate.WaitAsync();
             try
             {
@@ -1905,6 +1914,8 @@ public partial class MainView : UserControl
                     _downloadRunCts = null;
                     _downloadRunCompletion = null;
                     _viewModel.SetDownloadQueueRunning(false);
+                    restartRequested = _downloadQueueRestartRequested && !cancellation.IsCancellationRequested;
+                    _downloadQueueRestartRequested = false;
                 }
                 cancellation.Dispose();
                 completion.TrySetResult();
@@ -1912,6 +1923,14 @@ public partial class MainView : UserControl
             finally
             {
                 _downloadRunGate.Release();
+            }
+
+            // Close the narrow race where an item is enqueued after the worker's
+            // final empty-queue check but before this runner clears its state.
+            if (restartRequested && _downloadQueue is not null &&
+                (await _downloadQueue.GetItemsAsync()).Any(item => item.Status == DownloadStatus.Queued))
+            {
+                await StartPendingDownloadsAsync();
             }
         }
     }
@@ -1984,11 +2003,8 @@ public partial class MainView : UserControl
             return;
         }
 
-        // If another queue run is active, it already owns all queued items. Do not
-        // launch a second runner; the current one will continue to the next item.
-        if (_downloadRunCts is { } running && !running.IsCancellationRequested)
-            return;
-
+        // Re-enqueue a paused provider item before requesting a run. If another
+        // item is already downloading, that runner will pick this one up next.
         await _viewModel.EnqueueAudibleDownloadAsync(
             currentItem.AudiobookId, currentItem.DisplayTitle ?? "Audible audiobook");
         await _viewModel.RefreshDownloadQueueAsync();
