@@ -1423,6 +1423,37 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Mark a locally imported audiobook Finished after the player reports natural
+    /// end-of-file. Reset the resume point so replay starts from the beginning.
+    /// </summary>
+    public async Task MarkPlaybackCompletedAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+        if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath))
+            return;
+
+        if (book.ListeningStatus == "Finished" && book.PlaybackPositionMilliseconds == 0)
+            return;
+
+        try
+        {
+            var updated = book with
+            {
+                ListeningStatus = "Finished",
+                PlaybackPositionMilliseconds = 0
+            };
+            await _repository.UpsertAsync(updated, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            AudioImportStatus = "Playback finished, but listening progress could not be saved.";
+        }
+    }
+
     public long GetResumePositionMilliseconds(string audiobookId)
         => _allBooks.FirstOrDefault(x => x.Id == audiobookId)?.PlaybackPositionMilliseconds ?? 0;
 
