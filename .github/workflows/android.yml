@@ -762,7 +762,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 0d52a2fdd21db02a44704706418d2c1df1e651cb
+          ref: 870633012ad12e5e9e63e402bdad9a75e84e46c2
       - name: Install .NET
         uses: actions/setup-dotnet@v4
         with:
