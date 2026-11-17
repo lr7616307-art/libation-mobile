@@ -359,13 +359,15 @@
                           </StackPanel>
                         </Grid>
                       </Button>
-                      <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
+                      <StackPanel Grid.Column="2" Grid.RowSpan="2" Width="96" Spacing="4"
+                                  VerticalAlignment="Center" HorizontalAlignment="Center">
                         <Button Content="{Binding DownloadActionIcon}" FontSize="22" Padding="8,6"
-                                MinWidth="44" MinHeight="44"
+                                Width="48" Height="48" HorizontalAlignment="Center"
                                 ToolTip.Tip="{Binding DownloadActionLabel}"
                                 Click="DownloadAudibleBookClicked"/>
-                        <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" FontSize="8" LetterSpacing="0.3"
-                                   Foreground="#B9A5E8" TextAlignment="Center" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" Width="96"
+                                   FontSize="8" LetterSpacing="0.3" Foreground="#B9A5E8"
+                                   TextAlignment="Center" TextWrapping="NoWrap"/>
                       </StackPanel>
                     </Grid>
                   </Border>
@@ -430,11 +432,6 @@
                 <TextBlock Text="{Binding QueueSummaryLabel}" FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
                 <Button Content="{Binding DownloadQueueActionLabel}" HorizontalAlignment="Stretch"
                         Padding="14,11" Click="DownloadQueueActionClicked"/>
-                <StackPanel Spacing="5" IsVisible="{Binding HasActiveDownloadProgress}">
-                  <TextBlock Text="{Binding ActiveDownloadProgressTitle}" FontSize="13" FontWeight="SemiBold"/>
-                  <ProgressBar Minimum="0" Maximum="100" Value="{Binding ActiveDownloadProgressPercent}" Height="7"/>
-                  <TextBlock Text="{Binding ActiveDownloadProgressLabel}" FontSize="11" Opacity="0.72"/>
-                </StackPanel>
                 <TextBlock Text="No downloads yet. Start a download from an audiobook’s details page."
                            FontSize="12" Opacity="0.65" IsVisible="{Binding IsQueueEmpty}"/>
                 <ItemsControl ItemsSource="{Binding QueueItems}">
