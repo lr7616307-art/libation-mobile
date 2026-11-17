@@ -204,6 +204,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         if (playbackState == 4) // Player.STATE_ENDED
         {
+            ClearSleepTimer();
             StopPlayback();
             StopSelf();
             return;
@@ -509,11 +510,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void StopPlayer()
     {
-        if (_player is null) return;
-        try { _player.Stop(); } catch (Exception) { }
-        _player.Release();
-        _player.Dispose();
-        _player = null;
+        if (_player is not null)
+        {
+            try { _player.Stop(); } catch (Exception) { }
+            try { _player.Release(); } catch (Exception) { }
+            _player.Dispose();
+            _player = null;
+        }
         _currentFilePath = null;
     }
 
@@ -522,6 +525,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         StopPlayer();
         if (clearRecovery) PlaybackRecoveryStore.Clear(this);
         StopForeground(StopForegroundFlags.Remove);
+        try
+        {
+            var manager = (NotificationManager?)GetSystemService(NotificationService);
+            manager?.Cancel(NotificationId);
+        }
+        catch (Exception) { /* Notification cleanup must not prevent service shutdown. */ }
     }
 
     public override IBinder? OnBind(Intent? intent) => null;
