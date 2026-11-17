@@ -54,6 +54,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private string _title = "Audiobook";
     private string? _currentFilePath;
     private bool _isWidevinePlayback;
+    private bool _completionPublished;
     private string? _widevineAsin;
     private string? _coverImagePath;
     private Bitmap? _coverBitmap;
@@ -67,6 +68,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static event Action? PlaybackStateChanged;
+    public static event Action<string, long>? LocalAudioPlaybackCompleted;
     public static event Action<string>? WidevinePlaybackReady;
     public static event Action<string, string>? WidevinePlaybackFailed;
     public static bool HasActivePlayer => Current?._player is not null;
@@ -255,6 +257,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _widevineAsin = null;
         _currentFilePath = path;
         _isWidevinePlayback = false;
+        _completionPublished = false;
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
 
@@ -397,8 +400,19 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
         if (playbackState == 4) // Player.STATE_ENDED
         {
+            // Only a natural end of a clear local file marks the catalogue title
+            // Finished. Explicit Stop, decoder errors and protected Audible
+            // playback must never be interpreted as successful completion.
+            if (!_isWidevinePlayback && !_completionPublished &&
+                !string.IsNullOrWhiteSpace(_currentFilePath))
+            {
+                _completionPublished = true;
+                PublishLocalAudioPlaybackCompleted(_currentFilePath, ReadDuration());
+            }
+
             StopPlayback();
             StopSelf();
+            PublishPlaybackState();
             return;
         }
 
@@ -709,6 +723,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         try { PlaybackStateChanged?.Invoke(); }
         catch (Exception) { /* UI observers must never interrupt playback or notification updates. */ }
+    }
+
+    private static void PublishLocalAudioPlaybackCompleted(string filePath, long durationMilliseconds)
+    {
+        try { LocalAudioPlaybackCompleted?.Invoke(filePath, Math.Max(0, durationMilliseconds)); }
+        catch (Exception) { /* Catalogue observers must never interrupt player teardown. */ }
     }
 
     private static void PublishWidevinePlaybackReady(string asin)
