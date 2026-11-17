@@ -21,6 +21,8 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private bool _hasObservedActivePlayback;
+    private bool _isHandlingPlaybackCompletion;
     private bool? _lastObservedIsPlaying;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
@@ -82,6 +84,7 @@ public partial class MainView : UserControl
             return;
 
         _playingAudiobookId = currentBook.Id;
+        _hasObservedActivePlayback = true;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
         SetPlayerChapterPositions(currentBook);
@@ -149,6 +152,8 @@ public partial class MainView : UserControl
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
             SetPlayerChapterPositions(book);
             _playingAudiobookId = book.Id;
+            _hasObservedActivePlayback = false;
+            await _viewModel.MarkPlaybackStartedAsync(book.Id);
             _viewModel.SetNowPlayingBook(book.Id);
             _lastObservedIsPlaying = null;
             _playbackProgressTimer.Start();
@@ -426,8 +431,8 @@ public partial class MainView : UserControl
     private void UpdatePlaybackProgressUi()
     {
         var isPlaying = _localAudioPlayer?.IsPlaying == true;
-        if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = isPlaying ? "⏸" : "▶";
-        if (PlayPauseButton is not null) PlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+        if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = isPlaying ? "Ⅱ" : "▶";
+        if (PlayPauseGlyph is not null) PlayPauseGlyph.Text = isPlaying ? "Ⅱ" : "▶";
         if (_lastObservedIsPlaying != isPlaying)
         {
             _lastObservedIsPlaying = isPlaying;
@@ -441,9 +446,6 @@ public partial class MainView : UserControl
 
         var position = Math.Max(0, _localAudioPlayer?.PositionMilliseconds ?? 0);
         var duration = Math.Max(0, _localAudioPlayer?.DurationMilliseconds ?? 0);
-        var chapterRange = GetCurrentChapterRange(position, duration);
-        var chapterElapsed = Math.Max(0, position - chapterRange.Start);
-        var chapterDuration = Math.Max(0, chapterRange.End - chapterRange.Start);
         UpdateCurrentChapterUi(position, duration);
         if (PlaybackSpeedButton is not null)
         {
@@ -453,13 +455,13 @@ public partial class MainView : UserControl
         _isUpdatingPlaybackSlider = true;
         try
         {
-            PlaybackSeekSlider.Maximum = Math.Max(1, chapterDuration);
-            PlaybackSeekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
+            PlaybackSeekSlider.Maximum = Math.Max(1, duration);
+            PlaybackSeekSlider.Value = duration > 0 ? Math.Clamp(position, 0, duration) : 0;
             PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
-            PlaybackPositionLabel.Text = FormatPlaybackTime(chapterElapsed);
-            PlaybackDurationLabel.Text = chapterDuration > 0 ? FormatPlaybackTime(chapterDuration) : "--:--";
-            var remaining = Math.Max(0, chapterDuration - chapterElapsed);
-            PlaybackRemainingLabel.Text = chapterDuration > 0 ? $"-{FormatPlaybackTime(remaining)}" : "--:--";
+            PlaybackPositionLabel.Text = FormatPlaybackTime(position);
+            PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
+            var remaining = Math.Max(0, duration - position);
+            PlaybackRemainingLabel.Text = duration > 0 ? $"-{FormatPlaybackTime(remaining)}" : "--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
     }
@@ -537,9 +539,8 @@ public partial class MainView : UserControl
             return;
 
         var duration = _localAudioPlayer.DurationMilliseconds;
-        var chapterRange = GetCurrentChapterRange(_localAudioPlayer.PositionMilliseconds, duration);
-        var target = Math.Max(0, chapterRange.Start + (long)PlaybackSeekSlider.Value);
-        if (duration > 0) target = Math.Min(target, duration);
+        if (duration <= 0) return;
+        var target = Math.Clamp((long)PlaybackSeekSlider.Value, 0, duration);
         _localAudioPlayer.Seek(target);
         UpdateCurrentChapterUi(target, duration);
         UpdatePlaybackProgressUi();
@@ -629,7 +630,55 @@ public partial class MainView : UserControl
         }
     }
 
-    private void PlaybackProgressTimerTick(object? sender, EventArgs e) => UpdatePlaybackProgressUi();
+    private async void PlaybackProgressTimerTick(object? sender, EventArgs e)
+    {
+        await CheckPlaybackCompletionAsync();
+        if (!_isHandlingPlaybackCompletion)
+            UpdatePlaybackProgressUi();
+    }
+
+    private async Task CheckPlaybackCompletionAsync()
+    {
+        if (_isHandlingPlaybackCompletion || !_hasObservedActivePlayback
+            || _localAudioPlayer is null || _playingAudiobookId is null)
+            return;
+
+        var currentPath = _localAudioPlayer.CurrentFilePath;
+        if (!string.IsNullOrWhiteSpace(currentPath))
+            return;
+
+        await HandlePlaybackCompletionAsync();
+    }
+
+    private async Task HandlePlaybackCompletionAsync()
+    {
+        if (_isHandlingPlaybackCompletion || _playingAudiobookId is not { Length: > 0 } audiobookId)
+            return;
+
+        _isHandlingPlaybackCompletion = true;
+        var title = _viewModel.LocalAudioBooks.FirstOrDefault(book => book.Id == audiobookId)?.Title
+            ?? _viewModel.NowPlayingBook?.Title ?? "Audiobook";
+        _playbackProgressTimer.Stop();
+        _playbackCheckpointTimer.Stop();
+        _sleepTimer.Stop();
+        _sleepTimerEndsAt = null;
+        _sleepAtPositionMilliseconds = null;
+        _sleepTimerSelection = -1;
+        if (SleepTimerButton is not null) SleepTimerButton.Content = "Timer";
+        try
+        {
+            await _viewModel.MarkAudiobookFinishedAsync(audiobookId);
+            _viewModel.ReportAudioStatus("Finished: " + title);
+        }
+        finally
+        {
+            _playingAudiobookId = null;
+            _hasObservedActivePlayback = false;
+            _lastObservedIsPlaying = null;
+            _viewModel.ClearNowPlayingBook();
+            _isHandlingPlaybackCompletion = false;
+        }
+    }
 
     private async void PlaybackCheckpointTimerTick(object? sender, EventArgs e)
     {
