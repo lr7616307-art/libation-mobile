@@ -14,15 +14,16 @@ public sealed class AudiblePlayableActionTests
         "Not started");
 
     [Fact]
-    public void UncachedAudibleTitle_OffersAuthorizedOfflinePlaybackDownload()
+    public void UncachedAudibleTitle_OffersProtectedDownloadActionAndCompactIcon()
     {
         var book = CreateBook();
 
-        Assert.Equal("⇩  Download & play offline", book.DownloadActionLabel);
+        Assert.Equal("⇩", book.DownloadActionIcon);
+        Assert.Equal("Download protected Audible audio", book.DownloadActionLabel);
     }
 
     [Fact]
-    public void PreviouslySavedAaxBackup_DoesNotBlockAuthorizedOfflinePlaybackAttempt()
+    public void PreviouslySavedAaxBackup_IsShownAsSavedAndNotPlayable()
     {
         var book = CreateBook() with
         {
@@ -31,18 +32,20 @@ public sealed class AudiblePlayableActionTests
             ProtectedAudioProtection = "AudibleAdrm"
         };
 
-        Assert.Equal("⇩  Download & play offline", book.DownloadActionLabel);
+        Assert.Equal("✓", book.DownloadActionIcon);
+        Assert.Equal("Protected backup already saved", book.DownloadActionLabel);
         Assert.Contains("not playable in a normal audio app", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void VerifiedWidevineOfflineTitle_OffersInAppPlayback()
+    public void ExistingWidevineOfflineCache_IsProtectedButPlaybackIsDisabled()
     {
         var book = CreateBook() with { IsWidevineOfflineAvailable = true };
 
-        Assert.Equal("▶  Play offline", book.DownloadActionLabel);
-        Assert.Contains("authorized playback", book.AudibleAvailabilityLabel,
+        Assert.Equal("✓", book.DownloadActionIcon);
+        Assert.Equal("Protected offline copy cached; playback disabled", book.DownloadActionLabel);
+        Assert.Contains("playback is currently disabled", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
     }
 
