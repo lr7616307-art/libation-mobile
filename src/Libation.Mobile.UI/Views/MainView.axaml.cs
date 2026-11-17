@@ -657,29 +657,24 @@ public partial class MainView : UserControl
             speedButton.Content = $"{speed:0.##}x";
         }
 
-        var chapterRange = GetCurrentChapterRange(position, duration);
-        var chapterElapsed = Math.Max(0, position - chapterRange.Start);
-        var chapterDuration = Math.Max(0, chapterRange.End - chapterRange.Start);
-        var chapterRemaining = Math.Max(0, chapterDuration - chapterElapsed);
         UpdateCurrentChapterUi(position, duration);
 
-        // Do not let one missing generated control prevent the other player
-        // fields (especially chapter information) from being refreshed.
+        // The main timeline represents the entire audiobook, not the current chapter.
+        // Keep chapter navigation and chapter title separate from whole-book seeking.
         if (seekSlider is null || positionLabel is null || durationLabel is null || remainingLabel is null)
             return;
 
         _isUpdatingPlaybackSlider = true;
         try
         {
-            seekSlider.Maximum = Math.Max(1, chapterDuration);
-            seekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
-            seekSlider.IsEnabled = chapterDuration > 0 && _playingAudiobookId is not null;
+            seekSlider.Maximum = Math.Max(1, duration);
+            seekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
+            seekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
 
-            // The time row is scoped to the current chapter: elapsed / duration / remaining.
-            positionLabel.Text = FormatPlaybackTime(chapterElapsed);
-            durationLabel.Text = chapterDuration > 0 ? FormatPlaybackTime(chapterDuration) : "--:--";
-            remainingLabel.Text = chapterDuration > 0
-                ? "−" + FormatPlaybackTime(chapterRemaining)
+            positionLabel.Text = FormatPlaybackTime(position);
+            durationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
+            remainingLabel.Text = duration > 0
+                ? "−" + FormatPlaybackTime(Math.Max(0, duration - position))
                 : "−--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
@@ -962,8 +957,8 @@ public partial class MainView : UserControl
             return;
 
         var duration = _localAudioPlayer.DurationMilliseconds;
-        var chapterRange = GetCurrentChapterRange(_localAudioPlayer.PositionMilliseconds, duration);
-        var target = Math.Max(0, chapterRange.Start + (long)seekSlider.Value);
+        // Slider values are absolute audiobook positions (not chapter offsets).
+        var target = Math.Max(0, (long)seekSlider.Value);
         if (duration > 0) target = Math.Min(target, duration);
         _localAudioPlayer.Seek(target);
         UpdateCurrentChapterUi(target, duration);
