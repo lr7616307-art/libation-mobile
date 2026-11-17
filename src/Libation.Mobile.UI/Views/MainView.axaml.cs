@@ -639,11 +639,21 @@ public partial class MainView : UserControl
 
     private async Task CheckPlaybackCompletionAsync()
     {
-        if (_isHandlingPlaybackCompletion || !_hasObservedActivePlayback
+        if (_isHandlingPlaybackCompletion
             || _localAudioPlayer is null || _playingAudiobookId is null)
             return;
 
         var currentPath = _localAudioPlayer.CurrentFilePath;
+        if (!_hasObservedActivePlayback)
+        {
+            var expectedPath = _viewModel.LocalAudioBooks
+                .FirstOrDefault(book => book.Id == _playingAudiobookId)?.AudioFilePath;
+            if (!string.IsNullOrWhiteSpace(currentPath)
+                && string.Equals(currentPath, expectedPath, StringComparison.Ordinal))
+                _hasObservedActivePlayback = true;
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(currentPath))
             return;
 
