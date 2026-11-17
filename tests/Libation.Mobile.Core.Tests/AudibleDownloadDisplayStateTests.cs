@@ -24,7 +24,8 @@ public sealed class AudibleDownloadDisplayStateTests
         Assert.Equal("PROTECTED BACKUP ONLY", book.AudibleAvailabilityShortLabel);
         Assert.Contains("not playable in a normal audio app", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("⇩  Download & play offline", book.DownloadActionLabel);
+        Assert.Equal("✓", book.DownloadActionIcon);
+        Assert.Equal("Protected backup already saved", book.DownloadActionLabel);
         Assert.DoesNotContain("Widevine", book.AudibleAvailabilityLabel, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -42,8 +43,8 @@ public sealed class AudibleDownloadDisplayStateTests
             IsWidevineOfflineAvailable = true
         };
 
-        Assert.Equal("OFFLINE PLAYBACK READY", book.AudibleAvailabilityShortLabel);
-        Assert.Contains("authorized playback", book.AudibleAvailabilityLabel,
+        Assert.Equal("PROTECTED COPY CACHED", book.AudibleAvailabilityShortLabel);
+        Assert.Contains("playback is currently disabled", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
     }
 
@@ -62,6 +63,7 @@ public sealed class AudibleDownloadDisplayStateTests
         };
 
         Assert.Equal("READY TO PLAY", book.AudibleAvailabilityShortLabel);
-        Assert.Equal("▶  Play", book.DownloadActionLabel);
+        Assert.Equal("▶", book.DownloadActionIcon);
+        Assert.Equal("Play local audio", book.DownloadActionLabel);
     }
 }
