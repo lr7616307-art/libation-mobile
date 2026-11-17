@@ -662,6 +662,54 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task MarkPlaybackCompletedAsync_MarksBookFinishedAndResetsResumePosition()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("local-complete", "Completed audiobook", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "completed-audio.mp3",
+                ListeningStatus = "In progress",
+                PlaybackPositionMilliseconds = 125_000
+            }
+        ]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+
+        Assert.Equal(1, vm.InProgressCount);
+        Assert.Equal(0, vm.FinishedCount);
+
+        await vm.MarkPlaybackCompletedAsync("local-complete");
+
+        var saved = Assert.Single(await repository.GetBooksAsync());
+        Assert.Equal("Finished", saved.ListeningStatus);
+        Assert.Equal(0, saved.PlaybackPositionMilliseconds);
+        Assert.Equal(0, vm.InProgressCount);
+        Assert.Equal(1, vm.FinishedCount);
+        Assert.Equal(0, vm.GetResumePositionMilliseconds("local-complete"));
+        vm.SetListeningStatusFilter("Finished");
+        Assert.Single(vm.FilteredLocalAudioBooks);
+    }
+
+    [Fact]
+    public async Task MarkPlaybackCompletedAsync_DoesNotMarkProviderOnlyEntryFinished()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("provider:audible-1", "Audible title", "Author", "", "", "Audible")
+        ]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+
+        await vm.MarkPlaybackCompletedAsync("provider:audible-1");
+
+        Assert.Equal("Audible", Assert.Single(await repository.GetBooksAsync()).Status);
+        Assert.Equal(0, vm.FinishedCount);
+    }
+
+    [Fact]
     public async Task Search_FiltersByTitleAuthorAndNarrator()
     {
         using var directory = new TemporaryDirectory();
