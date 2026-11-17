@@ -55,6 +55,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private string? _currentFilePath;
     private bool _isWidevinePlayback;
     private bool _completionPublished;
+    private int _lastStartId;
     private bool _notificationDismissed = true;
     private string? _widevineAsin;
     private string? _coverImagePath;
@@ -159,6 +160,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
+        _lastStartId = startId;
         var requestedAction = intent?.Action;
         var requestedAsin = intent?.GetStringExtra(ExtraWidevineAsin);
         try
@@ -418,7 +420,9 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             }
 
             StopPlayback();
-            StopSelf();
+            // Do not let a delayed stop request for this completed start ID
+            // terminate a newer replay command delivered to the same service.
+            StopSelf(_lastStartId);
             PublishPlaybackState();
             return;
         }
@@ -446,7 +450,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         // releasing ExoPlayer so the user can retry after reopening the app.
         SavePlaybackSnapshot();
         StopPlayback(clearRecovery: false);
-        StopSelf();
+        StopSelf(_lastStartId);
         PublishPlaybackState();
     }
 
