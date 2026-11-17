@@ -85,7 +85,7 @@ jobs:
   # The same repository Actions secrets established by the original signing
   # setup are used; no key is generated or committed by this workflow.
   build_release:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/vorath-player-completion-ui'))
+    if: >-\n      github.event_name == 'workflow_dispatch' ||\n      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/vorath-player-completion-ui')) ||\n      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     needs: test
     runs-on: ubuntu-latest
     env:
