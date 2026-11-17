@@ -515,7 +515,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsEditing => _editingBookId is not null;
     public string EditorTitle => IsEditing ? "Edit audiobook" : "Add an audiobook";
     public string SaveButtonLabel => IsEditing ? "Save changes" : "Save to local catalogue";
-    public string CatalogueSummaryLabel => $"{FilteredLocalAudioBooks.Count} Audiobooks";
+    public string CatalogueSummaryLabel => $"{FilteredLocalAudioBooks.Count} {(FilteredLocalAudioBooks.Count == 1 ? "Audiobook" : "Audiobooks")}";
 
     private IReadOnlyList<Audiobook> _allBooks = [];
     public bool IsLoading { get => _isLoading; private set { if (_isLoading == value) return; _isLoading = value; OnPropertyChanged(); } }
