@@ -16,6 +16,10 @@ public sealed class AudibleWidevineManifestClientTests
         {
             Assert.Equal(HttpMethod.Get, request.Method);
             Assert.Equal("https", request.RequestUri?.Scheme);
+            Assert.Equal(
+                AudibleAudioDownloadSource.AndroidDownloadUserAgent,
+                request.Headers.UserAgent.ToString());
+            Assert.True(request.Headers.CacheControl?.NoCache);
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(xml, Encoding.UTF8, "application/dash+xml")
@@ -28,6 +32,28 @@ public sealed class AudibleWidevineManifestClientTests
 
         Assert.Equal("audio/mp4", result.MimeType);
         Assert.Equal(Convert.FromBase64String(GetPsshBase64()), result.InitializationData);
+    }
+
+    [Fact]
+    public async Task FetchAsync_ReportsRequestResponseBodyAndParseStagesSeparately()
+    {
+        var stages = new RecordingProgress<AudibleOfflineDownloadStage>();
+        var xml = CreateManifest();
+        using var http = new HttpClient(new StubHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(xml, Encoding.UTF8, "application/dash+xml")
+            })));
+        var client = new AudibleWidevineManifestClient(http);
+
+        await client.FetchAsync(
+            new Uri("https://media.example.invalid/book/manifest.mpd"),
+            CancellationToken.None,
+            stages);
+
+        Assert.Equal(
+            new[] { "manifest-http-request", "manifest-http-response", "manifest-response-body", "manifest-parse" },
+            stages.Values.Select(stage => stage.Stage));
     }
 
     [Fact]
@@ -117,6 +143,12 @@ public sealed class AudibleWidevineManifestClientTests
         BinaryPrimitives.WriteUInt32BigEndian(pssh.AsSpan(28, 4), (uint)data.Length);
         data.CopyTo(pssh.AsSpan(32));
         return Convert.ToBase64String(pssh);
+    }
+
+    private sealed class RecordingProgress<T> : IProgress<T>
+    {
+        public List<T> Values { get; } = [];
+        public void Report(T value) => Values.Add(value);
     }
 
     private sealed class StubHandler(

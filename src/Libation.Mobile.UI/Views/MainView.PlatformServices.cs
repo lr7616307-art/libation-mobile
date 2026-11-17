@@ -4,22 +4,11 @@ using Libation.Mobile.UI.ViewModels;
 
 namespace Libation.Mobile.UI.Views;
 
-public sealed record WidevineOfflineDownloadProgress(
-    long BytesDownloaded,
-    long? ContentLength,
-    double? Percentage);
-
-public interface IAudibleWidevinePlaybackCoordinator
+public interface IAudibleWidevinePlaybackCoordinator : IAudibleOfflineDownloadBackend
 {
-    Task<bool> HasOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task<AudibleWidevineRenewalProbeResult> ProbeOfflineLicenseRenewalAsync(string asin, CancellationToken cancellationToken = default);
-    Task<bool> HasOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
     Task AcquireOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task DownloadOfflineMediaAsync(string asin, CancellationToken cancellationToken = default);
-    Task DownloadOfflineMediaWithProgressAsync(
-        string asin,
-        IProgress<WidevineOfflineDownloadProgress>? progress,
-        CancellationToken cancellationToken = default);
     Task PlayAsync(string asin, string title, long startPositionMilliseconds = 0, bool autoPlay = true, CancellationToken cancellationToken = default);
     Task RemoveOfflineLicenseAsync(string asin, CancellationToken cancellationToken = default);
     Task RemoveAllOfflineLicensesAsync(CancellationToken cancellationToken = default);
@@ -27,6 +16,22 @@ public interface IAudibleWidevinePlaybackCoordinator
 
 public partial class MainView
 {
+    /// <summary>Starts the Android foreground notification for the regular ADRM download queue.</summary>
+    public static Action<string>? PlatformDownloadNotificationStartAction { get; set; }
+
+    /// <summary>Updates the active download notification with bytes, speed and ETA.</summary>
+    public static Action<string, string, int?, bool>? PlatformDownloadNotificationUpdateAction { get; set; }
+
+    /// <summary>Stops the foreground download notification after the queue finishes.</summary>
+    public static Action? PlatformDownloadNotificationFinishAction { get; set; }
+
+    /// <summary>Keeps a paused queue visible in notifications with a Resume action.</summary>
+    public static Action? PlatformDownloadNotificationPausedAction { get; set; }
+
+    /// <summary>Notification action callbacks routed to the same ADRM queue worker as the UI.</summary>
+    public static Action? PlatformDownloadQueuePauseAction { get; set; }
+    public static Action? PlatformDownloadQueueResumeAction { get; set; }
+
     /// <summary>Creates an authorized Widevine offline-licence/playback coordinator on demand.</summary>
     public static Func<CancellationToken, Task<IAudibleWidevinePlaybackCoordinator?>>? PlatformWidevinePlaybackCoordinatorFactory { get; set; }
 
@@ -68,6 +73,9 @@ public partial class MainView
 
     /// <summary>Creates the platform audio player before the shared view is shown.</summary>
     public static Func<ILocalAudioPlayer>? PlatformLocalAudioPlayerFactory { get; set; }
+
+    /// <summary>Creates a converter for already-unprotected local audio. Protected AAX/AAXC is rejected.</summary>
+    public static Func<IUnprotectedAudioConverter>? PlatformUnprotectedAudioConverterFactory { get; set; }
 
     public static MainView CreatePlatformView()
     {

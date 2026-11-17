@@ -45,7 +45,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
 
         try
         {
-            using var drmSession = new AndroidWidevineOfflineSession();
+            using var drmSession = await AndroidWidevineOfflineSession.CreateAsync(cancellationToken).ConfigureAwait(false);
             var state = drmSession.GetOfflineLicenseState(keySetId);
             return state switch
             {
@@ -94,7 +94,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                 ?? throw new InvalidOperationException(
                     "The saved Audible content reference is missing; a renewal challenge cannot be built.");
 
-            using var drmSession = new AndroidWidevineOfflineSession();
+            using var drmSession = await AndroidWidevineOfflineSession.CreateAsync(cancellationToken).ConfigureAwait(false);
             var state = drmSession.GetOfflineLicenseState(keySetId);
             if (state != OfflineLicenseStateUsable)
                 throw new InvalidOperationException(
@@ -153,7 +153,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            using var drmSession = new AndroidWidevineOfflineSession();
+            using var drmSession = await AndroidWidevineOfflineSession.CreateAsync(cancellationToken).ConfigureAwait(false);
             if (drmSession.GetOfflineLicenseState(pendingKeySetId) != OfflineLicenseStateUsable)
                 return;
 
@@ -212,23 +212,36 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     /// confirmed expiry is retained until a provider renewal/release flow exists.
     /// An unknown DRM state fails closed instead of overwriting it.
     /// </summary>
+    public Task AcquireOfflineLicenseAsync(
+        string asin,
+        CancellationToken cancellationToken = default)
+        => AcquireOfflineLicenseAsync(asin, null, cancellationToken);
+
     public async Task AcquireOfflineLicenseAsync(
         string asin,
+        IProgress<AudibleOfflineDownloadStage>? stageProgress,
         CancellationToken cancellationToken = default)
     {
         if (await RemoveInactiveLicenseBeforeReplacementAsync(asin, cancellationToken)
                 .ConfigureAwait(false))
+        {
+            ReportStage(stageProgress, "licence-ready", "A valid Audible offline licence is already saved.");
             return;
+        }
 
+        ReportStage(stageProgress, "content-grant", "Requesting Audible's content-download authorization…");
         var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
-        var contentVersionKey = AudibleWidevineCacheIdentity.CreateContentVersionKey(
-            content.Acr, content.FileVersion);
+
+        ReportStage(stageProgress, "saving-content-reference", "Securing Audible's content reference…");
         await keySetStore.SaveProviderLicenseReferenceAsync(
             accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
-        var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
-            .ConfigureAwait(false);
 
-        using var drmSession = new AndroidWidevineOfflineSession();
+        ReportStage(stageProgress, "fetching-manifest", "Requesting the Audible audio manifest…");
+        var manifest = await manifestClient.FetchAsync(
+            content.ManifestUri, cancellationToken, stageProgress).ConfigureAwait(false);
+
+        using var drmSession = await AndroidWidevineOfflineSession.CreateAsync(
+            cancellationToken, stageProgress).ConfigureAwait(false);
         byte[]? challenge = null;
         byte[]? response = null;
         byte[]? keySetId = null;
@@ -236,18 +249,24 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
 
         try
         {
+            ReportStage(stageProgress, "device-challenge", "Creating the Android Widevine offline request…");
             challenge = drmSession.CreateOfflineKeyRequest(
                 manifest.InitializationData, manifest.MimeType);
 
+            ReportStage(stageProgress, "audible-license", "Sending the protected offline request to Audible…");
             response = await source.RequestWidevineLicenseBytesAsync(
                 asin, challenge, cancellationToken).ConfigureAwait(false);
 
+            ReportStage(stageProgress, "install-license", "Installing Audible's licence in Android's DRM store…");
             keySetId = drmSession.ProvideOfflineLicenseResponse(response);
+
+            ReportStage(stageProgress, "persist-license", "Securing the offline licence on this device…");
             await keySetStore.SaveAsync(accountId, asin, keySetId, cancellationToken)
                 .ConfigureAwait(false);
             persisted = true;
             await keySetStore.SaveProviderLicenseReferenceAsync(
                 accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
+            ReportStage(stageProgress, "licence-ready", "Audible's offline licence is installed and saved.");
         }
         catch
         {
@@ -269,6 +288,15 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
         }
     }
 
+    private static void ReportStage(
+        IProgress<AudibleOfflineDownloadStage>? progress,
+        string stage,
+        string message)
+    {
+        try { progress?.Report(new AudibleOfflineDownloadStage(stage, message)); }
+        catch (Exception) { /* UI/notification reporting must not break DRM handling. */ }
+    }
+
     private async Task<bool> RemoveInactiveLicenseBeforeReplacementAsync(
         string asin,
         CancellationToken cancellationToken)
@@ -280,7 +308,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
 
         try
         {
-            using var drmSession = new AndroidWidevineOfflineSession();
+            using var drmSession = await AndroidWidevineOfflineSession.CreateAsync(cancellationToken).ConfigureAwait(false);
             var state = drmSession.GetOfflineLicenseState(existingKeySetId);
             if (state == OfflineLicenseStateUsable)
             {
@@ -319,9 +347,12 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     /// duration fields. If the device does not expose duration metadata, the
     /// normal MediaDrm state remains authoritative.
     /// </summary>
-    private static void EnsureOfflineLicenseNotExpired(byte[] keySetId)
+    private static async Task EnsureOfflineLicenseNotExpiredAsync(
+        byte[] keySetId,
+        CancellationToken cancellationToken)
     {
-        using var drmSession = new AndroidWidevineOfflineSession();
+        using var drmSession = await AndroidWidevineOfflineSession.CreateAsync(
+            cancellationToken).ConfigureAwait(false);
         var state = drmSession.GetOfflineLicenseState(keySetId);
         if (state == OfflineLicenseStateUnknown)
             throw new InvalidOperationException(
@@ -348,45 +379,56 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
     public Task DownloadOfflineMediaAsync(
         string asin,
         CancellationToken cancellationToken = default)
-        => DownloadOfflineMediaWithProgressAsync(asin, null, cancellationToken);
+        => DownloadOfflineMediaWithProgressAsync(asin, null, null, cancellationToken);
 
     public async Task DownloadOfflineMediaWithProgressAsync(
         string asin,
         IProgress<WidevineOfflineDownloadProgress>? progress,
+        IProgress<AudibleOfflineDownloadStage>? stageProgress,
         CancellationToken cancellationToken = default)
     {
+        ReportStage(stageProgress, "checking-offline-license", "Checking the saved Audible offline licence…");
         if (!await HasOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false))
-            await AcquireOfflineLicenseAsync(asin, cancellationToken).ConfigureAwait(false);
+            await AcquireOfflineLicenseAsync(asin, stageProgress, cancellationToken).ConfigureAwait(false);
 
+        ReportStage(stageProgress, "checking-offline-keyset", "Verifying the Android offline licence…");
         var currentKeySetId = await keySetStore.LoadAsync(accountId, asin, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException("The Audible offline key set was not saved.");
         try
         {
-            EnsureOfflineLicenseNotExpired(currentKeySetId);
+            await EnsureOfflineLicenseNotExpiredAsync(currentKeySetId, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             CryptographicOperations.ZeroMemory(currentKeySetId);
         }
 
+        ReportStage(stageProgress, "checking-existing-media", "Checking for previously downloaded audio…");
         if (await HasOfflineMediaAsync(asin, cancellationToken).ConfigureAwait(false))
             return;
 
+        ReportStage(stageProgress, "refreshing-content-grant", "Refreshing Audible's authorized audio reference…");
         var content = await source.ResolveWidevineAsync(asin, cancellationToken).ConfigureAwait(false);
         var contentVersionKey = AudibleWidevineCacheIdentity.CreateContentVersionKey(
             content.Acr, content.FileVersion);
+
+        ReportStage(stageProgress, "saving-content-reference", "Securing Audible's content reference…");
         await keySetStore.SaveProviderLicenseReferenceAsync(
             accountId, asin, content.Acr, content.FileVersion, cancellationToken).ConfigureAwait(false);
-        var manifest = await manifestClient.FetchAsync(content.ManifestUri, cancellationToken)
-            .ConfigureAwait(false);
 
+        ReportStage(stageProgress, "fetching-manifest", "Requesting the Audible audio manifest…");
+        var manifest = await manifestClient.FetchAsync(
+            content.ManifestUri, cancellationToken, stageProgress).ConfigureAwait(false);
+
+        ReportStage(stageProgress, "saving-manifest-reference", "Saving the selected audio streams…");
         await keySetStore.SaveDashManifestAsync(
             accountId, asin, content.ManifestUri, manifest.AudioStreamKeys, cancellationToken)
             .ConfigureAwait(false);
 
         try
         {
+            ReportStage(stageProgress, "transferring-segments", "Downloading encrypted audiobook audio…");
             var offlineStore = new AndroidWidevineDashOfflineStore(global::Android.App.Application.Context);
             await offlineStore.DownloadAsync(
                 accountId,
@@ -399,11 +441,13 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
                 .ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
+            ReportStage(stageProgress, "verifying-segments", "Verifying downloaded audio segments…");
             if (!await offlineStore.HasCachedResourcesAsync(
                     accountId, asin, contentVersionKey, cancellationToken).ConfigureAwait(false))
                 throw new InvalidDataException(
                     "The Audible DASH download returned without every selected initialization, index and media byte range being cached. Retry the download.");
 
+            ReportStage(stageProgress, "saving-download-completion", "Saving the verified offline download…");
             await keySetStore.MarkDashDownloadCompleteAsync(accountId, asin, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -439,7 +483,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
 
         try
         {
-            EnsureOfflineLicenseNotExpired(keySetId);
+            await EnsureOfflineLicenseNotExpiredAsync(keySetId, cancellationToken).ConfigureAwait(false);
 
             var mediaReference = await keySetStore.LoadDashManifestAsync(accountId, asin, cancellationToken)
                 .ConfigureAwait(false)
@@ -506,7 +550,7 @@ public sealed class AndroidWidevineOfflinePlaybackCoordinator : IAudibleWidevine
             {
                 try
                 {
-                    using var drmSession = new AndroidWidevineOfflineSession();
+                    using var drmSession = await AndroidWidevineOfflineSession.CreateAsync(cancellationToken).ConfigureAwait(false);
                     drmSession.RemoveOfflineLicense(keySetId);
                 }
                 catch (Java.Lang.IllegalArgumentException)

@@ -42,6 +42,7 @@ public interface IProtectedAudioDownloadCompletionHandler
 public sealed record AuthorizedAudioDownload(Uri DownloadUri, string DestinationPath)
 {
     public AudioProtectionDescriptor Protection { get; init; } = AudioProtectionDescriptor.Unprotected;
+    public IReadOnlyDictionary<string, string>? RequestHeaders { get; init; }
 }
 
 public sealed record DownloadQueueProgress(
@@ -82,13 +83,11 @@ public sealed class DownloadQueueWorker
     {
         var items = await _queue.GetItemsAsync(cancellationToken);
         var recovered = 0;
-        foreach (var item in items.Where(x =>
-            x.Status == DownloadStatus.Downloading &&
-            !x.AudiobookId.StartsWith("provider:", StringComparison.Ordinal)))
+        foreach (var item in items.Where(x => x.Status == DownloadStatus.Downloading))
         {
-            // Audible Widevine downloads belong to Android's foreground service.
-            // Requeueing them here would send them through the ordinary HTTP worker
-            // and could discard the provider-specific recovery path.
+            // Provider IDs are routed through their own authorized source by
+            // RoutedAudioDownloadSource. Requeueing them here preserves the same
+            // restart behaviour as ordinary HTTPS downloads.
             await _queue.UpdateStatusAsync(
                 item.AudiobookId, DownloadStatus.Queued, cancellationToken: cancellationToken);
             recovered++;
@@ -104,8 +103,7 @@ public sealed class DownloadQueueWorker
         try
         {
             var item = (await _queue.GetItemsAsync(cancellationToken))
-                .Where(x => x.Status == DownloadStatus.Queued &&
-                    !x.AudiobookId.StartsWith("provider:", StringComparison.Ordinal))
+                .Where(x => x.Status == DownloadStatus.Queued)
                 .OrderBy(x => x.AddedAtUtc)
                 .FirstOrDefault();
 
@@ -115,21 +113,27 @@ public sealed class DownloadQueueWorker
             await _queue.UpdateStatusAsync(
                 item.AudiobookId, DownloadStatus.Downloading,
                 cancellationToken: cancellationToken);
+            // Publish the state transition immediately, before provider URL
+            // resolution or the first network read. The UI can show Pause now.
+            progress?.Report(new DownloadQueueProgress(
+                item.AudiobookId, item.BytesReceived, item.TotalBytes, item.ProgressPercentage));
 
             AuthorizedAudioDownload? target = null;
+            QueueProgressReporter? transferProgress = null;
             try
             {
                 target = await _source.ResolveAsync(item, cancellationToken);
                 if (target is null)
                     throw new InvalidOperationException("The audio provider returned no download target.");
 
+                transferProgress = new QueueProgressReporter(_queue, item.AudiobookId, progress);
                 var result = await _downloader.DownloadAsync(
                     target.DownloadUri,
                     target.DestinationPath,
-                    new Progress<AudioDownloadProgress>(value =>
-                        progress?.Report(new DownloadQueueProgress(
-                            item.AudiobookId, value.BytesReceived, value.TotalBytes, value.Percentage))),
-                    cancellationToken);
+                    transferProgress,
+                    cancellationToken,
+                    target.RequestHeaders);
+                await transferProgress.FlushAsync();
 
                 if (target.Protection.RequiresProtectedMediaPipeline)
                 {
@@ -156,6 +160,8 @@ public sealed class DownloadQueueWorker
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                if (transferProgress is not null)
+                    await transferProgress.FlushAsync();
                 await _queue.UpdateStatusAsync(
                     item.AudiobookId, DownloadStatus.Queued,
                     cancellationToken: CancellationToken.None);
@@ -163,6 +169,8 @@ public sealed class DownloadQueueWorker
             }
             catch (Exception exception)
             {
+                if (transferProgress is not null)
+                    await transferProgress.FlushAsync();
                 // Provider/network exceptions can include signed media URLs or query tokens.
                 // Persist only a stable, user-safe category; never store raw exception text.
                 await _queue.UpdateStatusAsync(
@@ -194,6 +202,72 @@ public sealed class DownloadQueueWorker
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
+    }
+
+    private sealed class QueueProgressReporter(
+        IDownloadQueue queue,
+        string audiobookId,
+        IProgress<DownloadQueueProgress>? progress) : IProgress<AudioDownloadProgress>
+    {
+        private readonly object _gate = new();
+        private Task _pendingWrite = Task.CompletedTask;
+        private long _lastPersistedBytes;
+        private long? _lastPersistedTotal;
+        private DateTimeOffset _lastPersistedAt = DateTimeOffset.MinValue;
+        private AudioDownloadProgress? _lastValue;
+
+        public void Report(AudioDownloadProgress value)
+        {
+            progress?.Report(new DownloadQueueProgress(
+                audiobookId, value.BytesReceived, value.TotalBytes, value.Percentage));
+
+            var now = DateTimeOffset.UtcNow;
+            lock (_gate)
+            {
+                _lastValue = value;
+                if (value.BytesReceived - _lastPersistedBytes < 1024 * 1024 &&
+                    value.TotalBytes == _lastPersistedTotal &&
+                    now - _lastPersistedAt < TimeSpan.FromSeconds(1))
+                    return;
+
+                ScheduleWrite(value, now);
+            }
+        }
+
+        public Task FlushAsync()
+        {
+            lock (_gate)
+            {
+                if (_lastValue is { } value &&
+                    (value.BytesReceived != _lastPersistedBytes || value.TotalBytes != _lastPersistedTotal))
+                    ScheduleWrite(value, DateTimeOffset.UtcNow);
+                return _pendingWrite;
+            }
+        }
+
+        private void ScheduleWrite(AudioDownloadProgress value, DateTimeOffset now)
+        {
+            _lastPersistedBytes = value.BytesReceived;
+            _lastPersistedTotal = value.TotalBytes;
+            _lastPersistedAt = now;
+            _pendingWrite = _pendingWrite.ContinueWith(
+                async _ =>
+                {
+                    try
+                    {
+                        await queue.UpdateProgressAsync(
+                            audiobookId, value.BytesReceived, value.TotalBytes,
+                            CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception)
+                    {
+                        // A progress checkpoint must never interrupt the media stream.
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default).Unwrap();
+        }
     }
 
     private static string GetSafeFailureMessage(Exception exception) => exception switch

@@ -1,4 +1,5 @@
 using System.Text;
+using Libation.Mobile.Core;
 
 namespace Libation.Mobile.Audible;
 
@@ -17,7 +18,8 @@ public sealed class AudibleWidevineManifestClient(HttpClient httpClient)
 
     public async Task<AudibleWidevineManifestInfo> FetchAsync(
         Uri manifestUri,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<AudibleOfflineDownloadStage>? stageProgress = null)
     {
         ArgumentNullException.ThrowIfNull(manifestUri);
         ArgumentNullException.ThrowIfNull(httpClient);
@@ -30,16 +32,24 @@ public sealed class AudibleWidevineManifestClient(HttpClient httpClient)
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        ReportStage(stageProgress, "manifest-http-request", "Connecting to Audible's manifest server…");
         using var request = new HttpRequestMessage(HttpMethod.Get, manifestUri);
+        request.Headers.UserAgent.Clear();
+        request.Headers.UserAgent.ParseAdd(AudibleAudioDownloadSource.AndroidDownloadUserAgent);
         request.Headers.Accept.ParseAdd("application/dash+xml");
         request.Headers.Accept.ParseAdd("application/xml");
         request.Headers.Accept.ParseAdd("text/xml");
+        request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue
+        {
+            NoCache = true
+        };
 
         using var response = await httpClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken).ConfigureAwait(false);
 
+        ReportStage(stageProgress, "manifest-http-response", "Receiving the Audible audio manifest…");
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException(
                 $"Audible DASH manifest request failed with HTTP status {(int)response.StatusCode}.",
@@ -56,6 +66,7 @@ public sealed class AudibleWidevineManifestClient(HttpClient httpClient)
             contentLength > MaximumManifestBytes)
             throw new InvalidDataException("The Audible DASH manifest exceeds the supported size.");
 
+        ReportStage(stageProgress, "manifest-response-body", "Reading the Audible audio manifest…");
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
         using var buffer = new MemoryStream();
@@ -86,6 +97,16 @@ public sealed class AudibleWidevineManifestClient(HttpClient httpClient)
         }
 
         cancellationToken.ThrowIfCancellationRequested();
+        ReportStage(stageProgress, "manifest-parse", "Validating the Audible DASH manifest…");
         return AudibleWidevineManifestParser.Parse(manifestXml);
+    }
+
+    private static void ReportStage(
+        IProgress<AudibleOfflineDownloadStage>? progress,
+        string stage,
+        string message)
+    {
+        try { progress?.Report(new AudibleOfflineDownloadStage(stage, message)); }
+        catch (Exception) { /* A notification observer must never break the manifest request. */ }
     }
 }

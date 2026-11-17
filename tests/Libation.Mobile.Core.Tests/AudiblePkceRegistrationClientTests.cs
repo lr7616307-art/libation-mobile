@@ -22,17 +22,17 @@ public sealed class AudiblePkceRegistrationClientTests
         Assert.Equal("https://api.amazon.in/auth/register", handler.RequestUri?.AbsoluteUri);
         using var body = JsonDocument.Parse(handler.Body!);
         var root = body.RootElement;
-        Assert.Equal(".amazon.in", root.GetProperty("cookies").GetProperty("domain").GetString());
+        Assert.Equal("www.amazon.in", root.GetProperty("cookies").GetProperty("domain").GetString());
         Assert.Equal("DeviceLegacy", root.GetProperty("registration_data").GetProperty("domain").GetString());
         Assert.Equal("2090263407", root.GetProperty("registration_data").GetProperty("app_version").GetString());
         Assert.Equal("130050002", root.GetProperty("registration_data").GetProperty("software_version").GetString());
-        Assert.Equal("34",
+        Assert.Equal(AudibleOAuthFlow.AndroidOsVersion,
             root.GetProperty("registration_data").GetProperty("os_version").GetString());
         Assert.Equal(AudibleOAuthFlow.AndroidDeviceType,
             root.GetProperty("registration_data").GetProperty("device_type").GetString());
-        Assert.Equal("Test Android Device",
+        Assert.Equal("%FIRST_NAME%%FIRST_NAME_POSSESSIVE_STRING%%DUPE_STRATEGY_1ST%Audible for Android",
             root.GetProperty("registration_data").GetProperty("device_name").GetString());
-        Assert.Equal("Test Model", root.GetProperty("registration_data").GetProperty("device_model").GetString());
+        Assert.Equal(AudibleOAuthFlow.AndroidDeviceModel, root.GetProperty("registration_data").GetProperty("device_model").GetString());
         Assert.Equal("com.audible.application", root.GetProperty("registration_data").GetProperty("app_name").GetString());
         Assert.Equal(challenge.DeviceSerial, root.GetProperty("registration_data").GetProperty("device_serial").GetString());
         Assert.Equal("authorization-code-test", root.GetProperty("auth_data").GetProperty("authorization_code").GetString());
@@ -47,15 +47,13 @@ public sealed class AudiblePkceRegistrationClientTests
 
         var deviceMetadata = root.GetProperty("device_metadata");
         Assert.Equal("android", deviceMetadata.GetProperty("device_os_family").GetString());
-        Assert.Equal("Test Manufacturer", deviceMetadata.GetProperty("manufacturer").GetString());
-        Assert.Equal("Test Brand", deviceMetadata.GetProperty("brand").GetString());
-        Assert.Equal("Test Model", deviceMetadata.GetProperty("model").GetString());
-        Assert.Equal("test-device", deviceMetadata.GetProperty("device").GetString());
-        Assert.Equal("34", deviceMetadata.GetProperty("os_version").GetString());
-        Assert.Equal("14", deviceMetadata.GetProperty("os_release").GetString());
-        Assert.Equal("test/test/test:14/UP1A.1/test:user/release-keys",
-            deviceMetadata.GetProperty("build_fingerprint").GetString());
-        Assert.Equal("test-product", deviceMetadata.GetProperty("product").GetString());
+        Assert.Equal(AudibleOAuthFlow.AndroidManufacturer, deviceMetadata.GetProperty("manufacturer").GetString());
+        Assert.Equal(AudibleOAuthFlow.AndroidDeviceModel, deviceMetadata.GetProperty("model").GetString());
+        Assert.Equal(AudibleOAuthFlow.AndroidOsVersionNumber, deviceMetadata.GetProperty("os_version").GetString());
+        Assert.Equal(AudibleOAuthFlow.AndroidDeviceProduct, deviceMetadata.GetProperty("product").GetString());
+        Assert.Equal(7, deviceMetadata.EnumerateObject().Count());
+        Assert.False(deviceMetadata.TryGetProperty("build_fingerprint", out _));
+        Assert.False(deviceMetadata.TryGetProperty("brand", out _));
 
         var frc = root.GetProperty("user_context_map").GetProperty("frc").GetString();
         Assert.False(string.IsNullOrWhiteSpace(frc));
@@ -69,6 +67,25 @@ public sealed class AudiblePkceRegistrationClientTests
         Assert.Equal("1", query["disableLoginPrepopulate"]);
         Assert.Equal("device:" + expectedClientId, query["openid.oa2.client_id"]);
         Assert.Equal(challenge.CallbackUri.AbsoluteUri, query["openid.return_to"]);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_ReportsSafeStructuredAudibleErrorWithoutLeakingRequestSecrets()
+    {
+        const string errorBody = """{"response":{"error":{"code":"InvalidValue","message":"One or more provided values are invalid."}}}""";
+        var handler = new CapturingHandler(errorBody, HttpStatusCode.BadRequest);
+        using var http = new HttpClient(handler);
+        var challenge = AudibleOAuthFlow.Create("in", TestDeviceInfo());
+        var client = new AudiblePkceRegistrationClient(http);
+
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            client.RegisterAsync(challenge, "sensitive-authorization-code"));
+
+        Assert.Contains("HTTP 400", error.Message);
+        Assert.Contains("InvalidValue", error.Message);
+        Assert.Contains("One or more provided values are invalid", error.Message);
+        Assert.DoesNotContain("sensitive-authorization-code", error.Message);
+        Assert.DoesNotContain(handler.Body!, error.Message);
     }
 
     [Fact]
