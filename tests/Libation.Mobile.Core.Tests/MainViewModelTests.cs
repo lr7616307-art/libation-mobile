@@ -761,15 +761,26 @@ public sealed class MainViewModelTests
         await vm.InitializeAsync();
 
         Assert.Equal("0 queued · 0 downloading · 0 paused · 0 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("Start pending downloads", vm.DownloadQueueActionLabel);
 
         await vm.EnqueueAsync("book-1");
         Assert.Equal("1 queued · 0 downloading · 0 paused · 0 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("Start pending downloads", vm.DownloadQueueActionLabel);
 
+        await queue.UpdateStatusAsync("book-1", DownloadStatus.Downloading);
+        await queue.UpdateStatusAsync("book-1", DownloadStatus.Paused);
+        await vm.ReloadAsync();
+
+        Assert.Equal("0 queued · 0 downloading · 1 paused · 0 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("Resume downloads", vm.DownloadQueueActionLabel);
+
+        await queue.UpdateStatusAsync("book-1", DownloadStatus.Queued);
         await queue.UpdateStatusAsync("book-1", DownloadStatus.Downloading);
         await queue.UpdateStatusAsync("book-1", DownloadStatus.Completed);
         await vm.ReloadAsync();
 
         Assert.Equal("0 queued · 0 downloading · 0 paused · 1 completed · 0 failed", vm.QueueSummaryLabel);
+        Assert.Equal("Start pending downloads", vm.DownloadQueueActionLabel);
     }
 
     [Fact]
