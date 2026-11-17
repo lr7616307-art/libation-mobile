@@ -10,6 +10,8 @@ namespace Libation.Mobile.UI.Views;
 public partial class MainView : UserControl
 {
     private readonly MainViewModel _viewModel;
+    private readonly ILibraryRepository _libraryRepository;
+    private bool _catalogProviderInitialized;
     private ILocalAudioPlayer? _localAudioPlayer;
     private string? _playingAudiobookId;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
@@ -33,16 +35,16 @@ public partial class MainView : UserControl
     {
         var dataDirectory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var repository = new JsonLibraryRepository(Path.Combine(dataDirectory, "library.json"));
+        _libraryRepository = repository;
         var queue = new JsonDownloadQueue(Path.Combine(dataDirectory, "download-queue.json"));
-        var provider = PlatformLibraryCatalogProviderFactory?.Invoke();
-        var syncService = provider is null ? null : new LibrarySyncService(provider, repository);
         var syncStateStore = new JsonSyncStateStore(Path.Combine(dataDirectory, "library-sync-state.json"));
         var audioDirectory = Path.Combine(dataDirectory, "audiobooks");
         var coverDirectory = Path.Combine(dataDirectory, "covers");
         var audioImport = new LocalAudioImportService(audioDirectory);
-        _viewModel = new MainViewModel(repository, queue, syncService, audioImport, new CoverArtImportService(coverDirectory),
+        // Do not initialize Keystore, provider, or playback services while the
+        // first Avalonia view is being constructed.
+        _viewModel = new MainViewModel(repository, queue, null, audioImport, new CoverArtImportService(coverDirectory),
             syncStateStore, PlatformWidevineDiagnosticFactory, new AudiobookFileImportService(audioImport, coverDirectory));
-        _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
         Loaded += MainViewLoaded;
@@ -51,6 +53,7 @@ public partial class MainView : UserControl
 
     public MainView(ILibraryRepository repository, IDownloadQueue downloadQueue, LibrarySyncService? syncService = null)
     {
+        _libraryRepository = repository;
         _viewModel = new MainViewModel(repository, downloadQueue, syncService);
         InitializeComponent();
         DataContext = _viewModel;
@@ -66,47 +69,65 @@ public partial class MainView : UserControl
         _playbackCheckpointTimer.Tick += PlaybackCheckpointTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _sleepTimer.Tick += SleepTimerTick;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, PlaybackSeekSliderPointerPressed,
-            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased,
-            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+        if (PlaybackSeekSlider is not null)
+        {
+            PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, PlaybackSeekSliderPointerPressed,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+            PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased,
+                Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+        }
         await InitializeAndRestorePlaybackAsync();
     }
 
     private async Task InitializeAndRestorePlaybackAsync()
     {
-        // The view may be unloaded and loaded again while the Android playback
-        // service keeps running. Recreate its lightweight adapter on each load.
-        _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
-        await _viewModel.InitializeAsync();
-        if (_localAudioPlayer is IPlaybackCompletionSource completionSource
-            && completionSource.ConsumeCompletedFilePath() is { Length: > 0 } completedPath)
+        try
         {
-            var completedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
-                string.Equals(book.AudioFilePath, completedPath, StringComparison.Ordinal));
-            if (completedBook is not null)
-                await _viewModel.MarkAudiobookFinishedAsync(completedBook.Id);
+            // Load the user's catalogue before touching platform playback services.
+            await _viewModel.InitializeAsync();
+
+            // Constructing the adapter itself is lightweight. Android service
+            // recovery is a separate operation and runs only after this screen is ready.
+            _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
+            if (_localAudioPlayer is IDeferredAudioSessionRecovery deferredRecovery)
+                deferredRecovery.RestorePendingSession();
+
+            if (_localAudioPlayer is IPlaybackCompletionSource completionSource
+                && completionSource.ConsumeCompletedFilePath() is { Length: > 0 } completedPath)
+            {
+                var completedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
+                    string.Equals(book.AudioFilePath, completedPath, StringComparison.Ordinal));
+                if (completedBook is not null)
+                    await _viewModel.MarkAudiobookFinishedAsync(completedBook.Id);
+            }
+
+            if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
+                return;
+
+            var currentBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
+                string.Equals(book.AudioFilePath, currentPath, StringComparison.Ordinal));
+            if (currentBook is null)
+                return;
+
+            _playingAudiobookId = currentBook.Id;
+            _lastKnownPlaybackDurationMilliseconds = Math.Max(0, _localAudioPlayer.DurationMilliseconds);
+            _viewModel.SetNowPlayingBook(currentBook.Id);
+            _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
+            SetPlayerChapterPositions(currentBook);
+            _lastObservedIsPlaying = null;
+            _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
+            _playbackProgressTimer.Start();
+            RestoreSleepTimerUi();
+            UpdatePlaybackProgressUi();
         }
-        if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
-            return;
-
-        var currentBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
-            string.Equals(book.AudioFilePath, currentPath, StringComparison.Ordinal));
-        if (currentBook is null)
-            return;
-
-        _playingAudiobookId = currentBook.Id;
-        _lastKnownPlaybackDurationMilliseconds = Math.Max(0, _localAudioPlayer.DurationMilliseconds);
-        _viewModel.SetNowPlayingBook(currentBook.Id);
-        _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
-        SetPlayerChapterPositions(currentBook);
-        _lastObservedIsPlaying = null;
-        _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
-        // Poll while paused too: notification actions can resume or pause the
-        // service without going through either in-app button handler.
-        _playbackProgressTimer.Start();
-        RestoreSleepTimerUi();
-        UpdatePlaybackProgressUi();
+        catch (Exception exception)
+        {
+            try { PlatformStartupExceptionReporter?.Invoke("MainView.InitializeAndRestorePlaybackAsync", exception); }
+            catch { /* Startup reporting must never cause another failure. */ }
+            _localAudioPlayer = null;
+            _viewModel.ReportAudioStatus(
+                $"Startup recovery failed ({exception.GetType().Name}). Your library is available; playback recovery is paused.");
+        }
     }
 
     private void RestoreSleepTimerUi()
@@ -764,7 +785,29 @@ public partial class MainView : UserControl
         => await _viewModel.ReloadAsync();
 
     private async void SyncLibraryClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => await _viewModel.SyncLibraryAsync();
+    {
+        try
+        {
+            EnsureCatalogProvider();
+            await _viewModel.SyncLibraryAsync();
+        }
+        catch (Exception exception)
+        {
+            try { PlatformStartupExceptionReporter?.Invoke("MainView.SyncLibraryClicked", exception); }
+            catch { }
+            _viewModel.ReportAudioStatus($"Audible sync initialization failed ({exception.GetType().Name}).");
+        }
+    }
+
+    private void EnsureCatalogProvider()
+    {
+        if (_catalogProviderInitialized) return;
+        var factory = PlatformLibraryCatalogProviderFactory;
+        if (factory is null) return;
+        var provider = factory();
+        _viewModel.ConfigureSyncService(new LibrarySyncService(provider, _libraryRepository));
+        _catalogProviderInitialized = true;
+    }
 
     private void ProbeWidevineClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.ProbeWidevine();
