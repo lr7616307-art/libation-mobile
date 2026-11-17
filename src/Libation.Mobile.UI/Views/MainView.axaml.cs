@@ -1020,10 +1020,12 @@ public partial class MainView : UserControl
             Dispatcher.UIThread.Post(() => HomeSearchBox.Focus());
     }
 
-    private void ShowAllClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => _viewModel.SetListeningStatusFilter("All");
     private void ShowNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => _viewModel.SetListeningStatusFilter("Not started");
+    {
+        var filter = sender is Button button && string.Equals(button.Tag as string, "All", StringComparison.Ordinal)
+            ? "All" : "Not started";
+        _viewModel.SetListeningStatusFilter(filter);
+    }
     private void ShowInProgressClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.SetListeningStatusFilter("In progress");
     private void ShowFinishedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
