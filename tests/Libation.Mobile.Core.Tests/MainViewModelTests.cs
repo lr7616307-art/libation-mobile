@@ -722,12 +722,12 @@ public sealed class MainViewModelTests
 
         Assert.Equal(1, vm.LocalAudioBooks.Count);
         Assert.Single(vm.FilteredLocalAudioBooks);
-        Assert.Equal("1 of 1 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 of 0 audiobooks", vm.CatalogueSummaryLabel);
 
         vm.SetListeningStatusFilter("In progress");
 
         Assert.Empty(vm.FilteredLocalAudioBooks);
-        Assert.Equal("0 of 1 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 of 0 audiobooks", vm.CatalogueSummaryLabel);
     }
 
     [Fact]
@@ -743,12 +743,12 @@ public sealed class MainViewModelTests
         vm.SearchText = "Atomic Habits";
         Assert.Empty(vm.Books);
         Assert.Equal("No matching audiobooks. Try another title, author or narrator.", vm.EmptyMessage);
-        Assert.Equal("0 of 1 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 of 0 audiobooks", vm.CatalogueSummaryLabel);
 
         vm.SearchText = "Project Hail Mary";
         Assert.Single(vm.Books);
         Assert.Empty(vm.EmptyMessage);
-        Assert.Equal("1 of 1 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 of 0 audiobooks", vm.CatalogueSummaryLabel);
     }
 
     [Fact]
