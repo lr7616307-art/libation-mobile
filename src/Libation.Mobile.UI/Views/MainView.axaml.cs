@@ -21,6 +21,7 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private bool _isDraggingPlaybackSlider;
     private bool? _lastObservedIsPlaying;
     private long _lastKnownPlaybackDurationMilliseconds;
     private bool _isHandlingPlaybackCompletion;
@@ -44,8 +45,6 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased,
-            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -67,6 +66,10 @@ public partial class MainView : UserControl
         _playbackCheckpointTimer.Tick += PlaybackCheckpointTimerTick;
         _sleepTimer.Tick -= SleepTimerTick;
         _sleepTimer.Tick += SleepTimerTick;
+        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerPressedEvent, PlaybackSeekSliderPointerPressed,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
+        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
         await InitializeAndRestorePlaybackAsync();
     }
 
@@ -412,7 +415,9 @@ public partial class MainView : UserControl
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
+        PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerPressedEvent, PlaybackSeekSliderPointerPressed);
         PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        _isDraggingPlaybackSlider = false;
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
         _playbackCheckpointTimer.Tick -= PlaybackCheckpointTimerTick;
@@ -480,7 +485,8 @@ public partial class MainView : UserControl
         try
         {
             PlaybackSeekSlider.Maximum = Math.Max(1, duration);
-            PlaybackSeekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
+            if (!_isDraggingPlaybackSlider)
+                PlaybackSeekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
             PlaybackSeekSlider.IsEnabled = duration > 0;
             PlaybackPositionLabel.Text = FormatPlaybackTime(position);
             PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
@@ -557,8 +563,12 @@ public partial class MainView : UserControl
         return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
     }
 
+    private void PlaybackSeekSliderPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+        => _isDraggingPlaybackSlider = true;
+
     private void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
+        _isDraggingPlaybackSlider = false;
         if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
             return;
 
