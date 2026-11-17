@@ -24,3 +24,12 @@ public interface IPlaybackCompletionSource
     /// <summary>Returns and clears the last completed local audio file path.</summary>
     string? ConsumeCompletedFilePath();
 }
+
+/// <summary>
+/// Optional platform hook for restoring a saved playback session only after the
+/// first application screen has been initialized.
+/// </summary>
+public interface IDeferredAudioSessionRecovery
+{
+    void RestorePendingSession();
+}
