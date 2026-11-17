@@ -748,7 +748,7 @@ jobs:
         shell: bash
         run: rm -f "$RUNNER_TEMP/vorath-ci-test.jks"
 
-  # Temporary verification job: build PR #242's current source with the
+  # Temporary verification job: build PR #242's latest source with the
   # Pass 41 signing certificate already used for the installed-app test line.
   # A cache miss or fingerprint mismatch is a hard failure; never create a new key.
   build_current_player_update_compatible_apk:
