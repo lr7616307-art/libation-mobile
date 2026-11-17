@@ -75,6 +75,18 @@ public partial class MainView : UserControl
         // service keeps running. Recreate its lightweight adapter on each load.
         _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
         await _viewModel.InitializeAsync();
+        var completedPath = _localAudioPlayer?.ConsumeCompletedFilePath();
+        if (!string.IsNullOrWhiteSpace(completedPath))
+        {
+            var completedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
+                string.Equals(book.AudioFilePath, completedPath, StringComparison.Ordinal));
+            if (completedBook is not null)
+            {
+                await _viewModel.MarkAudiobookFinishedAsync(completedBook.Id);
+                _viewModel.ReportAudioStatus("Finished: " + completedBook.Title);
+            }
+        }
+
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
 
