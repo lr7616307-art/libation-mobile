@@ -45,7 +45,7 @@ public sealed record Audiobook(
     [JsonIgnore]
     public string AudibleAvailabilityShortLabel => !IsProviderCatalogueEntry
         ? string.Empty
-        : IsWidevineOfflineAvailable ? "PROTECTED COPY CACHED"
+        : IsWidevineOfflineAvailable ? "PROTECTED CACHE"
         : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "PROTECTED BACKUP ONLY"
         : !string.IsNullOrWhiteSpace(AudioFilePath) ? "READY TO PLAY"
         : IsDownloadedOnAudible == true ? "DOWNLOADED ON AUDIBLE"
@@ -60,13 +60,12 @@ public sealed record Audiobook(
     public string DownloadActionIcon => !IsProviderCatalogueEntry
         ? "＋"
         : !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶"
-            : IsWidevineOfflineAvailable || !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "✓"
+            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "✓"
             : "⇩";
 
     [JsonIgnore]
     public string DownloadActionLabel => IsProviderCatalogueEntry
         ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "Play local audio"
-            : IsWidevineOfflineAvailable ? "Protected offline copy cached; playback disabled"
             : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "Protected backup already saved"
             : "Download protected Audible audio"
         : "Add to queue";
