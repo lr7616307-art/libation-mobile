@@ -1004,7 +1004,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsEditing => _editingBookId is not null;
     public string EditorTitle => IsEditing ? "Edit audiobook" : "Add an audiobook";
     public string SaveButtonLabel => IsEditing ? "Save changes" : "Save to local catalogue";
-    public string CatalogueSummaryLabel => $"{Books.Count} of {_allBooks.Count} audiobooks";
+    public string CatalogueSummaryLabel => $"{FilteredLocalAudioBooks.Count} of {LocalAudioBooks.Count} audiobooks";
 
     private IReadOnlyList<Audiobook> _allBooks = [];
     public bool IsLoading { get => _isLoading; private set { if (_isLoading == value) return; _isLoading = value; OnPropertyChanged(); } }
@@ -1776,6 +1776,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         foreach (var book in LocalAudioBooks.Where(book =>
             _listeningStatusFilter == "All" || book.ListeningStatus == _listeningStatusFilter))
             FilteredLocalAudioBooks.Add(book);
+        OnPropertyChanged(nameof(CatalogueSummaryLabel));
     }
 
     private void ApplyFilter(IReadOnlyList<Audiobook> source)
