@@ -85,6 +85,9 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
     private void OnServicePlaybackStateChanged()
         => PlaybackStateChanged?.Invoke(this, EventArgs.Empty);
 
+    private void OnServiceLocalAudioPlaybackCompleted(string filePath, long durationMilliseconds)
+        => PlaybackCompleted?.Invoke(this, new AudioPlaybackCompletedEventArgs(filePath, durationMilliseconds));
+
     public void Play(string filePath, long startPositionMilliseconds = 0, string? title = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
