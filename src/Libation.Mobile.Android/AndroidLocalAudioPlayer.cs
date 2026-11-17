@@ -295,6 +295,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         if (_disposed) return;
         _disposed = true;
         AndroidLocalAudioPlaybackService.PlaybackStateChanged -= OnServicePlaybackStateChanged;
+        AndroidLocalAudioPlaybackService.LocalAudioPlaybackCompleted -= OnServiceLocalAudioPlaybackCompleted;
     }
     private bool _disposed;
 
