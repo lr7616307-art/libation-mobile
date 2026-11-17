@@ -26,3 +26,19 @@ public interface ILocalAudioPlayerStateNotifier
 {
     event EventHandler? PlaybackStateChanged;
 }
+
+/// <summary>Raised only when a locally playable audiobook reaches its natural end.</summary>
+public sealed class AudioPlaybackCompletedEventArgs(string filePath, long durationMilliseconds) : EventArgs
+{
+    public string FilePath { get; } = filePath;
+    public long DurationMilliseconds { get; } = Math.Max(0, durationMilliseconds);
+}
+
+/// <summary>
+/// Optional notification for natural end-of-file events. Explicit Stop/Pause,
+/// view unload and decoder errors must not be reported as successful completion.
+/// </summary>
+public interface ILocalAudioPlayerCompletionNotifier
+{
+    event EventHandler<AudioPlaybackCompletedEventArgs>? PlaybackCompleted;
+}
