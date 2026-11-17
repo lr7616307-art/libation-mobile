@@ -55,6 +55,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private string? _currentFilePath;
     private bool _isWidevinePlayback;
     private bool _completionPublished;
+    private bool _notificationDismissed = true;
     private string? _widevineAsin;
     private string? _coverImagePath;
     private Bitmap? _coverBitmap;
@@ -249,6 +250,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             throw new FileNotFoundException("Audiobook audio file was not found.", path);
 
+        DismissPlaybackNotification();
         StopPlayer();
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
@@ -258,8 +260,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _currentFilePath = path;
         _isWidevinePlayback = false;
         _completionPublished = false;
+        _chapterPositions = [];
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
+        _notificationDismissed = false;
 
         // Android requires a service started with startForegroundService() to
         // promote itself promptly. MediaPlayer.Prepare() can block while a
@@ -315,6 +319,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             throw new InvalidDataException("The saved Audible content-version cache reference is invalid.");
         intent.RemoveExtra(ExtraWidevineContentVersionKey);
 
+        DismissPlaybackNotification();
         StopPlayer();
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
@@ -323,8 +328,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _currentFilePath = null; // Protected media is never represented as a clear local file.
         _widevineAsin = asin;
         _isWidevinePlayback = true;
+        _chapterPositions = [];
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
+        _notificationDismissed = false;
 
         StartForeground(NotificationId, BuildNotification());
 
@@ -750,8 +757,26 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void UpdateNotification()
     {
+        // The periodic notification ticker can fire between STATE_ENDED and
+        // service destruction. Never recreate a notification after the session
+        // has been dismissed or its player has already been released.
+        if (_notificationDismissed || _player is null)
+            return;
+
         var manager = (NotificationManager?)GetSystemService(NotificationService);
         manager?.Notify(NotificationId, BuildNotification());
+    }
+
+    private void DismissPlaybackNotification()
+    {
+        _notificationDismissed = true;
+
+        // StopForeground removes the foreground notification. Cancel it as well
+        // so a concurrently queued Notify cannot leave stale title/artwork or
+        // media controls in the notification shade.
+        StopForeground(StopForegroundFlags.Remove);
+        var manager = (NotificationManager?)GetSystemService(NotificationService);
+        manager?.Cancel(NotificationId);
     }
 
     private long ReadPosition()
@@ -778,6 +803,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void StopPlayback(bool clearRecovery = true)
     {
+        DismissPlaybackNotification();
         StopPlayer();
         if (clearRecovery)
         {
@@ -786,7 +812,6 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
         _isWidevinePlayback = false;
         _widevineAsin = null;
-        StopForeground(StopForegroundFlags.Remove);
     }
 
     public override IBinder? OnBind(Intent? intent) => null;
