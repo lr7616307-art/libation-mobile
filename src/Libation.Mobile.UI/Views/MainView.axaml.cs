@@ -688,6 +688,7 @@ public partial class MainView : UserControl
         _isHandlingPlaybackCompletion = true;
         var title = _viewModel.LocalAudioBooks.FirstOrDefault(book => book.Id == audiobookId)?.Title
             ?? _viewModel.NowPlayingBook?.Title ?? "Audiobook";
+        _localAudioPlayer?.ConsumeCompletedFilePath();
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
