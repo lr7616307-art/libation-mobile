@@ -360,7 +360,9 @@
                         </Grid>
                       </Button>
                       <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <Button Content="{Binding DownloadActionLabel}" FontSize="10" Padding="7,8"
+                        <Button Content="{Binding DownloadActionIcon}" FontSize="22" Padding="8,6"
+                                MinWidth="44" MinHeight="44"
+                                ToolTip.Tip="{Binding DownloadActionLabel}"
                                 Click="DownloadAudibleBookClicked"/>
                         <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" FontSize="8" LetterSpacing="0.3"
                                    Foreground="#B9A5E8" TextAlignment="Center" TextWrapping="Wrap"/>
@@ -423,43 +425,6 @@
                          VerticalAlignment="Center"/>
             </Grid>
             <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="11">
-                <TextBlock Text="Download settings" FontSize="19" FontWeight="Bold"/>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="Download directory" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding DownloadDirectoryLabel}" FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
-                  </StackPanel>
-                  <Button Grid.Column="1" Content="Choose folder" Padding="12,9"
-                          VerticalAlignment="Center" Click="ChooseDownloadFolderClicked"/>
-                </Grid>
-                <TextBlock Text="Android will remember the folder permission. You can change it at any time."
-                           FontSize="11" Opacity="0.62" TextWrapping="Wrap"/>
-                <Border Height="1" Background="#40324F" Margin="0,2"/>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="File organization" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding DownloadFolderOrganizationLabel}" FontSize="12" Foreground="#C4B5FD"/>
-                  </StackPanel>
-                  <Button Grid.Column="1" Content="Change" Padding="16,9"
-                          VerticalAlignment="Center" Click="CycleDownloadFolderOrganizationClicked"/>
-                </Grid>
-                <TextBlock Text="{Binding DownloadFolderOrganizationExample}" FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
-                <Border Height="1" Background="#40324F" Margin="0,2"/>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="Audible download quality" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding AudibleDownloadQualityLabel}" FontSize="12" Foreground="#C4B5FD"/>
-                  </StackPanel>
-                  <Button Grid.Column="1" Content="Change" Padding="16,9"
-                          VerticalAlignment="Center" Click="CycleAudibleDownloadQualityClicked"/>
-                </Grid>
-                <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
-                <TextBlock Text="Audible downloads remain encrypted and protected. Unprotected audio is saved to the selected folder."
-                           FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
-              </StackPanel>
-            </Border>
-            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="12">
                 <TextBlock Text="Download queue" FontSize="21" FontWeight="Bold"/>
                 <TextBlock Text="{Binding QueueSummaryLabel}" FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
@@ -504,6 +469,43 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
+              </StackPanel>
+            </Border>
+            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="11">
+                <TextBlock Text="Download settings" FontSize="19" FontWeight="Bold"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="Download directory" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadDirectoryLabel}" FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Choose folder" Padding="12,9"
+                          VerticalAlignment="Center" Click="ChooseDownloadFolderClicked"/>
+                </Grid>
+                <TextBlock Text="Android will remember the folder permission. You can change it at any time."
+                           FontSize="11" Opacity="0.62" TextWrapping="Wrap"/>
+                <Border Height="1" Background="#40324F" Margin="0,2"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="File organization" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadFolderOrganizationLabel}" FontSize="12" Foreground="#C4B5FD"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Change" Padding="16,9"
+                          VerticalAlignment="Center" Click="CycleDownloadFolderOrganizationClicked"/>
+                </Grid>
+                <TextBlock Text="{Binding DownloadFolderOrganizationExample}" FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+                <Border Height="1" Background="#40324F" Margin="0,2"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="Audible download quality" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding AudibleDownloadQualityLabel}" FontSize="12" Foreground="#C4B5FD"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Change" Padding="16,9"
+                          VerticalAlignment="Center" Click="CycleAudibleDownloadQualityClicked"/>
+                </Grid>
+                <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
+                <TextBlock Text="Audible downloads remain encrypted and protected. Unprotected audio is saved to the selected folder."
+                           FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
               </StackPanel>
             </Border>
           </StackPanel>
