@@ -22,6 +22,8 @@ public partial class MainView : UserControl
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
     private bool? _lastObservedIsPlaying;
+    private long _lastKnownPlaybackDurationMilliseconds;
+    private bool _isHandlingPlaybackCompletion;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
     private static readonly FilePickerFileType CoverImageFileType = new("Audiobook cover image") { Patterns = ["*.jpg", "*.jpeg", "*.png", "*.webp"] };
@@ -42,7 +44,8 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -82,6 +85,7 @@ public partial class MainView : UserControl
             return;
 
         _playingAudiobookId = currentBook.Id;
+        _lastKnownPlaybackDurationMilliseconds = Math.Max(0, _localAudioPlayer.DurationMilliseconds);
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
         SetPlayerChapterPositions(currentBook);
@@ -148,7 +152,9 @@ public partial class MainView : UserControl
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
             SetPlayerChapterPositions(book);
+            _lastKnownPlaybackDurationMilliseconds = 0;
             _playingAudiobookId = book.Id;
+            await _viewModel.SetAudiobookInProgressAsync(book.Id);
             _viewModel.SetNowPlayingBook(book.Id);
             _lastObservedIsPlaying = null;
             _playbackProgressTimer.Start();
@@ -439,8 +445,20 @@ public partial class MainView : UserControl
             || PlaybackDurationLabel is null || PlaybackRemainingLabel is null)
             return;
 
+        if (_playingAudiobookId is null)
+        {
+            PlaybackSeekSlider.Maximum = 1;
+            PlaybackSeekSlider.Value = 0;
+            PlaybackSeekSlider.IsEnabled = false;
+            PlaybackPositionLabel.Text = "0:00";
+            PlaybackDurationLabel.Text = "--:--";
+            PlaybackRemainingLabel.Text = "--:--";
+            return;
+        }
+
         var position = Math.Max(0, _localAudioPlayer?.PositionMilliseconds ?? 0);
         var duration = Math.Max(0, _localAudioPlayer?.DurationMilliseconds ?? 0);
+        if (duration > 0) _lastKnownPlaybackDurationMilliseconds = Math.Max(_lastKnownPlaybackDurationMilliseconds, duration);
         var chapterRange = GetCurrentChapterRange(position, duration);
         var chapterElapsed = Math.Max(0, position - chapterRange.Start);
         var chapterDuration = Math.Max(0, chapterRange.End - chapterRange.Start);
@@ -453,13 +471,13 @@ public partial class MainView : UserControl
         _isUpdatingPlaybackSlider = true;
         try
         {
-            PlaybackSeekSlider.Maximum = Math.Max(1, chapterDuration);
-            PlaybackSeekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
-            PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
-            PlaybackPositionLabel.Text = FormatPlaybackTime(chapterElapsed);
-            PlaybackDurationLabel.Text = chapterDuration > 0 ? FormatPlaybackTime(chapterDuration) : "--:--";
-            var remaining = Math.Max(0, chapterDuration - chapterElapsed);
-            PlaybackRemainingLabel.Text = chapterDuration > 0 ? $"-{FormatPlaybackTime(remaining)}" : "--:--";
+            PlaybackSeekSlider.Maximum = Math.Max(1, duration);
+            PlaybackSeekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
+            PlaybackSeekSlider.IsEnabled = duration > 0;
+            PlaybackPositionLabel.Text = FormatPlaybackTime(position);
+            PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
+            var remaining = Math.Max(0, duration - position);
+            PlaybackRemainingLabel.Text = duration > 0 ? $"-{FormatPlaybackTime(remaining)}" : "--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
     }
@@ -537,8 +555,7 @@ public partial class MainView : UserControl
             return;
 
         var duration = _localAudioPlayer.DurationMilliseconds;
-        var chapterRange = GetCurrentChapterRange(_localAudioPlayer.PositionMilliseconds, duration);
-        var target = Math.Max(0, chapterRange.Start + (long)PlaybackSeekSlider.Value);
+        var target = Math.Max(0, (long)PlaybackSeekSlider.Value);
         if (duration > 0) target = Math.Min(target, duration);
         _localAudioPlayer.Seek(target);
         UpdateCurrentChapterUi(target, duration);
@@ -629,7 +646,57 @@ public partial class MainView : UserControl
         }
     }
 
-    private void PlaybackProgressTimerTick(object? sender, EventArgs e) => UpdatePlaybackProgressUi();
+    private async void PlaybackProgressTimerTick(object? sender, EventArgs e)
+    {
+        if (_isHandlingPlaybackCompletion || _localAudioPlayer is null || _playingAudiobookId is null)
+        {
+            UpdatePlaybackProgressUi();
+            return;
+        }
+
+        var duration = _localAudioPlayer.DurationMilliseconds;
+        if (duration > 0)
+            _lastKnownPlaybackDurationMilliseconds = Math.Max(_lastKnownPlaybackDurationMilliseconds, duration);
+
+        // STATE_ENDED clears the service's active file and recovery snapshot.
+        // Decoder errors preserve the recovery path and are not marked finished.
+        if (_lastKnownPlaybackDurationMilliseconds > 0 && _localAudioPlayer.CurrentFilePath is null)
+        {
+            await HandlePlaybackCompletedAsync();
+            return;
+        }
+
+        UpdatePlaybackProgressUi();
+    }
+
+    private async Task HandlePlaybackCompletedAsync()
+    {
+        if (_isHandlingPlaybackCompletion || _playingAudiobookId is not { } audiobookId) return;
+        _isHandlingPlaybackCompletion = true;
+        _playbackProgressTimer.Stop();
+        _playbackCheckpointTimer.Stop();
+        _sleepTimer.Stop();
+        var title = _viewModel.NowPlayingBook?.Title ?? "Audiobook";
+        _sleepTimerEndsAt = null;
+        _sleepAtPositionMilliseconds = null;
+        _sleepTimerSelection = -1;
+        if (SleepTimerButton is not null) SleepTimerButton.Content = "Sleep timer · Off";
+
+        try
+        {
+            await _viewModel.MarkAudiobookFinishedAsync(audiobookId);
+            _viewModel.ClearNowPlayingBook(audiobookId);
+            _playingAudiobookId = null;
+            _lastKnownPlaybackDurationMilliseconds = 0;
+            _lastObservedIsPlaying = null;
+            _viewModel.ReportAudioStatus("Finished: " + title);
+            UpdatePlaybackProgressUi();
+        }
+        finally
+        {
+            _isHandlingPlaybackCompletion = false;
+        }
+    }
 
     private async void PlaybackCheckpointTimerTick(object? sender, EventArgs e)
     {
