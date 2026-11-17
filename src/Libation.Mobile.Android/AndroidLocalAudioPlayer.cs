@@ -16,6 +16,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
     public AndroidLocalAudioPlayer()
     {
         AndroidLocalAudioPlaybackService.PlaybackStateChanged += OnServicePlaybackStateChanged;
+        AndroidLocalAudioPlaybackService.LocalAudioPlaybackCompleted += OnServiceLocalAudioPlaybackCompleted;
 
         // Rehydrate the last session when the app is opened after a process death
         // or device restart. The saved play/pause state is respected.
