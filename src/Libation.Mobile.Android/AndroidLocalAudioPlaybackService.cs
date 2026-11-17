@@ -170,6 +170,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (string.IsNullOrWhiteSpace(_title))
             _title = System.IO.Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
+        GetSharedPreferences("vorath_playback_completion", FileCreationMode.Private)?
+            .Edit()?.Remove("completed_file_path")?.Apply();
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
 
@@ -204,6 +206,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         if (playbackState == 4) // Player.STATE_ENDED
         {
+            PersistCompletedFilePath();
             ClearSleepTimer();
             StopPlayback();
             StopSelf();
@@ -460,6 +463,17 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             builder.SetProgress((int)Math.Min(duration, int.MaxValue),
                 (int)Math.Min(ReadPosition(), int.MaxValue), false);
         return builder.Build();
+    }
+
+    private void PersistCompletedFilePath()
+    {
+        if (string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        try
+        {
+            GetSharedPreferences("vorath_playback_completion", FileCreationMode.Private)?
+                .Edit()?.PutString("completed_file_path", _currentFilePath)?.Apply();
+        }
+        catch (Exception) { /* Completion persistence must not interrupt service teardown. */ }
     }
 
     private void SetArtwork(string? path)
