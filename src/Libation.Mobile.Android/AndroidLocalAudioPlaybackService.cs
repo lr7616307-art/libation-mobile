@@ -204,7 +204,11 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         if (playbackState == 4) // Player.STATE_ENDED
         {
-            StopPlayback();
+            var completedPath = _currentFilePath;
+            ClearSleepTimer();
+            StopPlayback(clearRecovery: false);
+            if (!string.IsNullOrWhiteSpace(completedPath))
+                PlaybackRecoveryStore.MarkCompleted(this, completedPath);
             StopSelf();
             return;
         }
