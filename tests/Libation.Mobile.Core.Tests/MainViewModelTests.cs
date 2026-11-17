@@ -760,9 +760,6 @@ public sealed class MainViewModelTests
                 ListeningStatus = "Not started"
             },
             new Audiobook("provider:audible-1", "Audible catalogue entry", "Author", "", "", "Audible")
-            {
-                IsProviderCatalogueEntry = true
-            }
         ]);
         var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
 
