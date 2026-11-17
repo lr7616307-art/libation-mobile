@@ -122,8 +122,14 @@
                           </Border>
                         </StackPanel>
                         <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" Spacing="6">
-                          <Button Content="⋮" FontSize="22" Padding="8,4" Background="Transparent" BorderThickness="0" Click="BookOverflowClicked"/>
-                          <Button Content="▶" FontSize="20" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}"/>
+                          <Button Content="⋮" FontSize="22" Width="40" Height="40" MinWidth="40" MinHeight="40"
+                                  Padding="0" Background="Transparent" BorderThickness="0" CornerRadius="20"
+                                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                  Click="BookOverflowClicked"/>
+                          <Button Content="▶" FontSize="19" Width="40" Height="40" MinWidth="40" MinHeight="40"
+                                  Padding="0" Background="Transparent" BorderThickness="0" CornerRadius="20"
+                                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                  Click="PlayAudioClicked" IsVisible="{Binding CanDelete}"/>
                           <CheckBox Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" IsChecked="{Binding IsSelectedForBulkAction, Mode=OneWay}" Click="ToggleSelectionClicked"/>
                         </StackPanel>
                       </Grid>
