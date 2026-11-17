@@ -25,12 +25,12 @@ public class AndroidApp : AvaloniaAndroidApplication<App>
         // allowing optional platform services to block creation of the first view.
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
-            try { WriteStartupDiagnostic(args.ExceptionObject as Exception); }
+            try { WriteStartupDiagnostic("UnhandledException", args.ExceptionObject as Exception); }
             catch { /* Diagnostics must never cause another crash. */ }
         };
         TaskScheduler.UnobservedTaskException += (_, args) =>
         {
-            try { WriteStartupDiagnostic(args.Exception); }
+            try { WriteStartupDiagnostic("UnobservedTaskException", args.Exception); }
             catch { /* Diagnostics must never cause another crash. */ }
             args.SetObserved();
         };
