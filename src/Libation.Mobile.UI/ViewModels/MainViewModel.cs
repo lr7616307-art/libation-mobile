@@ -227,6 +227,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
         RefreshRecentlyPlayedBooks();
     }
 
+    /// <summary>
+    /// Clears the mini-player and any expanded player page when the matching
+    /// audiobook session has naturally completed. A different active title is
+    /// never cleared by a delayed completion event from an earlier session.
+    /// </summary>
+    public bool ClearNowPlayingBook(string audiobookId)
+    {
+        if (string.IsNullOrWhiteSpace(audiobookId) ||
+            !string.Equals(NowPlayingBook?.Id, audiobookId, StringComparison.Ordinal))
+            return false;
+
+        NowPlayingBook = null;
+        _isFullPlayerVisible = false;
+        _isChaptersVisible = false;
+        RaiseNavigationState();
+        return true;
+    }
+
     public async Task<bool> LoadChapterMetadataAsync(string audiobookId, CancellationToken cancellationToken = default)
     {
         var book = _allBooks.FirstOrDefault(item => item.Id == audiobookId);
