@@ -30,7 +30,7 @@ public sealed class AudibleDownloadDisplayStateTests
     }
 
     [Fact]
-    public void WidevineOfflineState_ReportsProtectedAuthorizedPlaybackNotPlainExport()
+    public void WidevineOfflineState_ReportsCachedProtectedCopyWithPlaybackDisabled()
     {
         var book = new Audiobook(
             "provider:1234567890",
