@@ -86,6 +86,20 @@ public partial class MainView : UserControl
             // Load the user's catalogue before touching platform playback services.
             await _viewModel.InitializeAsync();
 
+            // Account/Keystore initialization is optional. Attempt it only once
+            // the library screen exists, and isolate failures from playback recovery.
+            try
+            {
+                EnsureCatalogProvider();
+            }
+            catch (Exception exception)
+            {
+                try { PlatformStartupExceptionReporter?.Invoke("MainView.AccountServices", exception); }
+                catch { }
+                _viewModel.ReportAudioStatus(
+                    $"Account services are unavailable ({exception.GetType().Name}). Your local library remains available.");
+            }
+
             // Constructing the adapter itself is lightweight. Android service
             // recovery is a separate operation and runs only after this screen is ready.
             _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
