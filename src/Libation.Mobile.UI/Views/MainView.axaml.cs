@@ -976,6 +976,9 @@ public partial class MainView : UserControl
             Dispatcher.UIThread.Post(() => HomeSearchBox.Focus());
     }
 
+    private void ShowAllClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        => _viewModel.SetListeningStatusFilter("All");
+
     private void ShowNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.SetListeningStatusFilter("Not started");
     private void ShowInProgressClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
