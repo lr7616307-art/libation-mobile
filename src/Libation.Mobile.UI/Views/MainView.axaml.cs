@@ -694,7 +694,6 @@ public partial class MainView : UserControl
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
-        var title = _viewModel.NowPlayingBook?.Title ?? "Audiobook";
         _sleepTimerEndsAt = null;
         _sleepAtPositionMilliseconds = null;
         _sleepTimerSelection = -1;
@@ -707,7 +706,6 @@ public partial class MainView : UserControl
             _playingAudiobookId = null;
             _lastKnownPlaybackDurationMilliseconds = 0;
             _lastObservedIsPlaying = null;
-            _viewModel.ReportAudioStatus("Finished: " + title);
             UpdatePlaybackProgressUi();
         }
         finally
