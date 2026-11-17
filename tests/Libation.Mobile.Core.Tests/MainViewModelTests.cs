@@ -362,12 +362,12 @@ public sealed class MainViewModelTests
         vm.SearchText = "Atomic Habits";
         Assert.Empty(vm.Books);
         Assert.Equal("No matching audiobooks. Try another title, author or narrator.", vm.EmptyMessage);
-        Assert.Equal("1 audiobook", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 audiobooks", vm.CatalogueSummaryLabel);
 
         vm.SearchText = "Project Hail Mary";
         Assert.Single(vm.Books);
         Assert.Empty(vm.EmptyMessage);
-        Assert.Equal("1 audiobook", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 audiobooks", vm.CatalogueSummaryLabel);
     }
 
     [Fact]
