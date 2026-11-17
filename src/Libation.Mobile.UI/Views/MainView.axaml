@@ -359,7 +359,7 @@
                           </StackPanel>
                         </Grid>
                       </Button>
-                      <StackPanel Grid.Column="2" Grid.RowSpan="2" Width="96" Spacing="4"
+                      <StackPanel Grid.Column="2" Width="96" Spacing="4"
                                   VerticalAlignment="Center" HorizontalAlignment="Center">
                         <Button Content="{Binding DownloadActionIcon}" FontSize="22" Padding="8,6"
                                 Width="48" Height="48" HorizontalAlignment="Center"
