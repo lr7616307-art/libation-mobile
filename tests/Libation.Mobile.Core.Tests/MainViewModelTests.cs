@@ -701,6 +701,36 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task HomeAudiobookCount_OnlyCountsLocalAudiobooksDisplayedOnHome()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("local-1", "Local audiobook", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "local-audio.mp3",
+                ListeningStatus = "Not started"
+            },
+            new Audiobook("provider:audible-1", "Audible catalogue entry", "Author", "", "", "Audible")
+            {
+                IsProviderCatalogueEntry = true
+            }
+        ]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+
+        await vm.InitializeAsync();
+
+        Assert.Equal(1, vm.LocalAudioBooks.Count);
+        Assert.Single(vm.FilteredLocalAudioBooks);
+        Assert.Equal("1 of 1 audiobooks", vm.CatalogueSummaryLabel);
+
+        vm.SetListeningStatusFilter("In progress");
+
+        Assert.Empty(vm.FilteredLocalAudioBooks);
+        Assert.Equal("0 of 1 audiobooks", vm.CatalogueSummaryLabel);
+    }
+
+    [Fact]
     public async Task Search_NoMatchesShowsNoResultsInsteadOfEmptyCatalogue()
     {
         using var directory = new TemporaryDirectory();
