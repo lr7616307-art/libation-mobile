@@ -31,7 +31,7 @@ public sealed record Audiobook(
         : IsWidevineOfflineAvailable
             ? "An Audible-protected offline copy is cached. Protected Audible playback is currently disabled in VØRATH."
             : !string.IsNullOrWhiteSpace(ProtectedAudioFileName)
-                ? "An encrypted AAX/AAXC backup exists. It remains protected and cannot be played in VØRATH or a normal audio app."
+                ? "An encrypted AAX/AAXC backup exists. It remains protected; it is not playable in a normal audio app or in VØRATH."
                 : !string.IsNullOrWhiteSpace(AudioFilePath)
                     ? "Downloaded to VØRATH and ready to play"
                     : IsPlayableOnAudible == true
@@ -65,7 +65,7 @@ public sealed record Audiobook(
 
     [JsonIgnore]
     public string DownloadActionLabel => IsProviderCatalogueEntry
-        ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "Play local audio"
+        ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶  Play"
             : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "Protected backup already saved"
             : "Download protected Audible audio"
         : "Add to queue";
