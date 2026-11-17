@@ -15,6 +15,7 @@ internal static class PlaybackRecoveryStore
     private const string SpeedKey = "speed";
     private const string WasPlayingKey = "was_playing";
     private const string CoverImagePathKey = "cover_image_path";
+    private const string CompletedFilePathKey = "completed_file_path";
 
     public static PlaybackRecoverySnapshot? Load(global::Android.Content.Context context)
     {
@@ -44,6 +45,24 @@ internal static class PlaybackRecoveryStore
         // Apply persists asynchronously so the five-second checkpoint never blocks
         // the main looper or causes audible playback stutter.
         editor?.Apply();
+    }
+
+    public static void MarkCompleted(global::Android.Content.Context context, string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return;
+        var editor = context.GetSharedPreferences(PreferencesName, global::Android.Content.FileCreationMode.Private)?.Edit();
+        editor?.Clear();
+        editor?.PutString(CompletedFilePathKey, filePath);
+        editor?.Apply();
+    }
+
+    public static string? ConsumeCompletedFilePath(global::Android.Content.Context context)
+    {
+        var preferences = context.GetSharedPreferences(PreferencesName, global::Android.Content.FileCreationMode.Private);
+        var path = preferences?.GetString(CompletedFilePathKey, null);
+        if (!string.IsNullOrWhiteSpace(path))
+            preferences?.Edit()?.Remove(CompletedFilePathKey)?.Apply();
+        return string.IsNullOrWhiteSpace(path) ? null : path;
     }
 
     public static void Clear(global::Android.Content.Context context)
