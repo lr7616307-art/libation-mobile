@@ -623,7 +623,7 @@ public sealed class MainViewModelTests
         await vm.ImportAudioAsync(imported.Id, "local.m4b", audio);
 
         Assert.Single(vm.FilteredLocalAudioBooks);
-        Assert.Equal("1 Audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("1 Audiobook", vm.CatalogueSummaryLabel);
     }
 
     [Fact]
@@ -656,7 +656,7 @@ public sealed class MainViewModelTests
         vm.SetListeningStatusFilter("Finished");
         Assert.Single(vm.FilteredLocalAudioBooks);
         Assert.Equal(1, vm.FinishedCount);
-        Assert.Equal("1 Audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("1 Audiobook", vm.CatalogueSummaryLabel);
     }
 
     private static MainViewModel CreateViewModel(string directory)
