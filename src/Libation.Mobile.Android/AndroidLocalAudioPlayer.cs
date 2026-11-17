@@ -122,7 +122,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
     {
         var path = _completedFilePath;
         _completedFilePath = null;
-        return path;
+        return path ?? PlaybackRecoveryStore.ConsumeCompletedFilePath(AppContext);
     }
 
     public void Dispose() => _disposed = true;
