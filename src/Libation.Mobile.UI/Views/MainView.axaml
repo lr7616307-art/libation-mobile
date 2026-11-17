@@ -15,7 +15,11 @@
             <Button Grid.Column="1" Content="⌕" FontSize="28" Foreground="#B9A5E8"
                     Background="Transparent" BorderThickness="0" Padding="4" Width="48" Height="44"
                     ToolTip.Tip="Search audiobooks" IsVisible="{Binding IsHomeTab}"
-                    Click="OpenHomeSearchClicked"/>
+                    Click="OpenHomeSearchClicked">
+              <Button.RenderTransform>
+                <TranslateTransform Y="-4"/>
+              </Button.RenderTransform>
+            </Button>
           </Grid>
 
           <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
