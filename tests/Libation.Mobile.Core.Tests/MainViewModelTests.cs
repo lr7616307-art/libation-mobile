@@ -693,6 +693,39 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ReplayAfterCompletion_RestartsFromZeroAndReturnsBookToInProgress()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        await repository.ReplaceAllAsync([
+            new Audiobook("local-replay", "Replay audiobook", "Author", "", "", "Manually added")
+            {
+                AudioFilePath = "replay-audio.mp3",
+                ListeningStatus = "In progress",
+                PlaybackPositionMilliseconds = 987_000
+            }
+        ]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+
+        await vm.MarkPlaybackCompletedAsync("local-replay");
+        Assert.Equal("Finished", Assert.Single(await repository.GetBooksAsync()).ListeningStatus);
+        Assert.Equal(0, vm.GetResumePositionMilliseconds("local-replay"));
+
+        await vm.MarkPlaybackStartedAsync("local-replay");
+
+        var replayed = Assert.Single(await repository.GetBooksAsync());
+        Assert.Equal("In progress", replayed.ListeningStatus);
+        Assert.Equal(0, replayed.PlaybackPositionMilliseconds);
+        Assert.Equal(0, vm.FinishedCount);
+        Assert.Equal(1, vm.InProgressCount);
+
+        vm.SetNowPlayingBook("local-replay");
+        Assert.True(vm.HasNowPlayingBook);
+        Assert.Equal("local-replay", vm.NowPlayingBook?.Id);
+    }
+
+    [Fact]
     public async Task MarkPlaybackCompletedAsync_DoesNotMarkProviderOnlyEntryFinished()
     {
         using var directory = new TemporaryDirectory();
