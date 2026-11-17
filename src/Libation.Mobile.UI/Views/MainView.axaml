@@ -22,37 +22,37 @@
             </Button>
           </Grid>
 
-          <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
+          <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16" Margin="0,-8,0,0">
             <Border CornerRadius="8" BorderBrush="#51416F" BorderThickness="1"
                     Background="Transparent" Padding="0">
               <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="0">
                 <Button Grid.Column="0" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowAllClicked">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="All" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding AllCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                  </Grid>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="3">
+                    <TextBlock Text="All" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding AllCount}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </StackPanel>
                 </Button>
                 <Button Grid.Column="1" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowNotStartedClicked">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="Not started" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding NotStartedCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                  </Grid>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="3">
+                    <TextBlock Text="Not Started" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                    <TextBlock Text="{Binding NotStartedCount}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </StackPanel>
                 </Button>
                 <Button Grid.Column="2" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowInProgressClicked">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="In progress" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding InProgressCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                  </Grid>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="3">
+                    <TextBlock Text="In Progress" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                    <TextBlock Text="{Binding InProgressCount}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </StackPanel>
                 </Button>
                 <Button Grid.Column="3" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowFinishedClicked">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="Finished" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding FinishedCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                  </Grid>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="3">
+                    <TextBlock Text="Finished" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                    <TextBlock Text="{Binding FinishedCount}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </StackPanel>
                 </Button>
                 <Border Grid.Column="0" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
                 <Border Grid.Column="1" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
