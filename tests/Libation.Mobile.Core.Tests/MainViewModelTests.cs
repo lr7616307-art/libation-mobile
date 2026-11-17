@@ -1069,6 +1069,58 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ClearNowPlayingBook_HidesMiniAndFullPlayerAfterMatchingTitleCompletes()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var book = new Audiobook("local-player-clear", "Completed audiobook", "Author", "", "", "Manually added")
+        {
+            AudioFilePath = "completed-audio.mp3"
+        };
+        await repository.ReplaceAllAsync([book]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+
+        vm.SetNowPlayingBook(book.Id);
+        vm.OpenFullPlayer();
+
+        Assert.True(vm.HasNowPlayingBook);
+        Assert.True(vm.IsFullPlayerVisible);
+
+        Assert.True(vm.ClearNowPlayingBook(book.Id));
+
+        Assert.False(vm.HasNowPlayingBook);
+        Assert.Null(vm.NowPlayingBook);
+        Assert.False(vm.IsFullPlayerVisible);
+        Assert.False(vm.IsChaptersVisible);
+    }
+
+    [Fact]
+    public async Task ClearNowPlayingBook_IgnoresDelayedCompletionForPreviousTitle()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var first = new Audiobook("local-previous", "Previous audiobook", "Author", "", "", "Manually added")
+        {
+            AudioFilePath = "previous-audio.mp3"
+        };
+        var current = new Audiobook("local-current", "Current audiobook", "Author", "", "", "Manually added")
+        {
+            AudioFilePath = "current-audio.mp3"
+        };
+        await repository.ReplaceAllAsync([first, current]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+
+        vm.SetNowPlayingBook(current.Id);
+        vm.OpenFullPlayer();
+
+        Assert.False(vm.ClearNowPlayingBook(first.Id));
+        Assert.Equal(current.Id, vm.NowPlayingBook?.Id);
+        Assert.True(vm.IsFullPlayerVisible);
+    }
+
+    [Fact]
     public async Task TryNavigateBack_ClosesNestedPlayerAndReturnsToHomeWithoutChangingPlaybackBook()
     {
         using var directory = new TemporaryDirectory();
