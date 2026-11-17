@@ -43,8 +43,8 @@ public sealed class AudiblePlayableActionTests
     {
         var book = CreateBook() with { IsWidevineOfflineAvailable = true };
 
-        Assert.Equal("✓", book.DownloadActionIcon);
-        Assert.Equal("Protected offline copy cached; playback disabled", book.DownloadActionLabel);
+        Assert.Equal("⇩", book.DownloadActionIcon);
+        Assert.Equal("Download protected Audible audio", book.DownloadActionLabel);
         Assert.Contains("playback is currently disabled", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
     }
