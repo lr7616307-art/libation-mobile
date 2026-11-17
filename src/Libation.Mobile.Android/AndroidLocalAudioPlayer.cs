@@ -11,6 +11,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
     private static Context AppContext => global::Android.App.Application.Context;
 
     public event EventHandler? PlaybackStateChanged;
+    public event EventHandler<AudioPlaybackCompletedEventArgs>? PlaybackCompleted;
 
     public AndroidLocalAudioPlayer()
     {
