@@ -1170,7 +1170,7 @@ public partial class MainView : UserControl
         // Use the authenticated Audible ADRM download queue. The result remains
         // protected (AAX/AAXC) when Audible grants protected media; this action
         // does not start Widevine playback or attempt to remove protection.
-        await RunProtectedAudibleOperationAsync(book, startPlayback: false);
+        await DownloadProtectedAudibleBackupAsync(book);
     }
 
     private async Task MarkWidevineOfflineDownloadCompletedAsync(string asin)
@@ -1195,206 +1195,80 @@ public partial class MainView : UserControl
         }
     }
 
-    private async Task RunProtectedAudibleOperationAsync(Audiobook book, bool startPlayback)
+    private async Task DownloadProtectedAudibleBackupAsync(Audiobook book)
     {
-        if (startPlayback && _localAudioPlayer is null)
+        var asin = book.Id.StartsWith("provider:", StringComparison.Ordinal)
+            ? book.Id["provider:".Length..]
+            : string.Empty;
+        if (string.IsNullOrWhiteSpace(asin) || _downloadQueue is null)
         {
-            _viewModel.ReportAudioStatus("Protected Audible playback is unavailable on this platform. The offline download itself does not require the player.");
+            _viewModel.ReportAudioStatus("The Audible protected download queue is not available in this build.");
             return;
         }
 
-        if (!startPlayback)
+        _viewModel.ReportAudioStatus("Requesting an authorized Audible protected download and preparing the transfer…");
+
+        // This is the authenticated Audible ADRM content-licence route. It saves
+        // the provider-granted protected AAX/AAXC file; it never starts playback.
+        await _viewModel.EnqueueAudibleDownloadAsync(book.Id, book.Title);
+        await _viewModel.RefreshDownloadQueueAsync();
+        if (!(await _downloadQueue.GetItemsAsync()).Any(item => item.AudiobookId == book.Id))
         {
-            var asin = book.Id.StartsWith("provider:", StringComparison.Ordinal)
-                ? book.Id["provider:".Length..]
-                : string.Empty;
-            if (string.IsNullOrWhiteSpace(asin) || _downloadQueue is null)
-            {
-                _viewModel.ReportAudioStatus("The Audible ADRM download queue is not available in this build.");
-                return;
-            }
-
-            // Clear any stale status from an earlier attempt before beginning
-            // this one. The result is replaced below with the actual queue state.
-            _viewModel.ReportAudioStatus("Requesting an authorized Audible download and preparing the transfer…");
-
-            // Use the authenticated Audible ADRM content-licence path and normal
-            // HTTPS transfer worker. It does not create a Widevine challenge.
-            await _viewModel.EnqueueAudibleDownloadAsync(book.Id, book.Title);
-            await _viewModel.RefreshDownloadQueueAsync();
-            if (!(await _downloadQueue.GetItemsAsync()).Any(item => item.AudiobookId == book.Id))
-            {
-                _viewModel.ReportAudioStatus("The Audible download could not be added to the persistent queue.");
-                return;
-            }
-
-            await StartPendingDownloadsAsync();
-            // The protected/unprotected publisher updates the catalogue on disk.
-            // Refresh the open detail record before reporting the final outcome.
-            var refreshedBook = await _viewModel.RefreshAudiobookStateAsync(book.Id) ?? book;
-            var completedItem = (await _downloadQueue.GetItemsAsync())
-                .FirstOrDefault(item => item.AudiobookId == book.Id);
-            switch (completedItem?.Status)
-            {
-                case DownloadStatus.Protected:
-                    _viewModel.ReportAudioStatus(
-                        $"Download finished: protected backup {refreshedBook.ProtectedAudioFileName ?? "(.aax/.aaxc)"} was copied to {refreshedBook.ProtectedAudioFolderName ?? "the selected folder"}. It remains encrypted and is not a playable MP3/M4B. VØRATH has not created an unprotected export.");
-                    _viewModel.ReportDownloadSettingsStatus(
-                        "Protected backup saved. This is not a playable audio export.");
-                    break;
-
-                case DownloadStatus.Completed:
-                    _viewModel.ReportAudioStatus(
-                        "Download finished: Audible granted an unprotected audio file. It was copied to your selected folder and added to VØRATH's playable library.");
-                    _viewModel.ReportDownloadSettingsStatus(
-                        "Unprotected audio downloaded and made playable.");
-                    break;
-
-                case DownloadStatus.Failed:
-                    if (!string.IsNullOrWhiteSpace(refreshedBook.ProtectedAudioFileName))
-                    {
-                        _viewModel.ReportAudioStatus(
-                            $"This download attempt failed: {completedItem.ErrorMessage ?? "check the connection and retry"}. Your previously saved protected backup ({refreshedBook.ProtectedAudioFileName}) was not removed.");
-                    }
-                    else
-                    {
-                        _viewModel.ReportAudioStatus(
-                            completedItem.ErrorMessage ?? "Audible did not authorize this download. No completed file was published.");
-                    }
-                    _viewModel.ReportDownloadSettingsStatus("Download failed. No new completed file was reported.");
-                    break;
-
-                case DownloadStatus.Downloading:
-                    _viewModel.ReportAudioStatus(
-                        "Download is still running. Check Settings → Downloads for live progress and Pause/Resume.");
-                    break;
-
-                case DownloadStatus.Queued:
-                case DownloadStatus.Paused:
-                    _viewModel.ReportAudioStatus(
-                        "Download is queued or paused. Open Settings → Downloads to start or resume it.");
-                    break;
-
-                default:
-                    _viewModel.ReportAudioStatus(
-                        "No completed download was confirmed. Check Settings → Downloads for the current queue state.");
-                    break;
-            }
+            _viewModel.ReportAudioStatus("The Audible protected download could not be added to the persistent queue.");
             return;
         }
 
-        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+        await StartPendingDownloadsAsync();
+        var refreshedBook = await _viewModel.RefreshAudiobookStateAsync(book.Id) ?? book;
+        var completedItem = (await _downloadQueue.GetItemsAsync())
+            .FirstOrDefault(item => item.AudiobookId == book.Id);
+        switch (completedItem?.Status)
         {
-            _viewModel.ReportAudioStatus("The Android Widevine download service is not available in this build.");
-            return;
-        }
+            case DownloadStatus.Protected:
+                _viewModel.ReportAudioStatus(
+                    $"Download finished: protected backup {refreshedBook.ProtectedAudioFileName ?? "(.aax/.aaxc)"} was copied to {refreshedBook.ProtectedAudioFolderName ?? "the selected folder"}. It remains encrypted and is not playable in VØRATH.");
+                _viewModel.ReportDownloadSettingsStatus(
+                    "Protected backup saved. It remains encrypted and is not playable in VØRATH.");
+                break;
 
-        if (_protectedAudibleOperationCts is not null)
-        {
-            _viewModel.ReportAudioStatus("Another Audible offline operation is already running. Cancel it before starting another.");
-            return;
-        }
+            case DownloadStatus.Completed:
+                _viewModel.ReportAudioStatus(
+                    "Audible granted an unprotected audio file rather than a protected backup. It was saved as an ordinary local audio file.");
+                _viewModel.ReportDownloadSettingsStatus(
+                    "Audible supplied unprotected audio. No protected backup was created.");
+                break;
 
-        var operationCts = new CancellationTokenSource();
-        _protectedAudibleOperationCts = operationCts;
-        _viewModel.SetProtectedAudibleOperationInProgress(true);
-        var cancellationToken = operationCts.Token;
-        var phase = "initialization";
+            case DownloadStatus.Failed:
+                if (!string.IsNullOrWhiteSpace(refreshedBook.ProtectedAudioFileName))
+                {
+                    _viewModel.ReportAudioStatus(
+                        $"This download attempt failed: {completedItem.ErrorMessage ?? "check the connection and retry"}. Your previously saved protected backup ({refreshedBook.ProtectedAudioFileName}) was not removed.");
+                }
+                else
+                {
+                    _viewModel.ReportAudioStatus(
+                        completedItem.ErrorMessage ?? "Audible did not authorize this protected download. No completed file was published.");
+                }
+                _viewModel.ReportDownloadSettingsStatus("Protected download failed. No new completed file was reported.");
+                break;
 
-        try
-        {
-            _viewModel.ReportAudioStatus("Starting VØRATH offline download. Checking your saved Audible session…");
-            phase = "restoring your Audible account session";
-            _viewModel.ReportAudioStatus("Checking your saved Audible account session…");
-            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
-            if (coordinator is null)
-            {
-                _viewModel.ReportAudioStatus("Sign in to Audible again before downloading this protected audiobook.");
-                return;
-            }
+            case DownloadStatus.Downloading:
+                _viewModel.ReportAudioStatus(
+                    "Protected download is still running. Check Settings → Downloads for progress and Pause/Resume.");
+                break;
 
-            var asin = book.Id["provider:".Length..];
-            phase = "checking the offline licence";
-            _viewModel.ReportAudioStatus("Checking whether this title already has a valid offline licence…");
-            if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken))
-            {
-                _viewModel.ReportAudioStatus("Requesting an Audible-authorized Widevine offline licence…");
-                phase = "requesting the Audible offline licence";
-                _viewModel.ReportAudioStatus("Audible is being asked to authorize offline playback for this title…");
-                await coordinator.AcquireOfflineLicenseAsync(asin, cancellationToken);
-            }
+            case DownloadStatus.Queued:
+            case DownloadStatus.Paused:
+                _viewModel.ReportAudioStatus(
+                    "Protected download is queued or paused. Open Settings → Downloads to start or resume it.");
+                break;
 
-            phase = "checking saved encrypted audio";
-            _viewModel.ReportAudioStatus("Checking VØRATH's protected offline audio cache…");
-            if (!await coordinator.HasOfflineMediaAsync(asin, cancellationToken))
-            {
-                _viewModel.ReportAudioStatus("Downloading Audible's encrypted audio into VØRATH. You can cancel here.");
-                phase = "downloading encrypted Audible audio";
-                _viewModel.ReportAudioStatus("Downloading encrypted Audible audio. Keep VØRATH open; this can take several minutes…");
-                await coordinator.DownloadOfflineMediaAsync(asin, cancellationToken);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            phase = "saving the offline status";
-            _viewModel.ReportAudioStatus("Download data received. Verifying and saving the offline status…");
-            await _viewModel.MarkWidevineOfflineAvailableAsync(book.Id, cancellationToken);
-
-            if (!startPlayback)
-            {
-                _viewModel.ReportAudioStatus("Download complete. This audiobook is saved in VØRATH and ready for offline playback.");
-                return;
-            }
-
-            phase = "starting offline playback";
-            await coordinator.PlayAsync(
-                asin,
-                book.Title,
-                _viewModel.GetResumePositionMilliseconds(book.Id),
-                cancellationToken: cancellationToken);
-
-            _playingAudiobookId = book.Id;
-            _viewModel.SetNowPlayingBook(book.Id);
-            _playbackProgressTimer.Start();
-            _playbackCheckpointTimer.Start();
-            await _viewModel.MarkPlaybackStartedAsync(book.Id);
-            BeginChapterMetadataLoad(book.Id);
-            UpdatePlaybackProgressUi();
-            _viewModel.ReportAudioStatus("Playing the saved Audible audiobook offline through Android Widevine.");
-        }
-        catch (NotSupportedException ex)
-        {
-            _viewModel.ReportAudioStatus("Audible offline download is not supported for this title/device: " + ex.Message);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            _viewModel.ReportAudioStatus("Audible offline operation cancelled. Partial encrypted segments are retained for retry.");
-        }
-        catch (Exception ex)
-        {
-            var details = new List<string>();
-            for (Exception? current = ex; current is not null && details.Count < 3; current = current.InnerException)
-            {
-                var message = current.Message?.Trim();
-                if (!string.IsNullOrWhiteSpace(message) && !details.Contains(message, StringComparer.Ordinal))
-                    details.Add(message);
-            }
-            var detail = details.Count == 0 ? ex.GetType().Name : string.Join(" → ", details);
-            if (ex is HttpRequestException { StatusCode: { } statusCode })
-                detail = $"HTTP {(int)statusCode} ({statusCode}): {detail}";
-            if (detail.Length > 500) detail = detail[..500];
-            _viewModel.ReportAudioStatus($"Audible download failed while {phase}: {detail}");
-        }
-        finally
-        {
-            if (ReferenceEquals(_protectedAudibleOperationCts, operationCts))
-                _protectedAudibleOperationCts = null;
-            _viewModel.SetProtectedAudibleOperationInProgress(false);
-            operationCts.Dispose();
+            default:
+                _viewModel.ReportAudioStatus(
+                    "No completed protected download was confirmed. Check Settings → Downloads for the current queue state.");
+                break;
         }
     }
-
-    private async Task PlayProtectedAudibleBookAsync(Audiobook book) =>
-        await RunProtectedAudibleOperationAsync(book, startPlayback: true);
 
     private void CancelProtectedAudibleOperationClicked(
         object? sender,
