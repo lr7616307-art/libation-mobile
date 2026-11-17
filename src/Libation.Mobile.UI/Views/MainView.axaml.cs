@@ -21,6 +21,7 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private bool _isSeekingPlaybackSlider;
     private bool _hasObservedActivePlayback;
     private bool _isHandlingPlaybackCompletion;
     private bool? _lastObservedIsPlaying;
@@ -44,7 +45,16 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        PlaybackSeekSlider.AddHandler(
+            Avalonia.Input.InputElement.PointerPressedEvent,
+            PlaybackSeekSliderPointerPressed,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel,
+            handledEventsToo: true);
+        PlaybackSeekSlider.AddHandler(
+            Avalonia.Input.InputElement.PointerReleasedEvent,
+            PlaybackSeekSliderPointerReleased,
+            Avalonia.Interactivity.RoutingStrategies.Bubble,
+            handledEventsToo: true);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -415,6 +425,7 @@ public partial class MainView : UserControl
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
+        PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerPressedEvent, PlaybackSeekSliderPointerPressed);
         PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
@@ -468,7 +479,8 @@ public partial class MainView : UserControl
         try
         {
             PlaybackSeekSlider.Maximum = Math.Max(1, duration);
-            PlaybackSeekSlider.Value = duration > 0 ? Math.Clamp(position, 0, duration) : 0;
+            if (!_isSeekingPlaybackSlider)
+                PlaybackSeekSlider.Value = duration > 0 ? Math.Clamp(position, 0, duration) : 0;
             PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
             PlaybackPositionLabel.Text = FormatPlaybackTime(position);
             PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
@@ -545,18 +557,37 @@ public partial class MainView : UserControl
         return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
     }
 
+    private void PlaybackSeekSliderPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (!_isUpdatingPlaybackSlider && _localAudioPlayer is not null && _playingAudiobookId is not null)
+            _isSeekingPlaybackSlider = true;
+    }
+
     private void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
-        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
+        if (!_isSeekingPlaybackSlider || _isUpdatingPlaybackSlider
+            || _localAudioPlayer is null || _playingAudiobookId is null)
+        {
+            _isSeekingPlaybackSlider = false;
             return;
+        }
 
+        _isSeekingPlaybackSlider = false;
         var duration = _localAudioPlayer.DurationMilliseconds;
         if (duration <= 0) return;
-        var target = Math.Clamp((long)PlaybackSeekSlider.Value, 0, duration);
-        _localAudioPlayer.Seek(target);
-        UpdateCurrentChapterUi(target, duration);
-        UpdatePlaybackProgressUi();
-        _ = _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+
+        try
+        {
+            var target = Math.Clamp((long)PlaybackSeekSlider.Value, 0, duration);
+            _localAudioPlayer.Seek(target);
+            UpdateCurrentChapterUi(target, duration);
+            UpdatePlaybackProgressUi();
+            _ = _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not seek to that position.");
+        }
     }
 
     private async void SeekToSelectedPositionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
