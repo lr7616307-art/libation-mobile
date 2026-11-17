@@ -11,7 +11,7 @@ using Libation.Mobile.UI.ViewModels;
 namespace Libation.Mobile.Android;
 
 [Application]
-public class AndroidApp : AvaloniaAndroidApplication<App>
+public class AndroidApp : AvaloniaAndroidApplication<global::Libation.Mobile.UI.App>
 {
     protected AndroidApp(nint javaReference, JniHandleOwnership transfer)
         : base(javaReference, transfer)
