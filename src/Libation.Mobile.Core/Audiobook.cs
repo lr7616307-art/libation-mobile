@@ -29,9 +29,9 @@ public sealed record Audiobook(
     public string AudibleAvailabilityLabel => !IsProviderCatalogueEntry
         ? string.Empty
         : IsWidevineOfflineAvailable
-            ? "Protected offline copy is ready for authorized playback in VØRATH"
+            ? "An Audible-protected offline copy is cached. Protected Audible playback is currently disabled in VØRATH."
             : !string.IsNullOrWhiteSpace(ProtectedAudioFileName)
-                ? "An encrypted AAX/AAXC backup exists. It is not playable in a normal audio app; request an Audible-authorized offline copy to play inside VØRATH."
+                ? "An encrypted AAX/AAXC backup exists. It remains protected and cannot be played in VØRATH or a normal audio app."
                 : !string.IsNullOrWhiteSpace(AudioFilePath)
                     ? "Downloaded to VØRATH and ready to play"
                     : IsPlayableOnAudible == true
@@ -45,7 +45,7 @@ public sealed record Audiobook(
     [JsonIgnore]
     public string AudibleAvailabilityShortLabel => !IsProviderCatalogueEntry
         ? string.Empty
-        : IsWidevineOfflineAvailable ? "OFFLINE PLAYBACK READY"
+        : IsWidevineOfflineAvailable ? "PROTECTED COPY CACHED"
         : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "PROTECTED BACKUP ONLY"
         : !string.IsNullOrWhiteSpace(AudioFilePath) ? "READY TO PLAY"
         : IsDownloadedOnAudible == true ? "DOWNLOADED ON AUDIBLE"
@@ -57,10 +57,18 @@ public sealed record Audiobook(
     public bool HasNoCoverArt => string.IsNullOrWhiteSpace(CoverImagePath);
 
     [JsonIgnore]
+    public string DownloadActionIcon => !IsProviderCatalogueEntry
+        ? "＋"
+        : !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶"
+            : IsWidevineOfflineAvailable || !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "✓"
+            : "⇩";
+
+    [JsonIgnore]
     public string DownloadActionLabel => IsProviderCatalogueEntry
-        ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "▶  Play"
-            : IsWidevineOfflineAvailable ? "▶  Play offline"
-            : "⇩  Download & play offline"
+        ? !string.IsNullOrWhiteSpace(AudioFilePath) ? "Play local audio"
+            : IsWidevineOfflineAvailable ? "Protected offline copy cached; playback disabled"
+            : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "Protected backup already saved"
+            : "Download protected Audible audio"
         : "Add to queue";
 
     /// <summary>Chapter markers in playback order. Existing catalogues without this field load as an empty list.</summary>
