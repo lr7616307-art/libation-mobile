@@ -714,8 +714,25 @@ public partial class MainView : UserControl
 
         await _viewModel.MarkPlaybackCompletedAsync(completedBook.Id);
 
-        if (string.Equals(_playingAudiobookId, completedBook.Id, StringComparison.Ordinal))
-            _viewModel.ReportAudioStatus("Finished: " + completedBook.Title);
+        // The completion callback can arrive after the user has already started
+        // another title. Only tear down the mini/main player for the session that
+        // actually finished.
+        if (!string.Equals(_playingAudiobookId, completedBook.Id, StringComparison.Ordinal))
+            return;
+
+        _playbackProgressTimer.Stop();
+        _playbackCheckpointTimer.Stop();
+        _sleepTimer.Stop();
+        _chapterMetadataLoadCts?.Cancel();
+        _chapterMetadataLoadCts = null;
+        _chapterMetadataLoadBookId = null;
+        _chapterInfoStatusBookId = null;
+        _chapterInfoStatusTitle = null;
+        _chapterInfoStatusMessage = null;
+
+        _viewModel.ClearNowPlayingBook(completedBook.Id);
+        _playingAudiobookId = null;
+        _viewModel.ReportAudioStatus("Finished: " + completedBook.Title);
     }
 
     private void BeginChapterMetadataLoad(string audiobookId)
