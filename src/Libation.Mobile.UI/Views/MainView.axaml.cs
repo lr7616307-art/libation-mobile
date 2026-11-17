@@ -597,6 +597,8 @@ public partial class MainView : UserControl
             ?.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         if (_localAudioPlayer is ILocalAudioPlayerStateNotifier notifier)
             notifier.PlaybackStateChanged -= LocalAudioPlayerStateChanged;
+        if (_localAudioPlayer is ILocalAudioPlayerCompletionNotifier completionNotifier)
+            completionNotifier.PlaybackCompleted -= LocalAudioPlaybackCompleted;
         _chapterMetadataLoadCts?.Cancel();
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
@@ -687,10 +689,34 @@ public partial class MainView : UserControl
             notifier.PlaybackStateChanged -= LocalAudioPlayerStateChanged;
             notifier.PlaybackStateChanged += LocalAudioPlayerStateChanged;
         }
+        if (_localAudioPlayer is ILocalAudioPlayerCompletionNotifier completionNotifier)
+        {
+            completionNotifier.PlaybackCompleted -= LocalAudioPlaybackCompleted;
+            completionNotifier.PlaybackCompleted += LocalAudioPlaybackCompleted;
+        }
     }
 
     private void LocalAudioPlayerStateChanged(object? sender, EventArgs e)
         => Dispatcher.UIThread.Post(UpdatePlaybackProgressUi, DispatcherPriority.Background);
+
+    private void LocalAudioPlaybackCompleted(object? sender, AudioPlaybackCompletedEventArgs e)
+        => Dispatcher.UIThread.Post(() => _ = HandleLocalAudioPlaybackCompletedAsync(e), DispatcherPriority.Normal);
+
+    private async Task HandleLocalAudioPlaybackCompletedAsync(AudioPlaybackCompletedEventArgs e)
+    {
+        // Match by the completed file path rather than the currently selected row:
+        // ExoPlayer may finish just as the user navigates to another screen/title.
+        var completedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
+            !string.IsNullOrWhiteSpace(book.AudioFilePath) &&
+            string.Equals(book.AudioFilePath, e.FilePath, StringComparison.Ordinal));
+        if (completedBook is null)
+            return;
+
+        await _viewModel.MarkPlaybackCompletedAsync(completedBook.Id);
+
+        if (string.Equals(_playingAudiobookId, completedBook.Id, StringComparison.Ordinal))
+            _viewModel.ReportAudioStatus("Finished: " + completedBook.Title);
+    }
 
     private void BeginChapterMetadataLoad(string audiobookId)
     {
