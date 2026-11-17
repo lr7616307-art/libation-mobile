@@ -203,7 +203,7 @@ public sealed class DownloadQueueWorkerTests
     }
 
     [Fact]
-    public async Task ProcessNextAsync_CancellationReturnsItemToQueued()
+    public async Task ProcessNextAsync_CancellationMarksItemPausedForFastResume()
     {
         using var directory = new TemporaryDirectory();
         var queue = new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json"));
@@ -217,7 +217,7 @@ public sealed class DownloadQueueWorkerTests
             () => worker.ProcessNextAsync(cancellationToken: cancellation.Token));
 
         var item = Assert.Single(await queue.GetItemsAsync());
-        Assert.Equal(DownloadStatus.Queued, item.Status);
+        Assert.Equal(DownloadStatus.Paused, item.Status);
         Assert.Null(item.ErrorMessage);
     }
 
