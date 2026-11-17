@@ -86,7 +86,11 @@ public partial class MainView : UserControl
         // Some Android/Avalonia startup paths do not populate generated x:Name fields.
         // Resolve the controls from the live visual tree so player updates still reach them.
         ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
-            ?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+            ?.AddHandler(
+                Avalonia.Input.InputElement.PointerReleasedEvent,
+                PlaybackSeekSliderPointerReleased,
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
         AttachPlaybackStateNotifications();
         _activeView = new WeakReference<MainView>(this);
         PlatformDownloadQueuePauseAction = () =>
