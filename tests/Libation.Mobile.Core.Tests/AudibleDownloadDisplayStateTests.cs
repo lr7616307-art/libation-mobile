@@ -49,7 +49,7 @@ public sealed class AudibleDownloadDisplayStateTests
     }
 
     [Fact]
-    public void UnprotectedLocalAudio_IsTheOnlyStateThatReportsReadyToPlay()
+    public void UnprotectedLocalAudio_DoesNotOverrideAudibleAvailabilityStatus()
     {
         var book = new Audiobook(
             "provider:1234567890",
@@ -59,10 +59,11 @@ public sealed class AudibleDownloadDisplayStateTests
             "1h",
             "Not started")
         {
-            AudioFilePath = "/private/example.mp3"
+            AudioFilePath = "/private/example.mp3",
+            IsPlayableOnAudible = true
         };
 
-        Assert.Equal("READY TO PLAY", book.AudibleAvailabilityShortLabel);
+        Assert.Equal("AVAILABLE", book.AudibleAvailabilityShortLabel);
         Assert.Equal("▶", book.DownloadActionIcon);
         Assert.Equal("▶  Play", book.DownloadActionLabel);
     }
