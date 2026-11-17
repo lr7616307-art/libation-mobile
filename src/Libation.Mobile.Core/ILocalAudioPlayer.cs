@@ -13,6 +13,8 @@ public interface ILocalAudioPlayer : IDisposable
     void Resume();
     void Seek(long positionMilliseconds);
     void SetPlaybackSpeed(float speed);
+    /// <summary>Returns and clears a completed file path persisted by the platform playback service, when supported.</summary>
+    string? ConsumeCompletedFilePath() => null;
     /// <summary>Optional artwork path for the platform media notification.</summary>
     void SetArtwork(string? coverImagePath) { }
 }

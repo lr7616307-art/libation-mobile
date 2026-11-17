@@ -6,28 +6,31 @@
   <Grid RowDefinitions="*,Auto,Auto" Background="#0B0911">
     <Grid Grid.Row="0">
       <ScrollViewer>
-        <StackPanel Margin="20,16,20,20" Spacing="16">
+        <StackPanel Margin="20,16,20,20" Spacing="10">
           <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsHomeExperienceVisible}">
             <StackPanel Grid.Column="0" Spacing="0">
               <TextBlock Text="VØRATH" FontSize="13" FontWeight="Bold" LetterSpacing="3" Foreground="#B9A5E8"/>
               <TextBlock Text="BEYOND THE SILENCE" FontSize="9" LetterSpacing="2" Foreground="#817494"/>
             </StackPanel>
             <Button x:Name="HomeSearchToggleButton" Grid.Column="1" Content="⌕" FontSize="26" Foreground="#A78BFA"
-                    Background="Transparent" BorderThickness="0" Padding="8" VerticalAlignment="Center"
+                    Background="Transparent" BorderThickness="0" Padding="0" Width="40" Height="40"
+                    VerticalAlignment="Top" Margin="0,-8,0,0"
                     ToolTip.Tip="Search audiobooks" Click="ToggleHomeSearchClicked" IsVisible="{Binding IsHomeTab}"/>
           </Grid>
 
-          <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
-            <TextBlock Text="Home" FontSize="30" FontWeight="Bold" />
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
-              <Button Grid.Column="0" Background="#C17A18" Click="ShowNotStartedClicked">
-                <TextBlock Text="{Binding NotStartedTabLabel}" FontSize="10" LineHeight="12" TextWrapping="NoWrap"/>
+          <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="9">
+            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="5">
+              <Button Grid.Column="0" Background="#51416F" Padding="4,9" Tag="All" Click="ShowNotStartedClicked">
+                <TextBlock Text="{Binding AllTabLabel}" FontSize="11" FontWeight="Bold" LineHeight="13" TextWrapping="NoWrap"/>
               </Button>
-              <Button Grid.Column="1" Background="#C63E46" Click="ShowInProgressClicked">
-                <TextBlock Text="{Binding InProgressTabLabel}" FontSize="10" LineHeight="12" TextWrapping="NoWrap"/>
+              <Button Grid.Column="1" Background="#C17A18" Padding="4,9" Click="ShowNotStartedClicked">
+                <TextBlock Text="{Binding NotStartedTabLabel}" FontSize="11" FontWeight="Bold" LineHeight="13" TextWrapping="NoWrap"/>
               </Button>
-              <Button Grid.Column="2" Background="#218B52" Click="ShowFinishedClicked">
-                <TextBlock Text="{Binding FinishedTabLabel}" FontSize="10" LineHeight="12" TextWrapping="NoWrap"/>
+              <Button Grid.Column="2" Background="#C63E46" Padding="4,9" Click="ShowInProgressClicked">
+                <TextBlock Text="{Binding InProgressTabLabel}" FontSize="11" FontWeight="Bold" LineHeight="13" TextWrapping="NoWrap"/>
+              </Button>
+              <Button Grid.Column="3" Background="#218B52" Padding="4,9" Click="ShowFinishedClicked">
+                <TextBlock Text="{Binding FinishedTabLabel}" FontSize="11" FontWeight="Bold" LineHeight="13" TextWrapping="NoWrap"/>
               </Button>
             </Grid>
             <TextBox x:Name="HomeSearchBox" PlaceholderText="Search your audiobooks"
@@ -96,8 +99,19 @@
                           </Border>
                         </StackPanel>
                         <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" Spacing="6">
-                          <Button Content="⋮" FontSize="22" Padding="8,4" Background="Transparent" BorderThickness="0" Click="BookOverflowClicked"/>
-                          <Button Content="▶" FontSize="20" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}"/>
+                          <Button Content="⋮" FontSize="23" Width="44" Height="44" MinWidth="44" MinHeight="44"
+                                  Padding="0" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                  Background="Transparent" Foreground="#FFFFFF" BorderThickness="0"
+                                  Click="BookOverflowClicked"/>
+                          <Button FontSize="18" Width="44" Height="44" MinWidth="44" MinHeight="44"
+                                  Padding="0" Background="Transparent" Foreground="#FFFFFF" BorderThickness="0"
+                                  Click="PlayAudioClicked" IsVisible="{Binding CanDelete}">
+                            <Border Width="42" Height="42" CornerRadius="21" BorderBrush="#BFFFFFFF"
+                                    BorderThickness="1" Background="Transparent">
+                              <TextBlock Text="▶" FontSize="18" Foreground="#FFFFFF"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                          </Button>
                           <CheckBox Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" IsChecked="{Binding IsSelectedForBulkAction, Mode=OneWay}" Click="ToggleSelectionClicked"/>
                         </StackPanel>
                       </Grid>
@@ -281,18 +295,29 @@
                 <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="16" TextAlignment="Center" Opacity="0.7"/>
                 <TextBlock x:Name="CurrentChapterTitleLabel" Text="Loading chapter information…" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
                 <TextBlock x:Name="ChapterProgressLabel" Text="{Binding NowPlayingChapterCountLabel}" FontSize="12" TextAlignment="Center" Opacity="0.65"/>
-                <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0" IsEnabled="False"/>
+                <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0" MinHeight="34" IsEnabled="False"/>
                 <Grid ColumnDefinitions="*,*,*">
                   <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="12"/>
                   <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="12" HorizontalAlignment="Center"/>
                   <TextBlock x:Name="PlaybackRemainingLabel" Grid.Column="2" Text="--:--" FontSize="12" HorizontalAlignment="Right"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="3">
-                  <Button Grid.Column="0" Content="⏮" FontSize="22" Click="PreviousChapterClicked"/>
-                  <Button Grid.Column="1" Content="↶" FontSize="22" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked"/>
-                  <Button x:Name="PlayPauseButton" Grid.Column="2" Content="▶" FontSize="25" Click="TogglePlaybackClicked"/>
-                  <Button Grid.Column="3" Content="↷" FontSize="22" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked"/>
-                  <Button Grid.Column="4" Content="⏭" FontSize="22" Click="NextChapterClicked"/>
+                  <Button Grid.Column="0" Content="⏮" FontSize="22" Foreground="#FFFFFF" Background="Transparent"
+                          BorderThickness="0" Padding="0" MinHeight="48" Click="PreviousChapterClicked"/>
+                  <Button Grid.Column="1" Content="↶" FontSize="22" Foreground="#FFFFFF" Background="Transparent"
+                          BorderThickness="0" Padding="0" MinHeight="48" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked"/>
+                  <Button x:Name="PlayPauseButton" Grid.Column="2" Width="58" Height="58" Padding="0"
+                          Background="Transparent" BorderThickness="0" Click="TogglePlaybackClicked">
+                    <Border Width="54" Height="54" CornerRadius="27" BorderBrush="#FFFFFF"
+                            BorderThickness="1" Background="Transparent">
+                      <TextBlock x:Name="PlayPauseGlyph" Text="▶" FontSize="25" Foreground="#FFFFFF"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                  </Button>
+                  <Button Grid.Column="3" Content="↷" FontSize="22" Foreground="#FFFFFF" Background="Transparent"
+                          BorderThickness="0" Padding="0" MinHeight="48" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked"/>
+                  <Button Grid.Column="4" Content="⏭" FontSize="22" Foreground="#FFFFFF" Background="Transparent"
+                          BorderThickness="0" Padding="0" MinHeight="48" Click="NextChapterClicked"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
                   <Button x:Name="PlaybackSpeedButton" Grid.Column="0" Content="Speed · 1.0×" Click="PlaybackSpeedClicked"/>
@@ -340,8 +365,10 @@
             <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="10" Opacity="0.65" MaxLines="1"/>
           </StackPanel>
         </Button>
-        <Button x:Name="MiniRewindButton" Grid.Column="2" Content="↶" FontSize="20" ToolTip.Tip="Rewind 10 seconds" Padding="8" Click="RewindAudioClicked"/>
-        <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="20" Padding="10" Click="TogglePlaybackClicked"/>
+        <Button x:Name="MiniRewindButton" Grid.Column="2" Content="↶" FontSize="20" Foreground="#FFFFFF"
+                Background="Transparent" BorderThickness="0" Padding="8" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked"/>
+        <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="22" Foreground="#FFFFFF"
+                Background="Transparent" BorderThickness="0" Padding="10" Click="TogglePlaybackClicked"/>
       </Grid>
     </Border>
 

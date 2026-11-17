@@ -7,9 +7,11 @@ namespace Libation.Mobile.Android;
 public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer
 {
     private static Context AppContext => global::Android.App.Application.Context;
+    private string? _completedFilePath;
 
     public AndroidLocalAudioPlayer()
     {
+        _completedFilePath = PlaybackRecoveryStore.ConsumeCompletedFilePath(AppContext);
         // Rehydrate the last session when the app is opened after a process death
         // or device restart. The saved play/pause state is respected.
         var snapshot = PlaybackRecoveryStore.Load(AppContext);
@@ -114,6 +116,13 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionSetSpeed);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraSpeed, Math.Clamp(speed, 0.5f, 3f));
         AppContext.StartService(intent);
+    }
+
+    public string? ConsumeCompletedFilePath()
+    {
+        var path = _completedFilePath;
+        _completedFilePath = null;
+        return path ?? PlaybackRecoveryStore.ConsumeCompletedFilePath(AppContext);
     }
 
     public void Dispose() => _disposed = true;

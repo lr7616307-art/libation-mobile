@@ -21,6 +21,9 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private bool _isSeekingPlaybackSlider;
+    private bool _hasObservedActivePlayback;
+    private bool _isHandlingPlaybackCompletion;
     private bool? _lastObservedIsPlaying;
     private static readonly FilePickerFileType AudioFileType = new("Audiobook audio") { Patterns = ["*.mp3", "*.m4a", "*.m4b", "*.aac", "*.flac", "*.ogg", "*.opus", "*.wav"] };
     private static readonly FilePickerFileType BackupFileType = new("Libation Mobile backup") { Patterns = ["*.json"] };
@@ -42,7 +45,16 @@ public partial class MainView : UserControl
         _localAudioPlayer = PlatformLocalAudioPlayerFactory?.Invoke();
         InitializeComponent();
         DataContext = _viewModel;
-        PlaybackSeekSlider.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        PlaybackSeekSlider.AddHandler(
+            Avalonia.Input.InputElement.PointerPressedEvent,
+            PlaybackSeekSliderPointerPressed,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel,
+            handledEventsToo: true);
+        PlaybackSeekSlider.AddHandler(
+            Avalonia.Input.InputElement.PointerReleasedEvent,
+            PlaybackSeekSliderPointerReleased,
+            Avalonia.Interactivity.RoutingStrategies.Bubble,
+            handledEventsToo: true);
         Loaded += MainViewLoaded;
         Unloaded += MainViewUnloaded;
     }
@@ -73,6 +85,18 @@ public partial class MainView : UserControl
         // service keeps running. Recreate its lightweight adapter on each load.
         _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
         await _viewModel.InitializeAsync();
+        var completedPath = _localAudioPlayer?.ConsumeCompletedFilePath();
+        if (!string.IsNullOrWhiteSpace(completedPath))
+        {
+            var completedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
+                string.Equals(book.AudioFilePath, completedPath, StringComparison.Ordinal));
+            if (completedBook is not null)
+            {
+                await _viewModel.MarkAudiobookFinishedAsync(completedBook.Id);
+                _viewModel.ReportAudioStatus("Finished: " + completedBook.Title);
+            }
+        }
+
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
 
@@ -82,6 +106,7 @@ public partial class MainView : UserControl
             return;
 
         _playingAudiobookId = currentBook.Id;
+        _hasObservedActivePlayback = true;
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
         SetPlayerChapterPositions(currentBook);
@@ -149,6 +174,8 @@ public partial class MainView : UserControl
             _localAudioPlayer.SetArtwork(book.CoverImagePath);
             SetPlayerChapterPositions(book);
             _playingAudiobookId = book.Id;
+            _hasObservedActivePlayback = false;
+            await _viewModel.MarkPlaybackStartedAsync(book.Id);
             _viewModel.SetNowPlayingBook(book.Id);
             _lastObservedIsPlaying = null;
             _playbackProgressTimer.Start();
@@ -398,6 +425,7 @@ public partial class MainView : UserControl
         _playbackProgressTimer.Stop();
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
+        PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerPressedEvent, PlaybackSeekSliderPointerPressed);
         PlaybackSeekSlider.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
@@ -426,8 +454,8 @@ public partial class MainView : UserControl
     private void UpdatePlaybackProgressUi()
     {
         var isPlaying = _localAudioPlayer?.IsPlaying == true;
-        if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = isPlaying ? "⏸" : "▶";
-        if (PlayPauseButton is not null) PlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+        if (MiniPlayPauseButton is not null) MiniPlayPauseButton.Content = isPlaying ? "Ⅱ" : "▶";
+        if (PlayPauseGlyph is not null) PlayPauseGlyph.Text = isPlaying ? "Ⅱ" : "▶";
         if (_lastObservedIsPlaying != isPlaying)
         {
             _lastObservedIsPlaying = isPlaying;
@@ -441,9 +469,6 @@ public partial class MainView : UserControl
 
         var position = Math.Max(0, _localAudioPlayer?.PositionMilliseconds ?? 0);
         var duration = Math.Max(0, _localAudioPlayer?.DurationMilliseconds ?? 0);
-        var chapterRange = GetCurrentChapterRange(position, duration);
-        var chapterElapsed = Math.Max(0, position - chapterRange.Start);
-        var chapterDuration = Math.Max(0, chapterRange.End - chapterRange.Start);
         UpdateCurrentChapterUi(position, duration);
         if (PlaybackSpeedButton is not null)
         {
@@ -453,13 +478,14 @@ public partial class MainView : UserControl
         _isUpdatingPlaybackSlider = true;
         try
         {
-            PlaybackSeekSlider.Maximum = Math.Max(1, chapterDuration);
-            PlaybackSeekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
+            PlaybackSeekSlider.Maximum = Math.Max(1, duration);
+            if (!_isSeekingPlaybackSlider)
+                PlaybackSeekSlider.Value = duration > 0 ? Math.Clamp(position, 0, duration) : 0;
             PlaybackSeekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
-            PlaybackPositionLabel.Text = FormatPlaybackTime(chapterElapsed);
-            PlaybackDurationLabel.Text = chapterDuration > 0 ? FormatPlaybackTime(chapterDuration) : "--:--";
-            var remaining = Math.Max(0, chapterDuration - chapterElapsed);
-            PlaybackRemainingLabel.Text = chapterDuration > 0 ? $"-{FormatPlaybackTime(remaining)}" : "--:--";
+            PlaybackPositionLabel.Text = FormatPlaybackTime(position);
+            PlaybackDurationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
+            var remaining = Math.Max(0, duration - position);
+            PlaybackRemainingLabel.Text = duration > 0 ? $"-{FormatPlaybackTime(remaining)}" : "--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
     }
@@ -531,19 +557,37 @@ public partial class MainView : UserControl
         return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
     }
 
+    private void PlaybackSeekSliderPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (!_isUpdatingPlaybackSlider && _localAudioPlayer is not null && _playingAudiobookId is not null)
+            _isSeekingPlaybackSlider = true;
+    }
+
     private void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
-        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
+        if (!_isSeekingPlaybackSlider || _isUpdatingPlaybackSlider
+            || _localAudioPlayer is null || _playingAudiobookId is null)
+        {
+            _isSeekingPlaybackSlider = false;
             return;
+        }
 
+        _isSeekingPlaybackSlider = false;
         var duration = _localAudioPlayer.DurationMilliseconds;
-        var chapterRange = GetCurrentChapterRange(_localAudioPlayer.PositionMilliseconds, duration);
-        var target = Math.Max(0, chapterRange.Start + (long)PlaybackSeekSlider.Value);
-        if (duration > 0) target = Math.Min(target, duration);
-        _localAudioPlayer.Seek(target);
-        UpdateCurrentChapterUi(target, duration);
-        UpdatePlaybackProgressUi();
-        _ = _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+        if (duration <= 0) return;
+
+        try
+        {
+            var target = Math.Clamp((long)PlaybackSeekSlider.Value, 0, duration);
+            _localAudioPlayer.Seek(target);
+            UpdateCurrentChapterUi(target, duration);
+            UpdatePlaybackProgressUi();
+            _ = _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+        }
+        catch (Exception)
+        {
+            _viewModel.ReportAudioStatus("Could not seek to that position.");
+        }
     }
 
     private async void SeekToSelectedPositionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -629,7 +673,74 @@ public partial class MainView : UserControl
         }
     }
 
-    private void PlaybackProgressTimerTick(object? sender, EventArgs e) => UpdatePlaybackProgressUi();
+    private async void PlaybackProgressTimerTick(object? sender, EventArgs e)
+    {
+        await CheckPlaybackCompletionAsync();
+        if (!_isHandlingPlaybackCompletion)
+            UpdatePlaybackProgressUi();
+    }
+
+    private async Task CheckPlaybackCompletionAsync()
+    {
+        if (_isHandlingPlaybackCompletion
+            || _localAudioPlayer is null || _playingAudiobookId is null)
+            return;
+
+        var currentPath = _localAudioPlayer.CurrentFilePath;
+        if (!_hasObservedActivePlayback)
+        {
+            var expectedPath = _viewModel.LocalAudioBooks
+                .FirstOrDefault(book => book.Id == _playingAudiobookId)?.AudioFilePath;
+            var completedPath = _localAudioPlayer.ConsumeCompletedFilePath();
+            if (!string.IsNullOrWhiteSpace(completedPath)
+                && string.Equals(completedPath, expectedPath, StringComparison.Ordinal))
+            {
+                _hasObservedActivePlayback = true;
+                await HandlePlaybackCompletionAsync();
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(currentPath)
+                && string.Equals(currentPath, expectedPath, StringComparison.Ordinal))
+                _hasObservedActivePlayback = true;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentPath))
+            return;
+
+        await HandlePlaybackCompletionAsync();
+    }
+
+    private async Task HandlePlaybackCompletionAsync()
+    {
+        if (_isHandlingPlaybackCompletion || _playingAudiobookId is not { Length: > 0 } audiobookId)
+            return;
+
+        _isHandlingPlaybackCompletion = true;
+        var title = _viewModel.LocalAudioBooks.FirstOrDefault(book => book.Id == audiobookId)?.Title
+            ?? _viewModel.NowPlayingBook?.Title ?? "Audiobook";
+        _localAudioPlayer?.ConsumeCompletedFilePath();
+        _playbackProgressTimer.Stop();
+        _playbackCheckpointTimer.Stop();
+        _sleepTimer.Stop();
+        _sleepTimerEndsAt = null;
+        _sleepAtPositionMilliseconds = null;
+        _sleepTimerSelection = -1;
+        if (SleepTimerButton is not null) SleepTimerButton.Content = "Timer";
+        try
+        {
+            await _viewModel.MarkAudiobookFinishedAsync(audiobookId);
+            _viewModel.ReportAudioStatus("Finished: " + title);
+        }
+        finally
+        {
+            _playingAudiobookId = null;
+            _hasObservedActivePlayback = false;
+            _lastObservedIsPlaying = null;
+            _viewModel.ClearNowPlayingBook();
+            _isHandlingPlaybackCompletion = false;
+        }
+    }
 
     private async void PlaybackCheckpointTimerTick(object? sender, EventArgs e)
     {
@@ -910,7 +1021,11 @@ public partial class MainView : UserControl
     }
 
     private void ShowNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => _viewModel.SetListeningStatusFilter("Not started");
+    {
+        var filter = sender is Button button && string.Equals(button.Tag as string, "All", StringComparison.Ordinal)
+            ? "All" : "Not started";
+        _viewModel.SetListeningStatusFilter(filter);
+    }
     private void ShowInProgressClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.SetListeningStatusFilter("In progress");
     private void ShowFinishedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
