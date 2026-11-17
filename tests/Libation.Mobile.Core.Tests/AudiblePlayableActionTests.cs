@@ -14,6 +14,28 @@ public sealed class AudiblePlayableActionTests
         "Not started");
 
     [Fact]
+    public void AudibleDownloadState_DoesNotReplaceAvailabilityWithDownloadedStatus()
+    {
+        var book = CreateBook() with
+        {
+            IsPlayableOnAudible = true,
+            IsDownloadedOnAudible = true
+        };
+
+        Assert.Equal("AVAILABLE", book.AudibleAvailabilityShortLabel);
+    }
+
+    [Fact]
+    public void AudibleAvailability_IsShownAsAvailableOrUnavailableOnly()
+    {
+        var available = CreateBook() with { IsPlayableOnAudible = true };
+        var unavailable = CreateBook() with { IsPlayableOnAudible = false };
+
+        Assert.Equal("AVAILABLE", available.AudibleAvailabilityShortLabel);
+        Assert.Equal("UNAVAILABLE", unavailable.AudibleAvailabilityShortLabel);
+    }
+
+    [Fact]
     public void UncachedAudibleTitle_OffersProtectedDownloadActionAndCompactIcon()
     {
         var book = CreateBook();
