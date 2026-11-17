@@ -163,7 +163,7 @@ public sealed class DownloadQueueWorker
                 if (transferProgress is not null)
                     await transferProgress.FlushAsync();
                 await _queue.UpdateStatusAsync(
-                    item.AudiobookId, DownloadStatus.Queued,
+                    item.AudiobookId, DownloadStatus.Paused,
                     cancellationToken: CancellationToken.None);
                 throw;
             }
