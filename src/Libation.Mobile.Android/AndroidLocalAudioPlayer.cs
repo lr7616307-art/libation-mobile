@@ -6,7 +6,7 @@ using Libation.Mobile.UI.Views;
 namespace Libation.Mobile.Android;
 
 /// <summary>UI adapter for the playback service, including crash-safe session recovery.</summary>
-public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlayerStateNotifier, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer
+public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlayerStateNotifier, ILocalAudioPlayerCompletionNotifier, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer
 {
     private static Context AppContext => global::Android.App.Application.Context;
 
