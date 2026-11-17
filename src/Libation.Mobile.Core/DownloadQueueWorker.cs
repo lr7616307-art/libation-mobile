@@ -122,7 +122,11 @@ public sealed class DownloadQueueWorker
             QueueProgressReporter? transferProgress = null;
             try
             {
-                target = await _source.ResolveAsync(item, cancellationToken);
+                // Some Audible API adapters cannot pass a CancellationToken to the
+                // underlying licence request. Race the await against cancellation so
+                // Pause responds immediately even when provider resolution is pending.
+                target = await AwaitWithCancellationAsync(
+                    _source.ResolveAsync(item, cancellationToken), cancellationToken);
                 if (target is null)
                     throw new InvalidOperationException("The audio provider returned no download target.");
 
@@ -267,6 +271,28 @@ public sealed class DownloadQueueWorker
                 CancellationToken.None,
                 TaskContinuationOptions.None,
                 TaskScheduler.Default).Unwrap();
+        }
+    }
+
+    private static async Task<T> AwaitWithCancellationAsync<T>(
+        Task<T> operation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await operation.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A provider adapter may not be able to cancel its underlying request.
+            // Observe any later fault so the abandoned request cannot surface an
+            // unobserved task exception after the queue has already paused.
+            _ = operation.ContinueWith(
+                static completed => { _ = completed.Exception; },
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            throw;
         }
     }
 
