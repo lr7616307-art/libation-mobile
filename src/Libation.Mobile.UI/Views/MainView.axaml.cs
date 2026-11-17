@@ -76,6 +76,14 @@ public partial class MainView : UserControl
         // service keeps running. Recreate its lightweight adapter on each load.
         _localAudioPlayer ??= PlatformLocalAudioPlayerFactory?.Invoke();
         await _viewModel.InitializeAsync();
+        if (_localAudioPlayer is IPlaybackCompletionSource completionSource
+            && completionSource.ConsumeCompletedFilePath() is { Length: > 0 } completedPath)
+        {
+            var completedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
+                string.Equals(book.AudioFilePath, completedPath, StringComparison.Ordinal));
+            if (completedBook is not null)
+                await _viewModel.MarkAudiobookFinishedAsync(completedBook.Id);
+        }
         if (_localAudioPlayer?.CurrentFilePath is not { Length: > 0 } currentPath)
             return;
 
@@ -975,9 +983,6 @@ public partial class MainView : UserControl
         if (HomeSearchBox.IsVisible)
             Dispatcher.UIThread.Post(() => HomeSearchBox.Focus());
     }
-
-    private void ShowAllClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        => _viewModel.SetListeningStatusFilter("All");
 
     private void ShowNotStartedClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
         => _viewModel.SetListeningStatusFilter("Not started");
