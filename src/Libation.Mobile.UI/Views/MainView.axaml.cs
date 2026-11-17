@@ -29,6 +29,7 @@ public partial class MainView : UserControl
     private bool _downloadQueueRestartRequested;
     private CancellationTokenSource? _protectedAudibleOperationCts;
     private string? _playingAudiobookId;
+    private long _playbackSessionGeneration;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly DispatcherTimer _playbackCheckpointTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly DispatcherTimer _sleepTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -201,6 +202,7 @@ public partial class MainView : UserControl
             return;
 
         _playingAudiobookId = currentBook.Id;
+        System.Threading.Interlocked.Increment(ref _playbackSessionGeneration);
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
@@ -330,6 +332,7 @@ public partial class MainView : UserControl
             _viewModel.ReportAudioStatus("Audio playback is unavailable on this platform.");
             return;
         }
+        var playbackSessionGeneration = System.Threading.Interlocked.Increment(ref _playbackSessionGeneration);
         try
         {
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
@@ -342,11 +345,14 @@ public partial class MainView : UserControl
             UpdatePlaybackProgressUi();
 
             await _viewModel.MarkPlaybackStartedAsync(book.Id);
+            if (playbackSessionGeneration != System.Threading.Interlocked.Read(ref _playbackSessionGeneration))
+                return;
             BeginChapterMetadataLoad(book.Id);
         }
         catch (Exception)
         {
-            _viewModel.ReportAudioStatus("Could not play this audio file. Re-import it and try again.");
+            if (playbackSessionGeneration == System.Threading.Interlocked.Read(ref _playbackSessionGeneration))
+                _viewModel.ReportAudioStatus("Could not play this audio file. Re-import it and try again.");
         }
     }
 
@@ -700,9 +706,19 @@ public partial class MainView : UserControl
         => Dispatcher.UIThread.Post(UpdatePlaybackProgressUi, DispatcherPriority.Background);
 
     private void LocalAudioPlaybackCompleted(object? sender, AudioPlaybackCompletedEventArgs e)
-        => Dispatcher.UIThread.Post(() => _ = HandleLocalAudioPlaybackCompletedAsync(e), DispatcherPriority.Normal);
+    {
+        // Capture which play request was current when the engine reported EOF.
+        // A replay of the same audiobook gets a different generation even though
+        // its catalogue ID and file path are identical.
+        var playbackSessionGeneration = System.Threading.Interlocked.Read(ref _playbackSessionGeneration);
+        Dispatcher.UIThread.Post(
+            () => _ = HandleLocalAudioPlaybackCompletedAsync(e, playbackSessionGeneration),
+            DispatcherPriority.Normal);
+    }
 
-    private async Task HandleLocalAudioPlaybackCompletedAsync(AudioPlaybackCompletedEventArgs e)
+    private async Task HandleLocalAudioPlaybackCompletedAsync(
+        AudioPlaybackCompletedEventArgs e,
+        long playbackSessionGeneration)
     {
         // Match by the completed file path rather than the currently selected row:
         // ExoPlayer may finish just as the user navigates to another screen/title.
@@ -714,9 +730,19 @@ public partial class MainView : UserControl
 
         await _viewModel.MarkPlaybackCompletedAsync(completedBook.Id);
 
-        // The completion callback can arrive after the user has already started
-        // another title. Only tear down the mini/main player for the session that
-        // actually finished.
+        // Do not let an earlier completion callback clear a replay of the same
+        // audiobook. IDs are not session-unique, so compare the generation as
+        // well. If replay began while the completion save was in flight, restore
+        // the new session's In progress status after the older Finished write.
+        if (playbackSessionGeneration != System.Threading.Interlocked.Read(ref _playbackSessionGeneration))
+        {
+            if (string.Equals(_playingAudiobookId, completedBook.Id, StringComparison.Ordinal))
+                await _viewModel.MarkPlaybackStartedAsync(completedBook.Id);
+            return;
+        }
+
+        // A different audiobook may have started while this completion was
+        // being saved. Its player must remain untouched.
         if (!string.Equals(_playingAudiobookId, completedBook.Id, StringComparison.Ordinal))
             return;
 
