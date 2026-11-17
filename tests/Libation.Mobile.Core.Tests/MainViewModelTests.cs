@@ -91,7 +91,7 @@ public sealed class MainViewModelTests
 
         Assert.Equal("Example audiobook.aax", refreshed?.ProtectedAudioFileName);
         Assert.Equal("Example audiobook.aax", vm.DetailBook?.ProtectedAudioFileName);
-        Assert.Equal("PROTECTED BACKUP ONLY", vm.DetailBook?.AudibleAvailabilityShortLabel);
+        Assert.Equal("STATUS UNKNOWN", vm.DetailBook?.AudibleAvailabilityShortLabel);
         Assert.Contains("not an ordinary MP3/M4B", vm.DetailProtectedDownloadLabel,
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Widevine DASH", vm.DetailProtectedDownloadLabel,
