@@ -362,12 +362,12 @@ public sealed class MainViewModelTests
         vm.SearchText = "Atomic Habits";
         Assert.Empty(vm.Books);
         Assert.Equal("No matching audiobooks. Try another title, author or narrator.", vm.EmptyMessage);
-        Assert.Equal("0 of 1 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 audiobooks", vm.CatalogueSummaryLabel);
 
         vm.SearchText = "Project Hail Mary";
         Assert.Single(vm.Books);
         Assert.Empty(vm.EmptyMessage);
-        Assert.Equal("1 of 1 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 audiobooks", vm.CatalogueSummaryLabel);
     }
 
     [Fact]
@@ -581,6 +581,62 @@ public sealed class MainViewModelTests
 
         var saved = Assert.Single((await repository.GetBooksAsync()).Where(x => x.Id == book.Id));
         Assert.Equal(0, saved.PlaybackPositionMilliseconds);
+    }
+
+    [Fact]
+    public async Task PlaybackCompletion_MarksBookFinishedAndReplayStartsAtZero()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            audioImportService: new LocalAudioImportService(Path.Combine(directory.Path, "audio")));
+        await vm.InitializeAsync();
+        vm.NewTitle = "Completed audiobook";
+        vm.NewAuthor = "Author";
+        await vm.AddBookAsync();
+        var book = Assert.Single(vm.Books);
+        await using var audio = new MemoryStream([1, 2, 3]);
+        await vm.ImportAudioAsync(book.Id, "completed.m4b", audio);
+
+        await vm.SetAudiobookInProgressAsync(book.Id);
+        await vm.SavePlaybackPositionAsync(book.Id, 45_000);
+        Assert.Equal("In progress", Assert.Single(vm.LocalAudioBooks).ListeningStatus);
+
+        await vm.MarkAudiobookFinishedAsync(book.Id);
+
+        var finished = Assert.Single(vm.LocalAudioBooks);
+        Assert.Equal("Finished", finished.ListeningStatus);
+        Assert.Equal(0, finished.PlaybackPositionMilliseconds);
+        Assert.Equal(0, vm.GetResumePositionMilliseconds(book.Id));
+    }
+
+    [Fact]
+    public async Task HomeAudiobookCount_ExcludesProviderCatalogueEntriesAndTracksVisibleStatusFilter()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")),
+            new LibrarySyncService(new FakeCatalogProvider([
+                new RemoteAudiobook("remote", "Remote title", "Remote author", "", "4h")
+            ]), repository),
+            audioImportService: new LocalAudioImportService(Path.Combine(directory.Path, "audio")));
+        await vm.InitializeAsync();
+        vm.NewTitle = "Local title";
+        vm.NewAuthor = "Local author";
+        await vm.AddBookAsync();
+        var local = Assert.Single(vm.Books.Where(book => book.Title == "Local title"));
+        await using var audio = new MemoryStream([1, 2, 3]);
+        await vm.ImportAudioAsync(local.Id, "local.m4b", audio);
+        await vm.SyncLibraryAsync();
+
+        Assert.Equal(1, vm.AllCount);
+        Assert.Equal("1 audiobook", vm.CatalogueSummaryLabel);
+        Assert.Contains(vm.FilteredLocalAudioBooks, book => book.Id == local.Id);
+
+        await vm.MarkAudiobookFinishedAsync(local.Id);
+        vm.SetListeningStatusFilter("Not started");
+        Assert.Empty(vm.FilteredLocalAudioBooks);
+        Assert.Equal("0 audiobooks", vm.CatalogueSummaryLabel);
     }
 
     [Fact]

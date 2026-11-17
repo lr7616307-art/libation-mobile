@@ -170,6 +170,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (string.IsNullOrWhiteSpace(_title))
             _title = System.IO.Path.GetFileNameWithoutExtension(path);
         _currentFilePath = path;
+        GetSharedPreferences("vorath_playback_completion", FileCreationMode.Private)?
+            .Edit()?.Remove("completed_file_path")?.Apply();
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
 
@@ -204,6 +206,8 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     {
         if (playbackState == 4) // Player.STATE_ENDED
         {
+            PersistCompletedFilePath();
+            ClearSleepTimer();
             StopPlayback();
             StopSelf();
             return;
@@ -461,6 +465,17 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         return builder.Build();
     }
 
+    private void PersistCompletedFilePath()
+    {
+        if (string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        try
+        {
+            GetSharedPreferences("vorath_playback_completion", FileCreationMode.Private)?
+                .Edit()?.PutString("completed_file_path", _currentFilePath)?.Apply();
+        }
+        catch (Exception) { /* Completion persistence must not interrupt service teardown. */ }
+    }
+
     private void SetArtwork(string? path)
     {
         _coverImagePath = !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? path : null;
@@ -509,11 +524,13 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void StopPlayer()
     {
-        if (_player is null) return;
-        try { _player.Stop(); } catch (Exception) { }
-        _player.Release();
-        _player.Dispose();
-        _player = null;
+        if (_player is not null)
+        {
+            try { _player.Stop(); } catch (Exception) { }
+            try { _player.Release(); } catch (Exception) { }
+            _player.Dispose();
+            _player = null;
+        }
         _currentFilePath = null;
     }
 
@@ -522,6 +539,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         StopPlayer();
         if (clearRecovery) PlaybackRecoveryStore.Clear(this);
         StopForeground(StopForegroundFlags.Remove);
+        try
+        {
+            var manager = (NotificationManager?)GetSystemService(NotificationService);
+            manager?.Cancel(NotificationId);
+        }
+        catch (Exception) { /* Notification cleanup must not prevent service shutdown. */ }
     }
 
     public override IBinder? OnBind(Intent? intent) => null;

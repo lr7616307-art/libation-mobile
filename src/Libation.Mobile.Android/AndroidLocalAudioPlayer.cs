@@ -4,23 +4,28 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Android;
 
 /// <summary>UI adapter for the playback service, including crash-safe session recovery.</summary>
-public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer
+public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer, IPlaybackCompletionSource, IDeferredAudioSessionRecovery
 {
     private static Context AppContext => global::Android.App.Application.Context;
+    private bool _hasPendingRecovery;
 
     public AndroidLocalAudioPlayer()
     {
-        // Rehydrate the last session when the app is opened after a process death
-        // or device restart. The saved play/pause state is respected.
-        var snapshot = PlaybackRecoveryStore.Load(AppContext);
-        if (snapshot is not null)
-        {
-            var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionRestore);
-            if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
-                AppContext.StartForegroundService(intent);
-            else
-                AppContext.StartService(intent);
-        }
+        // Reading the saved checkpoint is safe during view initialization, but
+        // starting a foreground service is not. Defer service startup until the
+        // library screen has completed its first load.
+        _hasPendingRecovery = PlaybackRecoveryStore.Load(AppContext) is not null;
+    }
+
+    public void RestorePendingSession()
+    {
+        if (!_hasPendingRecovery) return;
+        _hasPendingRecovery = false;
+        var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionRestore);
+        if (global::Android.OS.Build.VERSION.SdkInt >= global::Android.OS.BuildVersionCodes.O)
+            AppContext.StartForegroundService(intent);
+        else
+            AppContext.StartService(intent);
     }
 
     private PlaybackRecoverySnapshot? Recovery => PlaybackRecoveryStore.Load(AppContext);
@@ -114,6 +119,14 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionSetSpeed);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraSpeed, Math.Clamp(speed, 0.5f, 3f));
         AppContext.StartService(intent);
+    }
+
+    public string? ConsumeCompletedFilePath()
+    {
+        var preferences = AppContext.GetSharedPreferences("vorath_playback_completion", global::Android.Content.FileCreationMode.Private);
+        var path = preferences?.GetString("completed_file_path", null);
+        preferences?.Edit()?.Remove("completed_file_path")?.Apply();
+        return path;
     }
 
     public void Dispose() => _disposed = true;
