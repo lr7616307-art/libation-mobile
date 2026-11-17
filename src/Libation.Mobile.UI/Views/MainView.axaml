@@ -18,15 +18,18 @@
           </Grid>
 
           <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="9">
-            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="5">
-              <Button Grid.Column="0" Background="#C17A18" Click="ShowNotStartedClicked">
-                <TextBlock Text="{Binding NotStartedTabLabel}" FontSize="11" FontWeight="SemiBold" LineHeight="13" TextWrapping="NoWrap"/>
+            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="5">
+              <Button Grid.Column="0" Background="#51416F" Click="ShowAllClicked">
+                <TextBlock Text="{Binding AllTabLabel}" FontSize="11" FontWeight="Bold" LineHeight="13" TextWrapping="NoWrap"/>
               </Button>
-              <Button Grid.Column="1" Background="#C63E46" Click="ShowInProgressClicked">
-                <TextBlock Text="{Binding InProgressTabLabel}" FontSize="10" LineHeight="12" TextWrapping="NoWrap"/>
+              <Button Grid.Column="1" Background="#C17A18" Click="ShowNotStartedClicked">
+                <TextBlock Text="{Binding NotStartedTabLabel}" FontSize="11" FontWeight="Bold" LineHeight="13" TextWrapping="NoWrap"/>
               </Button>
-              <Button Grid.Column="2" Background="#218B52" Click="ShowFinishedClicked">
-                <TextBlock Text="{Binding FinishedTabLabel}" FontSize="10" LineHeight="12" TextWrapping="NoWrap"/>
+              <Button Grid.Column="2" Background="#C63E46" Click="ShowInProgressClicked">
+                <TextBlock Text="{Binding InProgressTabLabel}" FontSize="11" FontWeight="Bold" LineHeight="13" TextWrapping="NoWrap"/>
+              </Button>
+              <Button Grid.Column="3" Background="#218B52" Click="ShowFinishedClicked">
+                <TextBlock Text="{Binding FinishedTabLabel}" FontSize="11" FontWeight="Bold" LineHeight="13" TextWrapping="NoWrap"/>
               </Button>
             </Grid>
             <TextBox x:Name="HomeSearchBox" PlaceholderText="Search your audiobooks"
@@ -295,7 +298,7 @@
                   <Button Grid.Column="0" Content="⏮" FontSize="22" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" Click="PreviousChapterClicked"/>
                   <Button Grid.Column="1" Content="↶" FontSize="22" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked"/>
                   <Button x:Name="PlayPauseButton" Grid.Column="2" Content="▶" FontSize="25" Width="56" Height="56" CornerRadius="28"
-                          Foreground="#FFFFFF" Background="Transparent" BorderThickness="1" BorderBrush="#FFFFFF"
+                          Foreground="#FFFFFF" Background="#1AFFFFFF" BorderThickness="0"
                           HorizontalAlignment="Center" Click="TogglePlaybackClicked"/>
                   <Button Grid.Column="3" Content="↷" FontSize="22" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked"/>
                   <Button Grid.Column="4" Content="⏭" FontSize="22" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" Click="NextChapterClicked"/>
@@ -348,7 +351,7 @@
         </Button>
         <Button x:Name="MiniRewindButton" Grid.Column="2" Content="↶" FontSize="20" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Rewind 10 seconds" Padding="8" Click="RewindAudioClicked"/>
         <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="20" Width="44" Height="44" CornerRadius="22"
-                Foreground="#FFFFFF" Background="Transparent" BorderThickness="1" BorderBrush="#FFFFFF"
+                Foreground="#FFFFFF" Background="#1AFFFFFF" BorderThickness="0"
                 HorizontalAlignment="Center" Padding="0" Click="TogglePlaybackClicked"/>
       </Grid>
     </Border>
