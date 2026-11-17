@@ -335,7 +335,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ? _detailBook!.AudibleAvailabilityLabel
         : string.Empty;
     public string DetailProtectedDownloadLabel => _detailBook?.IsWidevineOfflineAvailable == true
-        ? "A provider-protected offline stream and its saved playback licence are available in VØRATH. Playback uses the protected offline player; no unprotected MP3/M4B export has been created."
+        ? "An Audible-protected offline copy is cached. Protected Audible playback is currently disabled in VØRATH; no unprotected MP3/M4B export has been created."
         : !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
             ? $"Protected backup saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. This encrypted file is not an ordinary MP3/M4B and cannot be opened by a normal audio player. VØRATH has not created a playable M4B from it."
             : string.Empty;
@@ -1046,7 +1046,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
     public bool IsDownloadQueueRunning => _isDownloadQueueRunning;
-    public string DownloadQueueActionLabel => IsDownloadQueueRunning ? "Pause downloads" : "Start pending downloads";
+    public string DownloadQueueActionLabel => IsDownloadQueueRunning
+        ? "Pause downloads"
+        : QueueItems.Any(item => item.Status == DownloadStatus.Paused ||
+            (item.Status == DownloadStatus.Queued && item.BytesReceived > 0))
+            ? "Resume downloads"
+            : "Start pending downloads";
     public bool HasActiveDownloadProgress => _activeDownloadProgress is not null;
     public string ActiveDownloadProgressTitle => _activeDownloadProgress is null
         ? string.Empty
@@ -1707,6 +1712,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasPendingDownloadItems));
         OnPropertyChanged(nameof(QueueCountLabel));
         OnPropertyChanged(nameof(QueueSummaryLabel));
+        OnPropertyChanged(nameof(DownloadQueueActionLabel));
         OnPropertyChanged(nameof(ActiveDownloadProgressTitle));
     }
 
