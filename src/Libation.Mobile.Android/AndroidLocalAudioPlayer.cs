@@ -4,7 +4,7 @@ using Libation.Mobile.Core;
 namespace Libation.Mobile.Android;
 
 /// <summary>UI adapter for the playback service, including crash-safe session recovery.</summary>
-public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer
+public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer, IPlaybackCompletionSource
 {
     private static Context AppContext => global::Android.App.Application.Context;
 
@@ -114,6 +114,14 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ISleepTimerAudi
         var intent = CreateIntent(AndroidLocalAudioPlaybackService.ActionSetSpeed);
         intent.PutExtra(AndroidLocalAudioPlaybackService.ExtraSpeed, Math.Clamp(speed, 0.5f, 3f));
         AppContext.StartService(intent);
+    }
+
+    public string? ConsumeCompletedFilePath()
+    {
+        var preferences = AppContext.GetSharedPreferences("vorath_playback_completion", global::Android.Content.FileCreationMode.Private);
+        var path = preferences?.GetString("completed_file_path", null);
+        preferences?.Edit()?.Remove("completed_file_path")?.Apply();
+        return path;
     }
 
     public void Dispose() => _disposed = true;
