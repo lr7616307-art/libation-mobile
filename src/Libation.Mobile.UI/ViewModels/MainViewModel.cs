@@ -16,7 +16,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly AudiobookFileImportService? _audiobookFileImportService;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly SemaphoreSlim _syncGate = new(1, 1);
-    private readonly LibrarySyncService? _syncService;
+    private LibrarySyncService? _syncService;
     private readonly ISyncStateStore? _syncStateStore;
     private readonly Func<string>? _widevineDiagnosticFactory;
     private string _widevineDiagnostic = "Widevine check is available only in the Android app.";
@@ -432,6 +432,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public bool IsSyncing { get => _isSyncing; private set { if (_isSyncing == value) return; _isSyncing = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanSync)); } }
+    public void ConfigureSyncService(LibrarySyncService syncService)
+    {
+        _syncService = syncService ?? throw new ArgumentNullException(nameof(syncService));
+        OnPropertyChanged(nameof(CanSync));
+        SyncStatus = "Audible provider ready. Sign in to sync your library.";
+    }
+
     public bool CanSync => _syncService is not null && !IsSyncing;
     public string SyncStatus { get => _syncStatus; private set { if (_syncStatus == value) return; _syncStatus = value; OnPropertyChanged(); } }
     public DateTimeOffset? LastSuccessfulSync
