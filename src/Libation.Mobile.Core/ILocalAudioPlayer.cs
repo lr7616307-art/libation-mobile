@@ -16,3 +16,11 @@ public interface ILocalAudioPlayer : IDisposable
     /// <summary>Optional artwork path for the platform media notification.</summary>
     void SetArtwork(string? coverImagePath) { }
 }
+
+
+/// <summary>Optional signal source for completed local playback sessions.</summary>
+public interface IPlaybackCompletionSource
+{
+    /// <summary>Returns and clears the last completed local audio file path.</summary>
+    string? ConsumeCompletedFilePath();
+}
