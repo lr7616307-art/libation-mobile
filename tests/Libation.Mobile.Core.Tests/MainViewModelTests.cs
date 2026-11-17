@@ -767,12 +767,12 @@ public sealed class MainViewModelTests
 
         Assert.Equal(1, vm.LocalAudioBooks.Count);
         Assert.Single(vm.FilteredLocalAudioBooks);
-        Assert.Equal("0 of 0 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("1 of 1 audiobooks", vm.CatalogueSummaryLabel);
 
         vm.SetListeningStatusFilter("In progress");
 
         Assert.Empty(vm.FilteredLocalAudioBooks);
-        Assert.Equal("0 of 0 audiobooks", vm.CatalogueSummaryLabel);
+        Assert.Equal("0 of 1 audiobooks", vm.CatalogueSummaryLabel);
     }
 
     [Fact]
