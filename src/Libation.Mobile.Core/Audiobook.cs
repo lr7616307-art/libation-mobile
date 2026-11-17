@@ -45,10 +45,6 @@ public sealed record Audiobook(
     [JsonIgnore]
     public string AudibleAvailabilityShortLabel => !IsProviderCatalogueEntry
         ? string.Empty
-        : IsWidevineOfflineAvailable ? "PROTECTED CACHE"
-        : !string.IsNullOrWhiteSpace(ProtectedAudioFileName) ? "PROTECTED BACKUP ONLY"
-        : !string.IsNullOrWhiteSpace(AudioFilePath) ? "READY TO PLAY"
-        : IsDownloadedOnAudible == true ? "DOWNLOADED ON AUDIBLE"
         : IsPlayableOnAudible == true ? "AVAILABLE"
         : IsPlayableOnAudible == false ? "UNAVAILABLE"
         : "STATUS UNKNOWN";
