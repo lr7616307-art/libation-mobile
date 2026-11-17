@@ -43,7 +43,7 @@ public sealed class AudibleDownloadDisplayStateTests
             IsWidevineOfflineAvailable = true
         };
 
-        Assert.Equal("PROTECTED COPY CACHED", book.AudibleAvailabilityShortLabel);
+        Assert.Equal("PROTECTED CACHE", book.AudibleAvailabilityShortLabel);
         Assert.Contains("playback is currently disabled", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
     }
