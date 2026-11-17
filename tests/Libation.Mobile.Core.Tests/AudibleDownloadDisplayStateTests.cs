@@ -64,6 +64,6 @@ public sealed class AudibleDownloadDisplayStateTests
 
         Assert.Equal("READY TO PLAY", book.AudibleAvailabilityShortLabel);
         Assert.Equal("▶", book.DownloadActionIcon);
-        Assert.Equal("Play local audio", book.DownloadActionLabel);
+        Assert.Equal("▶  Play", book.DownloadActionLabel);
     }
 }
