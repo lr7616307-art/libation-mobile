@@ -20,7 +20,7 @@
 
           <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="9">
             <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="5">
-              <Button Grid.Column="0" Background="#51416F" Padding="4,9" Click="ShowAllClicked">
+              <Button Grid.Column="0" Background="#51416F" Padding="4,9" Tag="All" Click="ShowNotStartedClicked">
                 <TextBlock Text="{Binding AllTabLabel}" FontSize="11" FontWeight="Bold" LineHeight="13" TextWrapping="NoWrap"/>
               </Button>
               <Button Grid.Column="1" Background="#C17A18" Padding="4,9" Click="ShowNotStartedClicked">
