@@ -660,6 +660,14 @@ public partial class MainView : UserControl
         {
             var expectedPath = _viewModel.LocalAudioBooks
                 .FirstOrDefault(book => book.Id == _playingAudiobookId)?.AudioFilePath;
+            var completedPath = _localAudioPlayer.ConsumeCompletedFilePath();
+            if (!string.IsNullOrWhiteSpace(completedPath)
+                && string.Equals(completedPath, expectedPath, StringComparison.Ordinal))
+            {
+                _hasObservedActivePlayback = true;
+                await HandlePlaybackCompletionAsync();
+                return;
+            }
             if (!string.IsNullOrWhiteSpace(currentPath)
                 && string.Equals(currentPath, expectedPath, StringComparison.Ordinal))
                 _hasObservedActivePlayback = true;
