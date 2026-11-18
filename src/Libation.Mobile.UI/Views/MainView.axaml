@@ -206,7 +206,7 @@
             </Grid>
             <Border CornerRadius="22" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="13">
-                <Image Width="260" Height="260" HorizontalAlignment="Center" Source="{Binding DetailBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                <Image Width="260" Height="260" HorizontalAlignment="Center" Source="{Binding DetailBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="Uniform"/>
                 <TextBlock Text="{Binding DetailBook.Title}" FontSize="25" FontWeight="Bold" TextWrapping="Wrap" TextAlignment="Center"/>
                 <TextBlock Text="{Binding DetailBook.Author}" FontSize="17" TextAlignment="Center" Foreground="#C4B5FD"/>
                 <TextBlock Text="{Binding DetailBook.Narrator}" FontSize="14" TextAlignment="Center" Opacity="0.75"/>
@@ -548,7 +548,7 @@
             </Grid>
             <Border CornerRadius="24" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="14">
-                <Image Width="320" Height="320" HorizontalAlignment="Center" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                <Image Width="320" Height="320" HorizontalAlignment="Center" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="Uniform"/>
                 <TextBlock Text="{Binding NowPlayingBook.Title}" FontSize="24" FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="16" TextAlignment="Center" Opacity="0.7"/>
                 <TextBlock x:Name="CurrentChapterTitleLabel" Text="Ready when you are" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
