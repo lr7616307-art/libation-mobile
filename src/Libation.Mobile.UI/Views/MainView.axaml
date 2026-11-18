@@ -12,13 +12,15 @@
               <TextBlock Text="VØRATH" FontSize="13" FontWeight="Bold" LetterSpacing="3" Foreground="#B9A5E8"/>
               <TextBlock Text="BEYOND THE SILENCE" FontSize="9" LetterSpacing="2" Foreground="#817494"/>
             </StackPanel>
-            <Button Grid.Column="1" Content="⌕" FontSize="28" Foreground="#B9A5E8"
-                    Background="Transparent" BorderThickness="0" Padding="4" Width="48" Height="44"
+            <Button Grid.Column="1" Background="Transparent" BorderThickness="0"
+                    Padding="0" Width="44" Height="44"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                     ToolTip.Tip="Search audiobooks" IsVisible="{Binding IsHomeTab}"
                     Click="OpenHomeSearchClicked">
-              <Button.RenderTransform>
-                <TranslateTransform Y="-4"/>
-              </Button.RenderTransform>
+              <Path Width="22" Height="22" Stretch="Uniform"
+                    Data="M 18,10 A 8,8 0,1,1 2,10 A 8,8 0,1,1 18,10 M 15.7,15.7 L 22,22"
+                    Stroke="#B9A5E8" StrokeThickness="2"
+                    StrokeLineCap="Round" StrokeLineJoin="Round"/>
             </Button>
           </Grid>
 
