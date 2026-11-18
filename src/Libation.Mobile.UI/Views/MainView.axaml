@@ -138,13 +138,14 @@
                             <TextBlock Text="{Binding ListeningStatus}" FontSize="10" FontWeight="SemiBold"/>
                           </Border>
                         </StackPanel>
-                        <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" Spacing="6">
+                        <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
                           <Button Content="⋮" FontSize="22" Width="40" Height="40" MinWidth="40" MinHeight="40"
+                                  HorizontalAlignment="Center"
                                   Padding="0" Background="Transparent" BorderThickness="0" CornerRadius="20"
                                   HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                                   Click="BookOverflowClicked"/>
                           <Button Width="40" Height="40" MinWidth="40" MinHeight="40"
-                                  Padding="0" Background="Transparent" BorderThickness="0" CornerRadius="20"
+                                  HorizontalAlignment="Center" Padding="0" Background="Transparent" BorderThickness="0" CornerRadius="20"
                                   HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                                   ToolTip.Tip="Play audiobook" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}">
                             <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="18" Height="18" Stretch="Uniform"/>
