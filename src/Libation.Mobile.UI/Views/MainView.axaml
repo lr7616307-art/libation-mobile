@@ -22,6 +22,7 @@
             </StackPanel>
             <Button Grid.Column="1" Background="Transparent" BorderThickness="0"
                     Padding="0" Width="44" Height="44"
+                    VerticalAlignment="Center"
                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                     ToolTip.Tip="Search audiobooks" IsVisible="{Binding IsHomeTab}"
                     Click="OpenHomeSearchClicked">
