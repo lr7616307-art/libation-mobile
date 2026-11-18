@@ -637,7 +637,7 @@
     </Grid>
 
     <Border Grid.Row="1" Background="#181421" BorderBrush="#51416F" BorderThickness="1,1,1,0"
-            Padding="10,8" IsVisible="{Binding HasNowPlayingBook}">
+            Padding="10,8" IsVisible="{Binding HasMiniPlayer}">
       <Grid ColumnDefinitions="52,*,Auto,Auto" ColumnSpacing="9">
         <Button Grid.Column="0" Padding="0" Background="Transparent" BorderThickness="0" Click="OpenFullPlayerClicked">
           <Image Width="48" Height="48" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
