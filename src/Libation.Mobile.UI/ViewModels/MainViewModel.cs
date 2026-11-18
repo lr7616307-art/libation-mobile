@@ -211,6 +211,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _nowPlayingBook = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasNowPlayingBook));
+            OnPropertyChanged(nameof(HasMiniPlayer));
             OnPropertyChanged(nameof(NowPlayingChapterCountLabel));
             OnPropertyChanged(nameof(HasNowPlayingChapters));
             OnPropertyChanged(nameof(HasNoNowPlayingChapters));
@@ -762,6 +763,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasNowPlayingBook => NowPlayingBook is not null;
+    public bool HasMiniPlayer => HasNowPlayingBook && !IsFullPlayerVisible && !IsChaptersVisible;
 
     /// <summary>Handles one Android system Back press without tearing down the activity or player.</summary>
     public bool TryNavigateBack()
@@ -893,6 +895,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsDownloadsPageVisible));
         OnPropertyChanged(nameof(IsFullPlayerVisible));
         OnPropertyChanged(nameof(IsChaptersVisible));
+        OnPropertyChanged(nameof(HasMiniPlayer));
         OnPropertyChanged(nameof(IsBookDetailsVisible));
         OnPropertyChanged(nameof(IsEditVisible));
     }
