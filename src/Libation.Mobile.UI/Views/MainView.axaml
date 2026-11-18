@@ -15,7 +15,7 @@
       <ScrollViewer>
         <StackPanel Margin="20,16,20,20" Spacing="16">
           <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Grid.Column="0" Spacing="0" IsVisible="{Binding IsHomeNavigationSelected}">
+            <StackPanel Grid.Column="0" Spacing="0" VerticalAlignment="Center" IsVisible="{Binding IsHomeNavigationSelected}">
               <TextBlock Text="VØRATH" FontSize="13" FontWeight="Bold" LetterSpacing="3" Foreground="#B9A5E8"/>
               <TextBlock Text="BEYOND THE SILENCE" FontSize="9" LetterSpacing="2" Foreground="#817494"/>
             </StackPanel>
