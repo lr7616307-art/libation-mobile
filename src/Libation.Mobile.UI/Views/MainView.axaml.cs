@@ -651,10 +651,13 @@ public partial class MainView : UserControl
         var durationLabel = ResolveControl(PlaybackDurationLabel, "PlaybackDurationLabel");
         var remainingLabel = ResolveControl(PlaybackRemainingLabel, "PlaybackRemainingLabel");
 
-        if (playPauseButton is not null)
-            playPauseButton.Content = isPlaying ? "⏸" : "▶";
-        if (miniPlayPauseButton is not null)
-            miniPlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+        var playPauseGeometry = isPlaying
+            ? "M 5 4 H 9 V 20 H 5 Z M 15 4 H 19 V 20 H 15 Z"
+            : "M 6 3 L 20 12 L 6 21 Z";
+        if (playPauseButton?.Content is Avalonia.Controls.Shapes.Path mainPlayPauseIcon)
+            mainPlayPauseIcon.Data = Avalonia.Media.Geometry.Parse(playPauseGeometry);
+        if (miniPlayPauseButton?.Content is Avalonia.Controls.Shapes.Path miniPlayPauseIcon)
+            miniPlayPauseIcon.Data = Avalonia.Media.Geometry.Parse(playPauseGeometry);
         if (speedButton is not null)
         {
             var speed = player?.PlaybackSpeed ?? 1f;
