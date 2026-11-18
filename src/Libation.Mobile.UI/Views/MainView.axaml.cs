@@ -1031,27 +1031,39 @@ public partial class MainView : UserControl
         UpdatePlaybackProgressUi();
     }
 
-    private void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    private async void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
         var seekSlider = ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider");
         if (!_isSeekingPlaybackSlider)
             return;
 
         _isSeekingPlaybackSlider = false;
-        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null || seekSlider is null)
+        var player = _localAudioPlayer;
+        var audiobookId = _playingAudiobookId;
+        if (_isUpdatingPlaybackSlider || player is null || audiobookId is null || seekSlider is null)
         {
             UpdatePlaybackProgressUi();
             return;
         }
 
-        var duration = _localAudioPlayer.DurationMilliseconds;
-        // Slider values are absolute audiobook positions (not chapter offsets).
-        var target = Math.Max(0, (long)seekSlider.Value);
-        if (duration > 0) target = Math.Min(target, duration);
-        _localAudioPlayer.Seek(target);
-        UpdateCurrentChapterUi(target, duration);
-        UpdatePlaybackProgressUi();
-        _ = _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+        try
+        {
+            var duration = player.DurationMilliseconds;
+            // Slider values are absolute audiobook positions (not chapter offsets).
+            var target = Math.Max(0, (long)seekSlider.Value);
+            if (duration > 0) target = Math.Min(target, duration);
+            player.Seek(target);
+            UpdateCurrentChapterUi(target, duration);
+            UpdatePlaybackProgressUi();
+            await _viewModel.SavePlaybackPositionAsync(audiobookId, target);
+        }
+        catch (Exception)
+        {
+            // A seek gesture must never crash the UI thread. The player may have
+            // moved successfully even if persisting its resume position failed.
+            UpdatePlaybackProgressUi();
+            _viewModel.ReportAudioStatus("Playback moved, but its new position could not be saved.");
+        }
     }
 
     private async void SeekToSelectedPositionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
