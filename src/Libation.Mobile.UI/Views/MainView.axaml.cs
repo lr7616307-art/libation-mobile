@@ -39,6 +39,7 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private bool _isSeekingPlaybackSlider;
     private CancellationTokenSource? _chapterMetadataLoadCts;
     private string? _chapterMetadataLoadBookId;
     private string? _chapterInfoStatusBookId;
@@ -87,8 +88,20 @@ public partial class MainView : UserControl
         // Resolve the controls from the live visual tree so player updates still reach them.
         ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
             ?.AddHandler(
+                Avalonia.Input.InputElement.PointerPressedEvent,
+                PlaybackSeekSliderPointerPressed,
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.AddHandler(
                 Avalonia.Input.InputElement.PointerReleasedEvent,
                 PlaybackSeekSliderPointerReleased,
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.AddHandler(
+                Avalonia.Input.InputElement.PointerCaptureLostEvent,
+                PlaybackSeekSliderPointerCaptureLost,
                 Avalonia.Interactivity.RoutingStrategies.Bubble,
                 handledEventsToo: true);
         AttachPlaybackStateNotifications();
@@ -604,7 +617,12 @@ public partial class MainView : UserControl
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
         ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.RemoveHandler(Avalonia.Input.InputElement.PointerPressedEvent, PlaybackSeekSliderPointerPressed);
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
             ?.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.RemoveHandler(Avalonia.Input.InputElement.PointerCaptureLostEvent, PlaybackSeekSliderPointerCaptureLost);
+        _isSeekingPlaybackSlider = false;
         if (_localAudioPlayer is ILocalAudioPlayerStateNotifier notifier)
             notifier.PlaybackStateChanged -= LocalAudioPlayerStateChanged;
         if (_localAudioPlayer is ILocalAudioPlayerCompletionNotifier completionNotifier)
@@ -688,7 +706,8 @@ public partial class MainView : UserControl
         try
         {
             seekSlider.Maximum = Math.Max(1, duration);
-            seekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
+            if (!_isSeekingPlaybackSlider)
+                seekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
             seekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
 
             positionLabel.Text = FormatPlaybackTime(position);
@@ -970,11 +989,37 @@ public partial class MainView : UserControl
         return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
     }
 
+    private void PlaybackSeekSliderPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
+            return;
+
+        _isSeekingPlaybackSlider = true;
+    }
+
+    private void PlaybackSeekSliderPointerCaptureLost(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (!_isSeekingPlaybackSlider)
+            return;
+
+        // If the gesture is interrupted (for example, the app loses pointer capture),
+        // abandon the preview value and let the next progress update restore playback time.
+        _isSeekingPlaybackSlider = false;
+        UpdatePlaybackProgressUi();
+    }
+
     private void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
     {
         var seekSlider = ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider");
-        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null || seekSlider is null)
+        if (!_isSeekingPlaybackSlider)
             return;
+
+        _isSeekingPlaybackSlider = false;
+        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null || seekSlider is null)
+        {
+            UpdatePlaybackProgressUi();
+            return;
+        }
 
         var duration = _localAudioPlayer.DurationMilliseconds;
         // Slider values are absolute audiobook positions (not chapter offsets).
