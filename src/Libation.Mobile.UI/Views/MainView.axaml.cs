@@ -671,7 +671,7 @@ public partial class MainView : UserControl
 
         var playPauseGeometry = isPlaying
             ? "M 5 4 H 9 V 20 H 5 Z M 15 4 H 19 V 20 H 15 Z"
-            : "M 6 3 L 20 12 L 6 21 Z";
+            : "M 7.33 3 L 21.33 12 L 7.33 21 Z";
         if (playPauseButton is not null)
             playPauseButton.Foreground = Avalonia.Media.Brushes.White;
         if (miniPlayPauseButton is not null)
