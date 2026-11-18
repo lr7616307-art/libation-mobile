@@ -587,7 +587,11 @@
                           HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                           Click="TogglePlaybackClicked">
                     <Path Data="{StaticResource PlayerPlayIconGeometry}" Fill="#FFFFFF" Width="22" Height="22" Stretch="Uniform"
-                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                          HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Path.RenderTransform>
+                      <TranslateTransform X="3"/>
+                    </Path.RenderTransform>
+                  </Path>
                   </Button>
                   <Button Grid.Column="3" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked">
                     <Path Data="{StaticResource ForwardIconGeometry}" Stroke="#FFFFFF" StrokeThickness="2.2"
@@ -664,7 +668,11 @@
                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                 Click="TogglePlaybackClicked">
           <Path Data="{StaticResource PlayerPlayIconGeometry}" Fill="#FFFFFF" Width="18" Height="18" Stretch="Uniform"
-                HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Path.RenderTransform>
+              <TranslateTransform X="3"/>
+            </Path.RenderTransform>
+          </Path>
         </Button>
       </Grid>
     </Border>
