@@ -654,10 +654,23 @@ public partial class MainView : UserControl
         var playPauseGeometry = isPlaying
             ? "M 5 4 H 9 V 20 H 5 Z M 15 4 H 19 V 20 H 15 Z"
             : "M 6 3 L 20 12 L 6 21 Z";
+        if (playPauseButton is not null)
+            playPauseButton.Foreground = Avalonia.Media.Brushes.White;
+        if (miniPlayPauseButton is not null)
+            miniPlayPauseButton.Foreground = Avalonia.Media.Brushes.White;
+
         if (playPauseButton?.Content is Avalonia.Controls.Shapes.Path mainPlayPauseIcon)
+        {
             mainPlayPauseIcon.Data = Avalonia.Media.Geometry.Parse(playPauseGeometry);
+            mainPlayPauseIcon.Fill = Avalonia.Media.Brushes.White;
+            mainPlayPauseIcon.Stroke = Avalonia.Media.Brushes.White;
+        }
         if (miniPlayPauseButton?.Content is Avalonia.Controls.Shapes.Path miniPlayPauseIcon)
+        {
             miniPlayPauseIcon.Data = Avalonia.Media.Geometry.Parse(playPauseGeometry);
+            miniPlayPauseIcon.Fill = Avalonia.Media.Brushes.White;
+            miniPlayPauseIcon.Stroke = Avalonia.Media.Brushes.White;
+        }
         if (speedButton is not null)
         {
             var speed = player?.PlaybackSpeed ?? 1f;
