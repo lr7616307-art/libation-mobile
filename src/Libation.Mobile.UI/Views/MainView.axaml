@@ -562,24 +562,24 @@
                   <TextBlock x:Name="PlaybackRemainingLabel" Grid.Column="2" Text="−--:--" FontSize="11" Foreground="#FFFFFF" HorizontalAlignment="Right"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="3">
-                  <Button Grid.Column="0" Background="Transparent" BorderThickness="0" ToolTip.Tip="Previous chapter" Click="PreviousChapterClicked">
+                  <Button Grid.Column="0" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Previous chapter" Click="PreviousChapterClicked">
                     <Path Data="{StaticResource PreviousChapterIconGeometry}" Fill="#FFFFFF" Width="22" Height="22" Stretch="Uniform"/>
                   </Button>
-                  <Button Grid.Column="1" Background="Transparent" BorderThickness="0" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked">
+                  <Button Grid.Column="1" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked">
                     <Path Data="{StaticResource RewindIconGeometry}" Stroke="#FFFFFF" StrokeThickness="2.2"
                           StrokeLineCap="Round" Width="22" Height="22" Stretch="Uniform"/>
                   </Button>
                   <Button x:Name="PlayPauseButton" Grid.Column="2" Width="56" Height="56" MinWidth="56" MinHeight="56" Padding="0"
-                          Background="Transparent" BorderBrush="#FFFFFF" BorderThickness="1" CornerRadius="28"
+                          Foreground="#FFFFFF" Background="Transparent" BorderBrush="#FFFFFF" BorderThickness="1" CornerRadius="28"
                           HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                           Click="TogglePlaybackClicked">
                     <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="22" Height="22" Stretch="Uniform"/>
                   </Button>
-                  <Button Grid.Column="3" Background="Transparent" BorderThickness="0" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked">
+                  <Button Grid.Column="3" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked">
                     <Path Data="{StaticResource ForwardIconGeometry}" Stroke="#FFFFFF" StrokeThickness="2.2"
                           StrokeLineCap="Round" Width="22" Height="22" Stretch="Uniform"/>
                   </Button>
-                  <Button Grid.Column="4" Background="Transparent" BorderThickness="0" ToolTip.Tip="Next chapter" Click="NextChapterClicked">
+                  <Button Grid.Column="4" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Next chapter" Click="NextChapterClicked">
                     <Path Data="{StaticResource NextChapterIconGeometry}" Fill="#FFFFFF" Width="22" Height="22" Stretch="Uniform"/>
                   </Button>
                 </Grid>
@@ -639,14 +639,14 @@
             <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="10" Opacity="0.65" MaxLines="1"/>
           </StackPanel>
         </Button>
-        <Button x:Name="MiniRewindButton" Grid.Column="2" ToolTip.Tip="Rewind 10 seconds"
+        <Button x:Name="MiniRewindButton" Grid.Column="2" Foreground="#FFFFFF" ToolTip.Tip="Rewind 10 seconds"
                 Background="Transparent" BorderThickness="0" Padding="8" Click="RewindAudioClicked">
           <Path Data="{StaticResource RewindIconGeometry}" Stroke="#FFFFFF" StrokeThickness="2.2"
                 StrokeLineCap="Round" Width="20" Height="20" Stretch="Uniform"/>
         </Button>
         <Button x:Name="MiniPlayPauseButton" Grid.Column="3"
                 Width="44" Height="44" MinWidth="44" MinHeight="44" Padding="0"
-                Background="Transparent" BorderBrush="#FFFFFF" BorderThickness="1" CornerRadius="22"
+                Foreground="#FFFFFF" Background="Transparent" BorderBrush="#FFFFFF" BorderThickness="1" CornerRadius="22"
                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                 Click="TogglePlaybackClicked">
           <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="18" Height="18" Stretch="Uniform"/>
