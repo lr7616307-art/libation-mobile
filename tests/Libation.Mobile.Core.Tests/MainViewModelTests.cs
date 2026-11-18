@@ -1129,6 +1129,47 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task MiniPlayer_IsHiddenWhileFullPlayerOrChaptersAreVisible_AndRestoredAfterCollapse()
+    {
+        using var directory = new TemporaryDirectory();
+        var repository = new JsonLibraryRepository(Path.Combine(directory.Path, "library.json"));
+        var book = new Audiobook("local-mini-player-visibility", "Mini-player visibility", "Author", "", "", "Manually added")
+        {
+            AudioFilePath = "mini-player-visibility.mp3"
+        };
+        await repository.ReplaceAllAsync([book]);
+        var vm = new MainViewModel(repository, new JsonDownloadQueue(Path.Combine(directory.Path, "queue.json")));
+        await vm.InitializeAsync();
+
+        vm.SetNowPlayingBook(book.Id);
+        Assert.True(vm.HasMiniPlayer);
+
+        var miniPlayerNotifications = 0;
+        vm.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.HasMiniPlayer))
+                miniPlayerNotifications++;
+        };
+
+        vm.OpenFullPlayer();
+        Assert.True(vm.IsFullPlayerVisible);
+        Assert.False(vm.HasMiniPlayer);
+
+        vm.OpenChapters();
+        Assert.True(vm.IsChaptersVisible);
+        Assert.False(vm.HasMiniPlayer);
+
+        vm.CloseChapters();
+        Assert.True(vm.IsFullPlayerVisible);
+        Assert.False(vm.HasMiniPlayer);
+
+        vm.CloseFullPlayer();
+        Assert.False(vm.IsFullPlayerVisible);
+        Assert.True(vm.HasMiniPlayer);
+        Assert.Equal(4, miniPlayerNotifications);
+    }
+
+    [Fact]
     public async Task ClearNowPlayingBook_IgnoresDelayedCompletionForPreviousTitle()
     {
         using var directory = new TemporaryDirectory();
