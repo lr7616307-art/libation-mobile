@@ -8,6 +8,7 @@
     <Geometry x:Key="NextChapterIconGeometry">M 16 4 H 19 V 20 H 16 Z M 5 5 L 15 12 L 5 19 Z</Geometry>
     <Geometry x:Key="RewindIconGeometry">M 13 5 L 5 12 L 13 19 M 21 5 L 13 12 L 21 19</Geometry>
     <Geometry x:Key="ForwardIconGeometry">M 11 5 L 19 12 L 11 19 M 3 5 L 11 12 L 3 19</Geometry>
+    <Geometry x:Key="CollapsePlayerIconGeometry">M 5 9 L 12 16 L 19 9</Geometry>
   </UserControl.Resources>
   <Grid RowDefinitions="*,Auto,Auto" Background="#0B0911">
     <Grid Grid.Row="0">
@@ -542,9 +543,14 @@
           </StackPanel>
 
           <StackPanel IsVisible="{Binding IsFullPlayerVisible}" Spacing="14">
-            <Grid ColumnDefinitions="*,Auto">
-              <Button Grid.Column="0" Content="‹  Back" HorizontalAlignment="Left" Click="CloseFullPlayerClicked"/>
-              <Button Grid.Column="1" Content="☷  Chapters" Click="OpenChaptersClicked"/>
+            <Grid ColumnDefinitions="*">
+              <Button Grid.Column="0" Width="44" Height="44" MinWidth="44" MinHeight="44" Padding="0"
+                      HorizontalAlignment="Left" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                      Background="#393440" BorderThickness="0" CornerRadius="22"
+                      ToolTip.Tip="Collapse player" Click="CloseFullPlayerClicked">
+                <Path Data="{StaticResource CollapsePlayerIconGeometry}" Stroke="#FFFFFF" StrokeThickness="2.4"
+                      StrokeLineCap="Round" StrokeLineJoin="Round" Width="22" Height="22" Stretch="Uniform"/>
+              </Button>
             </Grid>
             <Border CornerRadius="24" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="14">
