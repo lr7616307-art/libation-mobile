@@ -710,10 +710,15 @@ public partial class MainView : UserControl
                 seekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
             seekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
 
-            positionLabel.Text = FormatPlaybackTime(position);
-            durationLabel.Text = duration > 0 ? FormatPlaybackTime(duration) : "--:--";
-            remainingLabel.Text = duration > 0
+            var hasCurrentChapter = TryGetCurrentChapterRange(position, duration, out var chapterStart, out var chapterEnd);
+            positionLabel.Text = hasCurrentChapter
+                ? FormatPlaybackTime(Math.Clamp(position - chapterStart, 0, Math.Max(0, chapterEnd - chapterStart)))
+                : "--:--";
+            durationLabel.Text = duration > 0
                 ? "−" + FormatPlaybackTime(Math.Max(0, duration - position))
+                : "−--:--";
+            remainingLabel.Text = hasCurrentChapter
+                ? "−" + FormatPlaybackTime(Math.Max(0, chapterEnd - position))
                 : "−--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
@@ -925,10 +930,28 @@ public partial class MainView : UserControl
         UpdatePlaybackProgressUi();
     }
 
-    private (long Start, long End) GetCurrentChapterRange(long positionMilliseconds, long durationMilliseconds)
+    private bool TryGetCurrentChapterRange(
+        long positionMilliseconds,
+        long durationMilliseconds,
+        out long chapterStart,
+        out long chapterEnd)
     {
-        var book = _playingAudiobookId is null ? null : _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
-        return AudiobookChapterService.GetChapterRange(book?.Chapters, positionMilliseconds, durationMilliseconds);
+        chapterStart = 0;
+        chapterEnd = Math.Max(0, durationMilliseconds);
+
+        var book = _playingAudiobookId is null
+            ? null
+            : _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
+        var chapters = AudiobookChapterService.Normalize(book?.Chapters, durationMilliseconds);
+        var currentIndex = AudiobookChapterService.FindCurrentChapterIndex(chapters, positionMilliseconds);
+        if (currentIndex < 0)
+            return false;
+
+        chapterStart = chapters[currentIndex].StartPositionMilliseconds;
+        chapterEnd = currentIndex + 1 < chapters.Count
+            ? chapters[currentIndex + 1].StartPositionMilliseconds
+            : Math.Max(chapterStart, durationMilliseconds);
+        return chapterEnd >= chapterStart;
     }
 
     private void SetPlayerChapterPositions(Audiobook book)
