@@ -99,9 +99,12 @@
                           <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.65"/>
                           <TextBlock Text="Resume from saved position" FontSize="11" Foreground="#C4B5FD"/>
                         </StackPanel>
-                        <Button Grid.Column="2" VerticalAlignment="Center" Padding="10"
-                                Background="Transparent" BorderThickness="0" ToolTip.Tip="Play audiobook"
-                                Click="PlayAudioClicked">
+                        <Button Grid.Column="2" Width="40" Height="40" MinWidth="40" MinHeight="40"
+                                VerticalAlignment="Center" Padding="0"
+                                Background="Transparent" BorderThickness="0" CornerRadius="20"
+                                Foreground="#FFFFFF"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                ToolTip.Tip="Play audiobook" Click="PlayAudioClicked">
                           <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="18" Height="18" Stretch="Uniform"/>
                         </Button>
                       </Grid>
