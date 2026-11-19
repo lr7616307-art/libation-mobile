@@ -719,14 +719,16 @@ public partial class MainView : UserControl
                     : 0;
             seekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
 
-            positionLabel.Text = hasCurrentChapter
-                ? FormatPlaybackTime(Math.Clamp(position - chapterStart, 0, Math.Max(0, chapterEnd - chapterStart)))
+            positionLabel.Text = duration > 0
+                ? FormatPlaybackTime(hasCurrentChapter
+                    ? Math.Clamp(position - chapterStart, 0, Math.Max(0, chapterEnd - chapterStart))
+                    : Math.Clamp(position, 0, duration))
                 : "--:--";
             durationLabel.Text = duration > 0
                 ? "−" + FormatPlaybackTime(Math.Max(0, duration - position))
                 : "−--:--";
-            remainingLabel.Text = hasCurrentChapter
-                ? "−" + FormatPlaybackTime(Math.Max(0, chapterEnd - position))
+            remainingLabel.Text = duration > 0
+                ? "−" + FormatPlaybackTime(Math.Max(0, (hasCurrentChapter ? chapterEnd : duration) - position))
                 : "−--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
@@ -1025,7 +1027,6 @@ public partial class MainView : UserControl
         var targetOffset = Math.Max(0, (long)sliderValue);
         if (TryGetCurrentChapterRange(currentPosition, duration, out var chapterStart, out var chapterEnd))
         {
-            var chapterDuration = Math.Max(0, chapterEnd - chapterStart);
             return Math.Clamp(chapterStart + targetOffset, chapterStart, chapterEnd);
         }
 
