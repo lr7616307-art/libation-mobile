@@ -9,7 +9,7 @@
     <Geometry x:Key="NextChapterIconGeometry">M 16 4 H 19 V 20 H 16 Z M 5 5 L 15 12 L 5 19 Z</Geometry>
     <Geometry x:Key="RewindIconGeometry">M 13 5 L 5 12 L 13 19 M 21 5 L 13 12 L 21 19</Geometry>
     <Geometry x:Key="ForwardIconGeometry">M 11 5 L 19 12 L 11 19 M 3 5 L 11 12 L 3 19</Geometry>
-    <Geometry x:Key="CollapsePlayerIconGeometry">M 5 9 L 12 16 L 19 9</Geometry>
+    <Geometry x:Key="CollapsePlayerIconGeometry">M 5 12 L 12 5 L 19 12 M 12 5 L 12 19</Geometry>
   </UserControl.Resources>
   <Grid RowDefinitions="*,Auto,Auto" Background="#0B0911">
     <Grid Grid.Row="0">
@@ -557,7 +557,7 @@
                 <Grid Width="320" Height="320" HorizontalAlignment="Center">
                   <Image Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="Uniform"/>
                   <Button Width="44" Height="44" MinWidth="44" MinHeight="44" Padding="0"
-                          HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8"
+                          HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8"
                           Background="Transparent" BorderThickness="0" CornerRadius="0"
                           HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                           ToolTip.Tip="Collapse player" Click="CloseFullPlayerClicked">
