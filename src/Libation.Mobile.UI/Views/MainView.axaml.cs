@@ -702,15 +702,23 @@ public partial class MainView : UserControl
         if (seekSlider is null || positionLabel is null || durationLabel is null || remainingLabel is null)
             return;
 
+        var hasCurrentChapter = TryGetCurrentChapterRange(position, duration, out var chapterStart, out var chapterEnd);
+        var seekRangeStart = hasCurrentChapter ? chapterStart : 0;
+        var seekRangeEnd = hasCurrentChapter ? chapterEnd : duration;
+        var seekRangeDuration = Math.Max(0, seekRangeEnd - seekRangeStart);
+
         _isUpdatingPlaybackSlider = true;
         try
         {
-            seekSlider.Maximum = Math.Max(1, duration);
+            // With chapter markers, the slider is scoped to the current chapter.
+            // Without markers (or before the first marker), it remains whole-book.
+            seekSlider.Maximum = Math.Max(1, seekRangeDuration);
             if (!_isSeekingPlaybackSlider)
-                seekSlider.Value = duration > 0 ? Math.Min(position, duration) : 0;
+                seekSlider.Value = duration > 0
+                    ? Math.Clamp(position - seekRangeStart, 0, seekRangeDuration)
+                    : 0;
             seekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
 
-            var hasCurrentChapter = TryGetCurrentChapterRange(position, duration, out var chapterStart, out var chapterEnd);
             positionLabel.Text = hasCurrentChapter
                 ? FormatPlaybackTime(Math.Clamp(position - chapterStart, 0, Math.Max(0, chapterEnd - chapterStart)))
                 : "--:--";
@@ -1012,6 +1020,18 @@ public partial class MainView : UserControl
         return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
     }
 
+    private long GetAudiobookSeekTarget(double sliderValue, long currentPosition, long duration)
+    {
+        var targetOffset = Math.Max(0, (long)sliderValue);
+        if (TryGetCurrentChapterRange(currentPosition, duration, out var chapterStart, out var chapterEnd))
+        {
+            var chapterDuration = Math.Max(0, chapterEnd - chapterStart);
+            return Math.Clamp(chapterStart + targetOffset, chapterStart, chapterEnd);
+        }
+
+        return duration > 0 ? Math.Clamp(targetOffset, 0, duration) : targetOffset;
+    }
+
     private void PlaybackSeekSliderPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
     {
         if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
@@ -1049,9 +1069,7 @@ public partial class MainView : UserControl
         try
         {
             var duration = player.DurationMilliseconds;
-            // Slider values are absolute audiobook positions (not chapter offsets).
-            var target = Math.Max(0, (long)seekSlider.Value);
-            if (duration > 0) target = Math.Min(target, duration);
+            var target = GetAudiobookSeekTarget(seekSlider.Value, player.PositionMilliseconds, duration);
             player.Seek(target);
             UpdateCurrentChapterUi(target, duration);
             UpdatePlaybackProgressUi();
@@ -1074,9 +1092,9 @@ public partial class MainView : UserControl
 
         try
         {
-            var target = Math.Max(0, (long)seekSlider.Value);
             var duration = _localAudioPlayer.DurationMilliseconds;
-            if (duration > 0) target = Math.Min(target, duration);
+            var target = GetAudiobookSeekTarget(
+                seekSlider.Value, _localAudioPlayer.PositionMilliseconds, duration);
             _localAudioPlayer.Seek(target);
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
             UpdatePlaybackProgressUi();
