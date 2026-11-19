@@ -149,6 +149,9 @@
                                   HorizontalAlignment="Center" Padding="0" Background="Transparent" BorderThickness="0" CornerRadius="20"
                                   HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                                   ToolTip.Tip="Play audiobook" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}">
+                            <Button.RenderTransform>
+                              <TranslateTransform X="4"/>
+                            </Button.RenderTransform>
                             <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="18" Height="18" Stretch="Uniform"/>
                           </Button>
                           <CheckBox Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" IsChecked="{Binding IsSelectedForBulkAction, Mode=OneWay}" Click="ToggleSelectionClicked"/>
