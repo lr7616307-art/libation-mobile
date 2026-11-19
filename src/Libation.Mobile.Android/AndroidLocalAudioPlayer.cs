@@ -6,15 +6,17 @@ using Libation.Mobile.UI.Views;
 namespace Libation.Mobile.Android;
 
 /// <summary>UI adapter for the playback service, including crash-safe session recovery.</summary>
-public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlayerStateNotifier, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer
+public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlayerStateNotifier, ILocalAudioPlayerCompletionNotifier, ISleepTimerAudioPlayer, IChapterPositionAudioPlayer
 {
     private static Context AppContext => global::Android.App.Application.Context;
 
     public event EventHandler? PlaybackStateChanged;
+    public event EventHandler<AudioPlaybackCompletedEventArgs>? PlaybackCompleted;
 
     public AndroidLocalAudioPlayer()
     {
         AndroidLocalAudioPlaybackService.PlaybackStateChanged += OnServicePlaybackStateChanged;
+        AndroidLocalAudioPlaybackService.LocalAudioPlaybackCompleted += OnServiceLocalAudioPlaybackCompleted;
 
         // Rehydrate the last session when the app is opened after a process death
         // or device restart. The saved play/pause state is respected.
@@ -82,6 +84,9 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
 
     private void OnServicePlaybackStateChanged()
         => PlaybackStateChanged?.Invoke(this, EventArgs.Empty);
+
+    private void OnServiceLocalAudioPlaybackCompleted(string filePath, long durationMilliseconds)
+        => PlaybackCompleted?.Invoke(this, new AudioPlaybackCompletedEventArgs(filePath, durationMilliseconds));
 
     public void Play(string filePath, long startPositionMilliseconds = 0, string? title = null)
     {
@@ -290,6 +295,7 @@ public sealed class AndroidLocalAudioPlayer : ILocalAudioPlayer, ILocalAudioPlay
         if (_disposed) return;
         _disposed = true;
         AndroidLocalAudioPlaybackService.PlaybackStateChanged -= OnServicePlaybackStateChanged;
+        AndroidLocalAudioPlaybackService.LocalAudioPlaybackCompleted -= OnServiceLocalAudioPlaybackCompleted;
     }
     private bool _disposed;
 

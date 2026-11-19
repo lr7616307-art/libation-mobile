@@ -211,6 +211,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             _nowPlayingBook = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasNowPlayingBook));
+            OnPropertyChanged(nameof(HasMiniPlayer));
             OnPropertyChanged(nameof(NowPlayingChapterCountLabel));
             OnPropertyChanged(nameof(HasNowPlayingChapters));
             OnPropertyChanged(nameof(HasNoNowPlayingChapters));
@@ -225,6 +226,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         NowPlayingBook = _allBooks.FirstOrDefault(book => book.Id == audiobookId);
         RefreshRecentlyPlayedBooks();
+    }
+
+    /// <summary>
+    /// Clears the mini-player and any expanded player page when the matching
+    /// audiobook session has naturally completed. A different active title is
+    /// never cleared by a delayed completion event from an earlier session.
+    /// </summary>
+    public bool ClearNowPlayingBook(string audiobookId)
+    {
+        if (string.IsNullOrWhiteSpace(audiobookId) ||
+            !string.Equals(NowPlayingBook?.Id, audiobookId, StringComparison.Ordinal))
+            return false;
+
+        NowPlayingBook = null;
+        _isFullPlayerVisible = false;
+        _isChaptersVisible = false;
+        RaiseNavigationState();
+        return true;
     }
 
     public async Task<bool> LoadChapterMetadataAsync(string audiobookId, CancellationToken cancellationToken = default)
@@ -293,6 +312,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
     public bool IsHomeNavigationSelected => _selectedTabIndex == 0;
+    public bool IsHomeBrandingVisible => _selectedTabIndex == 0 && !IsChaptersVisible;
     public bool IsHomeTab => _selectedTabIndex == 0 && !_isHomeSearchVisible && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsHomeSearchVisible => _selectedTabIndex == 0 && _isHomeSearchVisible && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
     public bool IsAudibleLibraryTab => _selectedTabIndex == 1 && !IsFullPlayerVisible && !IsChaptersVisible && !IsBookDetailsVisible && !IsEditVisible;
@@ -335,7 +355,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ? _detailBook!.AudibleAvailabilityLabel
         : string.Empty;
     public string DetailProtectedDownloadLabel => _detailBook?.IsWidevineOfflineAvailable == true
-        ? "A provider-protected offline stream and its saved playback licence are available in VØRATH. Playback uses the protected offline player; no unprotected MP3/M4B export has been created."
+        ? "An Audible-protected offline copy is cached. Protected Audible playback is currently disabled in VØRATH; no unprotected MP3/M4B export has been created."
         : !string.IsNullOrWhiteSpace(_detailBook?.ProtectedAudioFileName)
             ? $"Protected backup saved as {_detailBook.ProtectedAudioFileName} in {(_detailBook.ProtectedAudioFolderName ?? "the selected folder")}. This encrypted file is not an ordinary MP3/M4B and cannot be opened by a normal audio player. VØRATH has not created a playable M4B from it."
             : string.Empty;
@@ -744,6 +764,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public bool HasNowPlayingBook => NowPlayingBook is not null;
+    public bool HasMiniPlayer => HasNowPlayingBook && !IsFullPlayerVisible && !IsChaptersVisible;
 
     /// <summary>Handles one Android system Back press without tearing down the activity or player.</summary>
     public bool TryNavigateBack()
@@ -867,6 +888,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         OnPropertyChanged(nameof(IsHomeTab));
         OnPropertyChanged(nameof(IsHomeNavigationSelected));
+        OnPropertyChanged(nameof(IsHomeBrandingVisible));
         OnPropertyChanged(nameof(IsHomeSearchVisible));
         OnPropertyChanged(nameof(IsAudibleLibraryTab));
         OnPropertyChanged(nameof(IsAudibleAccountTab));
@@ -875,6 +897,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsDownloadsPageVisible));
         OnPropertyChanged(nameof(IsFullPlayerVisible));
         OnPropertyChanged(nameof(IsChaptersVisible));
+        OnPropertyChanged(nameof(HasMiniPlayer));
         OnPropertyChanged(nameof(IsBookDetailsVisible));
         OnPropertyChanged(nameof(IsEditVisible));
     }
@@ -1004,7 +1027,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsEditing => _editingBookId is not null;
     public string EditorTitle => IsEditing ? "Edit audiobook" : "Add an audiobook";
     public string SaveButtonLabel => IsEditing ? "Save changes" : "Save to local catalogue";
-    public string CatalogueSummaryLabel => $"{Books.Count} of {_allBooks.Count} audiobooks";
+    public string CatalogueSummaryLabel => $"{FilteredLocalAudioBooks.Count} of {LocalAudioBooks.Count} audiobooks";
 
     private IReadOnlyList<Audiobook> _allBooks = [];
     public bool IsLoading { get => _isLoading; private set { if (_isLoading == value) return; _isLoading = value; OnPropertyChanged(); } }
@@ -1046,7 +1069,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
     public bool IsDownloadQueueRunning => _isDownloadQueueRunning;
-    public string DownloadQueueActionLabel => IsDownloadQueueRunning ? "Pause downloads" : "Start pending downloads";
+    public string DownloadQueueActionLabel => IsDownloadQueueRunning
+        ? "Pause downloads"
+        : QueueItems.Any(item => item.Status == DownloadStatus.Paused ||
+            (item.Status == DownloadStatus.Queued && item.BytesReceived > 0))
+            ? "Resume downloads"
+            : "Start pending downloads";
     public bool HasActiveDownloadProgress => _activeDownloadProgress is not null;
     public string ActiveDownloadProgressTitle => _activeDownloadProgress is null
         ? string.Empty
@@ -1418,6 +1446,37 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Mark a locally imported audiobook Finished after the player reports natural
+    /// end-of-file. Reset the resume point so replay starts from the beginning.
+    /// </summary>
+    public async Task MarkPlaybackCompletedAsync(string audiobookId, CancellationToken cancellationToken = default)
+    {
+        var book = _allBooks.FirstOrDefault(x => x.Id == audiobookId);
+        if (book is null || string.IsNullOrWhiteSpace(book.AudioFilePath))
+            return;
+
+        if (book.ListeningStatus == "Finished" && book.PlaybackPositionMilliseconds == 0)
+            return;
+
+        try
+        {
+            var updated = book with
+            {
+                ListeningStatus = "Finished",
+                PlaybackPositionMilliseconds = 0
+            };
+            await _repository.UpsertAsync(updated, cancellationToken);
+            _allBooks = await _repository.GetBooksAsync(cancellationToken);
+            ApplyFilter(_allBooks);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception)
+        {
+            AudioImportStatus = "Playback finished, but listening progress could not be saved.";
+        }
+    }
+
     public long GetResumePositionMilliseconds(string audiobookId)
         => _allBooks.FirstOrDefault(x => x.Id == audiobookId)?.PlaybackPositionMilliseconds ?? 0;
 
@@ -1707,6 +1766,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasPendingDownloadItems));
         OnPropertyChanged(nameof(QueueCountLabel));
         OnPropertyChanged(nameof(QueueSummaryLabel));
+        OnPropertyChanged(nameof(DownloadQueueActionLabel));
         OnPropertyChanged(nameof(ActiveDownloadProgressTitle));
     }
 
@@ -1770,6 +1830,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         foreach (var book in LocalAudioBooks.Where(book =>
             _listeningStatusFilter == "All" || book.ListeningStatus == _listeningStatusFilter))
             FilteredLocalAudioBooks.Add(book);
+        OnPropertyChanged(nameof(CatalogueSummaryLabel));
     }
 
     private void ApplyFilter(IReadOnlyList<Audiobook> source)

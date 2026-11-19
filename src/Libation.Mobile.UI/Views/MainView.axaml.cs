@@ -25,8 +25,11 @@ public partial class MainView : UserControl
     private readonly IAudioDownloadCompletionHandler? _downloadCompletionHandler;
     private CancellationTokenSource? _downloadRunCts;
     private TaskCompletionSource? _downloadRunCompletion;
+    private readonly System.Threading.SemaphoreSlim _downloadRunGate = new(1, 1);
+    private bool _downloadQueueRestartRequested;
     private CancellationTokenSource? _protectedAudibleOperationCts;
     private string? _playingAudiobookId;
+    private long _playbackSessionGeneration;
     private readonly DispatcherTimer _playbackProgressTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly DispatcherTimer _playbackCheckpointTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly DispatcherTimer _sleepTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -36,6 +39,7 @@ public partial class MainView : UserControl
     private long? _sleepAtPositionMilliseconds;
     private bool _isSavingPlaybackPosition;
     private bool _isUpdatingPlaybackSlider;
+    private bool _isSeekingPlaybackSlider;
     private CancellationTokenSource? _chapterMetadataLoadCts;
     private string? _chapterMetadataLoadBookId;
     private string? _chapterInfoStatusBookId;
@@ -83,7 +87,23 @@ public partial class MainView : UserControl
         // Some Android/Avalonia startup paths do not populate generated x:Name fields.
         // Resolve the controls from the live visual tree so player updates still reach them.
         ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
-            ?.AddHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+            ?.AddHandler(
+                Avalonia.Input.InputElement.PointerPressedEvent,
+                PlaybackSeekSliderPointerPressed,
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.AddHandler(
+                Avalonia.Input.InputElement.PointerReleasedEvent,
+                PlaybackSeekSliderPointerReleased,
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.AddHandler(
+                Avalonia.Input.InputElement.PointerCaptureLostEvent,
+                PlaybackSeekSliderPointerCaptureLost,
+                Avalonia.Interactivity.RoutingStrategies.Bubble,
+                handledEventsToo: true);
         AttachPlaybackStateNotifications();
         _activeView = new WeakReference<MainView>(this);
         PlatformDownloadQueuePauseAction = () =>
@@ -199,6 +219,7 @@ public partial class MainView : UserControl
             return;
 
         _playingAudiobookId = currentBook.Id;
+        System.Threading.Interlocked.Increment(ref _playbackSessionGeneration);
         _viewModel.SetNowPlayingBook(currentBook.Id);
         _localAudioPlayer.SetArtwork(currentBook.CoverImagePath);
         _viewModel.ReportAudioStatus((_localAudioPlayer.IsPlaying ? "Playing: " : "Paused: ") + currentBook.Title);
@@ -328,6 +349,7 @@ public partial class MainView : UserControl
             _viewModel.ReportAudioStatus("Audio playback is unavailable on this platform.");
             return;
         }
+        var playbackSessionGeneration = System.Threading.Interlocked.Increment(ref _playbackSessionGeneration);
         try
         {
             _localAudioPlayer.Play(book.AudioFilePath, _viewModel.GetResumePositionMilliseconds(book.Id), book.Title);
@@ -340,11 +362,14 @@ public partial class MainView : UserControl
             UpdatePlaybackProgressUi();
 
             await _viewModel.MarkPlaybackStartedAsync(book.Id);
+            if (playbackSessionGeneration != System.Threading.Interlocked.Read(ref _playbackSessionGeneration))
+                return;
             BeginChapterMetadataLoad(book.Id);
         }
         catch (Exception)
         {
-            _viewModel.ReportAudioStatus("Could not play this audio file. Re-import it and try again.");
+            if (playbackSessionGeneration == System.Threading.Interlocked.Read(ref _playbackSessionGeneration))
+                _viewModel.ReportAudioStatus("Could not play this audio file. Re-import it and try again.");
         }
     }
 
@@ -592,9 +617,16 @@ public partial class MainView : UserControl
         _playbackCheckpointTimer.Stop();
         _sleepTimer.Stop();
         ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.RemoveHandler(Avalonia.Input.InputElement.PointerPressedEvent, PlaybackSeekSliderPointerPressed);
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
             ?.RemoveHandler(Avalonia.Input.InputElement.PointerReleasedEvent, PlaybackSeekSliderPointerReleased);
+        ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider")
+            ?.RemoveHandler(Avalonia.Input.InputElement.PointerCaptureLostEvent, PlaybackSeekSliderPointerCaptureLost);
+        _isSeekingPlaybackSlider = false;
         if (_localAudioPlayer is ILocalAudioPlayerStateNotifier notifier)
             notifier.PlaybackStateChanged -= LocalAudioPlayerStateChanged;
+        if (_localAudioPlayer is ILocalAudioPlayerCompletionNotifier completionNotifier)
+            completionNotifier.PlaybackCompleted -= LocalAudioPlaybackCompleted;
         _chapterMetadataLoadCts?.Cancel();
         _sleepTimer.Tick -= SleepTimerTick;
         _playbackProgressTimer.Tick -= PlaybackProgressTimerTick;
@@ -637,39 +669,66 @@ public partial class MainView : UserControl
         var durationLabel = ResolveControl(PlaybackDurationLabel, "PlaybackDurationLabel");
         var remainingLabel = ResolveControl(PlaybackRemainingLabel, "PlaybackRemainingLabel");
 
+        var playPauseGeometry = isPlaying
+            ? "M 5 4 H 9 V 20 H 5 Z M 15 4 H 19 V 20 H 15 Z"
+            : "M 7.33 3 L 21.33 12 L 7.33 21 Z";
         if (playPauseButton is not null)
-            playPauseButton.Content = isPlaying ? "⏸" : "▶";
+            playPauseButton.Foreground = Avalonia.Media.Brushes.White;
         if (miniPlayPauseButton is not null)
-            miniPlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+            miniPlayPauseButton.Foreground = Avalonia.Media.Brushes.White;
+
+        if (playPauseButton?.Content is Avalonia.Controls.Shapes.Path mainPlayPauseIcon)
+        {
+            mainPlayPauseIcon.Data = Avalonia.Media.Geometry.Parse(playPauseGeometry);
+            mainPlayPauseIcon.Fill = Avalonia.Media.Brushes.White;
+            mainPlayPauseIcon.Stroke = Avalonia.Media.Brushes.White;
+        }
+        if (miniPlayPauseButton?.Content is Avalonia.Controls.Shapes.Path miniPlayPauseIcon)
+        {
+            miniPlayPauseIcon.Data = Avalonia.Media.Geometry.Parse(playPauseGeometry);
+            miniPlayPauseIcon.Fill = Avalonia.Media.Brushes.White;
+            miniPlayPauseIcon.Stroke = Avalonia.Media.Brushes.White;
+        }
         if (speedButton is not null)
         {
             var speed = player?.PlaybackSpeed ?? 1f;
             speedButton.Content = $"{speed:0.##}x";
         }
 
-        var chapterRange = GetCurrentChapterRange(position, duration);
-        var chapterElapsed = Math.Max(0, position - chapterRange.Start);
-        var chapterDuration = Math.Max(0, chapterRange.End - chapterRange.Start);
-        var chapterRemaining = Math.Max(0, chapterDuration - chapterElapsed);
         UpdateCurrentChapterUi(position, duration);
 
-        // Do not let one missing generated control prevent the other player
-        // fields (especially chapter information) from being refreshed.
+        // The main timeline represents the entire audiobook, not the current chapter.
+        // Keep chapter navigation and chapter title separate from whole-book seeking.
         if (seekSlider is null || positionLabel is null || durationLabel is null || remainingLabel is null)
             return;
+
+        var hasCurrentChapter = TryGetCurrentChapterRange(position, duration, out var chapterStart, out var chapterEnd);
+        var seekRangeStart = hasCurrentChapter ? chapterStart : 0;
+        var seekRangeEnd = hasCurrentChapter ? chapterEnd : duration;
+        var seekRangeDuration = Math.Max(0, seekRangeEnd - seekRangeStart);
 
         _isUpdatingPlaybackSlider = true;
         try
         {
-            seekSlider.Maximum = Math.Max(1, chapterDuration);
-            seekSlider.Value = chapterDuration > 0 ? Math.Min(chapterElapsed, chapterDuration) : 0;
-            seekSlider.IsEnabled = chapterDuration > 0 && _playingAudiobookId is not null;
+            // With chapter markers, the slider is scoped to the current chapter.
+            // Without markers (or before the first marker), it remains whole-book.
+            seekSlider.Maximum = Math.Max(1, seekRangeDuration);
+            if (!_isSeekingPlaybackSlider)
+                seekSlider.Value = duration > 0
+                    ? Math.Clamp(position - seekRangeStart, 0, seekRangeDuration)
+                    : 0;
+            seekSlider.IsEnabled = duration > 0 && _playingAudiobookId is not null;
 
-            // The time row is scoped to the current chapter: elapsed / duration / remaining.
-            positionLabel.Text = FormatPlaybackTime(chapterElapsed);
-            durationLabel.Text = chapterDuration > 0 ? FormatPlaybackTime(chapterDuration) : "--:--";
-            remainingLabel.Text = chapterDuration > 0
-                ? "−" + FormatPlaybackTime(chapterRemaining)
+            positionLabel.Text = duration > 0
+                ? FormatPlaybackTime(hasCurrentChapter
+                    ? Math.Clamp(position - chapterStart, 0, Math.Max(0, chapterEnd - chapterStart))
+                    : Math.Clamp(position, 0, duration))
+                : "--:--";
+            durationLabel.Text = duration > 0
+                ? "−" + FormatPlaybackTime(Math.Max(0, duration - position))
+                : "−--:--";
+            remainingLabel.Text = duration > 0
+                ? "−" + FormatPlaybackTime(Math.Max(0, (hasCurrentChapter ? chapterEnd : duration) - position))
                 : "−--:--";
         }
         finally { _isUpdatingPlaybackSlider = false; }
@@ -685,10 +744,71 @@ public partial class MainView : UserControl
             notifier.PlaybackStateChanged -= LocalAudioPlayerStateChanged;
             notifier.PlaybackStateChanged += LocalAudioPlayerStateChanged;
         }
+        if (_localAudioPlayer is ILocalAudioPlayerCompletionNotifier completionNotifier)
+        {
+            completionNotifier.PlaybackCompleted -= LocalAudioPlaybackCompleted;
+            completionNotifier.PlaybackCompleted += LocalAudioPlaybackCompleted;
+        }
     }
 
     private void LocalAudioPlayerStateChanged(object? sender, EventArgs e)
         => Dispatcher.UIThread.Post(UpdatePlaybackProgressUi, DispatcherPriority.Background);
+
+    private void LocalAudioPlaybackCompleted(object? sender, AudioPlaybackCompletedEventArgs e)
+    {
+        // Capture which play request was current when the engine reported EOF.
+        // A replay of the same audiobook gets a different generation even though
+        // its catalogue ID and file path are identical.
+        var playbackSessionGeneration = System.Threading.Interlocked.Read(ref _playbackSessionGeneration);
+        Dispatcher.UIThread.Post(
+            () => _ = HandleLocalAudioPlaybackCompletedAsync(e, playbackSessionGeneration),
+            DispatcherPriority.Normal);
+    }
+
+    private async Task HandleLocalAudioPlaybackCompletedAsync(
+        AudioPlaybackCompletedEventArgs e,
+        long playbackSessionGeneration)
+    {
+        // Match by the completed file path rather than the currently selected row:
+        // ExoPlayer may finish just as the user navigates to another screen/title.
+        var completedBook = _viewModel.LocalAudioBooks.FirstOrDefault(book =>
+            !string.IsNullOrWhiteSpace(book.AudioFilePath) &&
+            string.Equals(book.AudioFilePath, e.FilePath, StringComparison.Ordinal));
+        if (completedBook is null)
+            return;
+
+        await _viewModel.MarkPlaybackCompletedAsync(completedBook.Id);
+
+        // Do not let an earlier completion callback clear a replay of the same
+        // audiobook. IDs are not session-unique, so compare the generation as
+        // well. If replay began while the completion save was in flight, restore
+        // the new session's In progress status after the older Finished write.
+        if (playbackSessionGeneration != System.Threading.Interlocked.Read(ref _playbackSessionGeneration))
+        {
+            if (string.Equals(_playingAudiobookId, completedBook.Id, StringComparison.Ordinal))
+                await _viewModel.MarkPlaybackStartedAsync(completedBook.Id);
+            return;
+        }
+
+        // A different audiobook may have started while this completion was
+        // being saved. Its player must remain untouched.
+        if (!string.Equals(_playingAudiobookId, completedBook.Id, StringComparison.Ordinal))
+            return;
+
+        _playbackProgressTimer.Stop();
+        _playbackCheckpointTimer.Stop();
+        _sleepTimer.Stop();
+        _chapterMetadataLoadCts?.Cancel();
+        _chapterMetadataLoadCts = null;
+        _chapterMetadataLoadBookId = null;
+        _chapterInfoStatusBookId = null;
+        _chapterInfoStatusTitle = null;
+        _chapterInfoStatusMessage = null;
+
+        _viewModel.ClearNowPlayingBook(completedBook.Id);
+        _playingAudiobookId = null;
+        _viewModel.ReportAudioStatus("Finished: " + completedBook.Title);
+    }
 
     private void BeginChapterMetadataLoad(string audiobookId)
     {
@@ -820,10 +940,28 @@ public partial class MainView : UserControl
         UpdatePlaybackProgressUi();
     }
 
-    private (long Start, long End) GetCurrentChapterRange(long positionMilliseconds, long durationMilliseconds)
+    private bool TryGetCurrentChapterRange(
+        long positionMilliseconds,
+        long durationMilliseconds,
+        out long chapterStart,
+        out long chapterEnd)
     {
-        var book = _playingAudiobookId is null ? null : _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
-        return AudiobookChapterService.GetChapterRange(book?.Chapters, positionMilliseconds, durationMilliseconds);
+        chapterStart = 0;
+        chapterEnd = Math.Max(0, durationMilliseconds);
+
+        var book = _playingAudiobookId is null
+            ? null
+            : _viewModel.LocalAudioBooks.FirstOrDefault(item => item.Id == _playingAudiobookId);
+        var chapters = AudiobookChapterService.Normalize(book?.Chapters, durationMilliseconds);
+        var currentIndex = AudiobookChapterService.FindCurrentChapterIndex(chapters, positionMilliseconds);
+        if (currentIndex < 0)
+            return false;
+
+        chapterStart = chapters[currentIndex].StartPositionMilliseconds;
+        chapterEnd = currentIndex + 1 < chapters.Count
+            ? chapters[currentIndex + 1].StartPositionMilliseconds
+            : Math.Max(chapterStart, durationMilliseconds);
+        return chapterEnd >= chapterStart;
     }
 
     private void SetPlayerChapterPositions(Audiobook book)
@@ -884,20 +1022,67 @@ public partial class MainView : UserControl
         return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
     }
 
-    private void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    private long GetAudiobookSeekTarget(double sliderValue, long currentPosition, long duration)
     {
-        var seekSlider = ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider");
-        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null || seekSlider is null)
+        var targetOffset = Math.Max(0, (long)sliderValue);
+        if (TryGetCurrentChapterRange(currentPosition, duration, out var chapterStart, out var chapterEnd))
+        {
+            return Math.Clamp(chapterStart + targetOffset, chapterStart, chapterEnd);
+        }
+
+        return duration > 0 ? Math.Clamp(targetOffset, 0, duration) : targetOffset;
+    }
+
+    private void PlaybackSeekSliderPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (_isUpdatingPlaybackSlider || _localAudioPlayer is null || _playingAudiobookId is null)
             return;
 
-        var duration = _localAudioPlayer.DurationMilliseconds;
-        var chapterRange = GetCurrentChapterRange(_localAudioPlayer.PositionMilliseconds, duration);
-        var target = Math.Max(0, chapterRange.Start + (long)seekSlider.Value);
-        if (duration > 0) target = Math.Min(target, duration);
-        _localAudioPlayer.Seek(target);
-        UpdateCurrentChapterUi(target, duration);
+        _isSeekingPlaybackSlider = true;
+    }
+
+    private void PlaybackSeekSliderPointerCaptureLost(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (!_isSeekingPlaybackSlider)
+            return;
+
+        // If the gesture is interrupted (for example, the app loses pointer capture),
+        // abandon the preview value and let the next progress update restore playback time.
+        _isSeekingPlaybackSlider = false;
         UpdatePlaybackProgressUi();
-        _ = _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
+    }
+
+    private async void PlaybackSeekSliderPointerReleased(object? sender, Avalonia.Input.PointerReleasedEventArgs e)
+    {
+        var seekSlider = ResolveControl(PlaybackSeekSlider, "PlaybackSeekSlider");
+        if (!_isSeekingPlaybackSlider)
+            return;
+
+        _isSeekingPlaybackSlider = false;
+        var player = _localAudioPlayer;
+        var audiobookId = _playingAudiobookId;
+        if (_isUpdatingPlaybackSlider || player is null || audiobookId is null || seekSlider is null)
+        {
+            UpdatePlaybackProgressUi();
+            return;
+        }
+
+        try
+        {
+            var duration = player.DurationMilliseconds;
+            var target = GetAudiobookSeekTarget(seekSlider.Value, player.PositionMilliseconds, duration);
+            player.Seek(target);
+            UpdateCurrentChapterUi(target, duration);
+            UpdatePlaybackProgressUi();
+            await _viewModel.SavePlaybackPositionAsync(audiobookId, target);
+        }
+        catch (Exception)
+        {
+            // A seek gesture must never crash the UI thread. The player may have
+            // moved successfully even if persisting its resume position failed.
+            UpdatePlaybackProgressUi();
+            _viewModel.ReportAudioStatus("Playback moved, but its new position could not be saved.");
+        }
     }
 
     private async void SeekToSelectedPositionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -908,9 +1093,9 @@ public partial class MainView : UserControl
 
         try
         {
-            var target = Math.Max(0, (long)seekSlider.Value);
             var duration = _localAudioPlayer.DurationMilliseconds;
-            if (duration > 0) target = Math.Min(target, duration);
+            var target = GetAudiobookSeekTarget(
+                seekSlider.Value, _localAudioPlayer.PositionMilliseconds, duration);
             _localAudioPlayer.Seek(target);
             await _viewModel.SavePlaybackPositionAsync(_playingAudiobookId, target);
             UpdatePlaybackProgressUi();
@@ -1152,35 +1337,24 @@ public partial class MainView : UserControl
         if (!book.Id.StartsWith("provider:", StringComparison.Ordinal))
             return;
 
+        // Only genuinely unprotected local audio may enter the ordinary player.
         if (!string.IsNullOrWhiteSpace(book.AudioFilePath))
         {
             await PlayAudiobookAsync(book);
             return;
         }
 
-        var asin = book.Id["provider:".Length..];
-        if (book.IsWidevineOfflineAvailable)
+        if (!string.IsNullOrWhiteSpace(book.ProtectedAudioFileName))
         {
-            await PlayProtectedAudibleBookAsync(book);
-            return;
-        }
-
-        // Start Android's foreground service. It requests an Audible-authorized
-        // Widevine offline licence, downloads encrypted DASH segments into the
-        // app-private Media3 cache, verifies the cache, and exposes progress /
-        // Pause / Resume in the notification shade. It does not publish an AAX
-        // export that an ordinary audio player cannot open.
-        if (PlatformAudibleOfflineDownloadStartAction is { } startDownload)
-        {
-            startDownload(asin, book.Title);
             _viewModel.ReportAudioStatus(
-                "Starting Audible-authorized offline playback download. Watch the VØRATH notification for progress. When verified, VØRATH will open the audiobook in its player.");
+                $"The protected Audible backup is already saved as {book.ProtectedAudioFileName}. It remains encrypted and will not be opened in VØRATH.");
             return;
         }
 
-        // Non-Android fallback: use the same authorized offline sequence and
-        // begin playback once the encrypted cache has been verified.
-        await RunProtectedAudibleOperationAsync(book, startPlayback: true);
+        // Use the authenticated Audible ADRM download queue. The result remains
+        // protected (AAX/AAXC) when Audible grants protected media; this action
+        // does not start Widevine playback or attempt to remove protection.
+        await DownloadProtectedAudibleBackupAsync(book);
     }
 
     private async Task MarkWidevineOfflineDownloadCompletedAsync(string asin)
@@ -1190,231 +1364,95 @@ public partial class MainView : UserControl
             var audiobookId = "provider:" + asin;
             await _viewModel.MarkWidevineOfflineAvailableAsync(audiobookId);
             await _viewModel.RefreshDownloadQueueAsync();
-            var book = await _viewModel.RefreshAudiobookStateAsync(audiobookId);
-            if (book is null)
-            {
-                _viewModel.ReportAudioStatus(
-                    "Audible's protected offline copy is verified. Reopen the title in VØRATH to play it.");
-                return;
-            }
-
-            // The foreground service reports completion only after the offline
-            // licence and all encrypted media ranges have been verified.
-            // Start the DRM-capable player now instead of leaving the user with
-            // an encrypted cache and another button to discover.
-            await PlayProtectedAudibleBookAsync(book);
+            await _viewModel.RefreshAudiobookStateAsync(audiobookId);
+            _viewModel.ReportAudioStatus(
+                "Audible's protected offline copy is cached. Protected Audible playback is currently disabled in VØRATH.");
         }
         catch (Exception ex)
         {
             var message = string.IsNullOrWhiteSpace(ex.Message)
-                ? "the saved playback session could not be opened"
+                ? "the protected offline state could not be refreshed"
                 : ex.Message;
             if (message.Length > 300) message = message[..300];
             _viewModel.ReportAudioStatus(
-                "The offline download is verified, but playback did not start: " + message);
+                "The protected offline copy was reported complete, but its status could not be refreshed: " + message);
         }
     }
 
-    private async Task RunProtectedAudibleOperationAsync(Audiobook book, bool startPlayback)
+    private async Task DownloadProtectedAudibleBackupAsync(Audiobook book)
     {
-        if (startPlayback && _localAudioPlayer is null)
+        var asin = book.Id.StartsWith("provider:", StringComparison.Ordinal)
+            ? book.Id["provider:".Length..]
+            : string.Empty;
+        if (string.IsNullOrWhiteSpace(asin) || _downloadQueue is null)
         {
-            _viewModel.ReportAudioStatus("Protected Audible playback is unavailable on this platform. The offline download itself does not require the player.");
+            _viewModel.ReportAudioStatus("The Audible protected download queue is not available in this build.");
             return;
         }
 
-        if (!startPlayback)
+        _viewModel.ReportAudioStatus("Requesting an authorized Audible protected download and preparing the transfer…");
+
+        // This is the authenticated Audible ADRM content-licence route. It saves
+        // the provider-granted protected AAX/AAXC file; it never starts playback.
+        await _viewModel.EnqueueAudibleDownloadAsync(book.Id, book.Title);
+        await _viewModel.RefreshDownloadQueueAsync();
+        if (!(await _downloadQueue.GetItemsAsync()).Any(item => item.AudiobookId == book.Id))
         {
-            var asin = book.Id.StartsWith("provider:", StringComparison.Ordinal)
-                ? book.Id["provider:".Length..]
-                : string.Empty;
-            if (string.IsNullOrWhiteSpace(asin) || _downloadQueue is null)
-            {
-                _viewModel.ReportAudioStatus("The Audible ADRM download queue is not available in this build.");
-                return;
-            }
-
-            // Clear any stale status from an earlier attempt before beginning
-            // this one. The result is replaced below with the actual queue state.
-            _viewModel.ReportAudioStatus("Requesting an authorized Audible download and preparing the transfer…");
-
-            // Use the authenticated Audible ADRM content-licence path and normal
-            // HTTPS transfer worker. It does not create a Widevine challenge.
-            await _viewModel.EnqueueAudibleDownloadAsync(book.Id, book.Title);
-            await _viewModel.RefreshDownloadQueueAsync();
-            if (!(await _downloadQueue.GetItemsAsync()).Any(item => item.AudiobookId == book.Id))
-            {
-                _viewModel.ReportAudioStatus("The Audible download could not be added to the persistent queue.");
-                return;
-            }
-
-            await StartPendingDownloadsAsync();
-            // The protected/unprotected publisher updates the catalogue on disk.
-            // Refresh the open detail record before reporting the final outcome.
-            var refreshedBook = await _viewModel.RefreshAudiobookStateAsync(book.Id) ?? book;
-            var completedItem = (await _downloadQueue.GetItemsAsync())
-                .FirstOrDefault(item => item.AudiobookId == book.Id);
-            switch (completedItem?.Status)
-            {
-                case DownloadStatus.Protected:
-                    _viewModel.ReportAudioStatus(
-                        $"Download finished: protected backup {refreshedBook.ProtectedAudioFileName ?? "(.aax/.aaxc)"} was copied to {refreshedBook.ProtectedAudioFolderName ?? "the selected folder"}. It remains encrypted and is not a playable MP3/M4B. VØRATH has not created an unprotected export.");
-                    _viewModel.ReportDownloadSettingsStatus(
-                        "Protected backup saved. This is not a playable audio export.");
-                    break;
-
-                case DownloadStatus.Completed:
-                    _viewModel.ReportAudioStatus(
-                        "Download finished: Audible granted an unprotected audio file. It was copied to your selected folder and added to VØRATH's playable library.");
-                    _viewModel.ReportDownloadSettingsStatus(
-                        "Unprotected audio downloaded and made playable.");
-                    break;
-
-                case DownloadStatus.Failed:
-                    if (!string.IsNullOrWhiteSpace(refreshedBook.ProtectedAudioFileName))
-                    {
-                        _viewModel.ReportAudioStatus(
-                            $"This download attempt failed: {completedItem.ErrorMessage ?? "check the connection and retry"}. Your previously saved protected backup ({refreshedBook.ProtectedAudioFileName}) was not removed.");
-                    }
-                    else
-                    {
-                        _viewModel.ReportAudioStatus(
-                            completedItem.ErrorMessage ?? "Audible did not authorize this download. No completed file was published.");
-                    }
-                    _viewModel.ReportDownloadSettingsStatus("Download failed. No new completed file was reported.");
-                    break;
-
-                case DownloadStatus.Downloading:
-                    _viewModel.ReportAudioStatus(
-                        "Download is still running. Check Settings → Downloads for live progress and Pause/Resume.");
-                    break;
-
-                case DownloadStatus.Queued:
-                case DownloadStatus.Paused:
-                    _viewModel.ReportAudioStatus(
-                        "Download is queued or paused. Open Settings → Downloads to start or resume it.");
-                    break;
-
-                default:
-                    _viewModel.ReportAudioStatus(
-                        "No completed download was confirmed. Check Settings → Downloads for the current queue state.");
-                    break;
-            }
+            _viewModel.ReportAudioStatus("The Audible protected download could not be added to the persistent queue.");
             return;
         }
 
-        if (PlatformWidevinePlaybackCoordinatorFactory is null)
+        await StartPendingDownloadsAsync();
+        var refreshedBook = await _viewModel.RefreshAudiobookStateAsync(book.Id) ?? book;
+        var completedItem = (await _downloadQueue.GetItemsAsync())
+            .FirstOrDefault(item => item.AudiobookId == book.Id);
+        switch (completedItem?.Status)
         {
-            _viewModel.ReportAudioStatus("The Android Widevine download service is not available in this build.");
-            return;
-        }
+            case DownloadStatus.Protected:
+                _viewModel.ReportAudioStatus(
+                    $"Download finished: protected backup {refreshedBook.ProtectedAudioFileName ?? "(.aax/.aaxc)"} was copied to {refreshedBook.ProtectedAudioFolderName ?? "the selected folder"}. It remains encrypted and is not playable in VØRATH.");
+                _viewModel.ReportDownloadSettingsStatus(
+                    "Protected backup saved. It remains encrypted and is not playable in VØRATH.");
+                break;
 
-        if (_protectedAudibleOperationCts is not null)
-        {
-            _viewModel.ReportAudioStatus("Another Audible offline operation is already running. Cancel it before starting another.");
-            return;
-        }
+            case DownloadStatus.Completed:
+                _viewModel.ReportAudioStatus(
+                    "Audible granted an unprotected audio file rather than a protected backup. It was saved as an ordinary local audio file.");
+                _viewModel.ReportDownloadSettingsStatus(
+                    "Audible supplied unprotected audio. No protected backup was created.");
+                break;
 
-        var operationCts = new CancellationTokenSource();
-        _protectedAudibleOperationCts = operationCts;
-        _viewModel.SetProtectedAudibleOperationInProgress(true);
-        var cancellationToken = operationCts.Token;
-        var phase = "initialization";
+            case DownloadStatus.Failed:
+                if (!string.IsNullOrWhiteSpace(refreshedBook.ProtectedAudioFileName))
+                {
+                    _viewModel.ReportAudioStatus(
+                        $"This download attempt failed: {completedItem.ErrorMessage ?? "check the connection and retry"}. Your previously saved protected backup ({refreshedBook.ProtectedAudioFileName}) was not removed.");
+                }
+                else
+                {
+                    _viewModel.ReportAudioStatus(
+                        completedItem.ErrorMessage ?? "Audible did not authorize this protected download. No completed file was published.");
+                }
+                _viewModel.ReportDownloadSettingsStatus("Protected download failed. No new completed file was reported.");
+                break;
 
-        try
-        {
-            _viewModel.ReportAudioStatus("Starting VØRATH offline download. Checking your saved Audible session…");
-            phase = "restoring your Audible account session";
-            _viewModel.ReportAudioStatus("Checking your saved Audible account session…");
-            var coordinator = await PlatformWidevinePlaybackCoordinatorFactory(cancellationToken);
-            if (coordinator is null)
-            {
-                _viewModel.ReportAudioStatus("Sign in to Audible again before downloading this protected audiobook.");
-                return;
-            }
+            case DownloadStatus.Downloading:
+                _viewModel.ReportAudioStatus(
+                    "Protected download is still running. Check Settings → Downloads for progress and Pause/Resume.");
+                break;
 
-            var asin = book.Id["provider:".Length..];
-            phase = "checking the offline licence";
-            _viewModel.ReportAudioStatus("Checking whether this title already has a valid offline licence…");
-            if (!await coordinator.HasOfflineLicenseAsync(asin, cancellationToken))
-            {
-                _viewModel.ReportAudioStatus("Requesting an Audible-authorized Widevine offline licence…");
-                phase = "requesting the Audible offline licence";
-                _viewModel.ReportAudioStatus("Audible is being asked to authorize offline playback for this title…");
-                await coordinator.AcquireOfflineLicenseAsync(asin, cancellationToken);
-            }
+            case DownloadStatus.Queued:
+            case DownloadStatus.Paused:
+                _viewModel.ReportAudioStatus(
+                    "Protected download is queued or paused. Open Settings → Downloads to start or resume it.");
+                break;
 
-            phase = "checking saved encrypted audio";
-            _viewModel.ReportAudioStatus("Checking VØRATH's protected offline audio cache…");
-            if (!await coordinator.HasOfflineMediaAsync(asin, cancellationToken))
-            {
-                _viewModel.ReportAudioStatus("Downloading Audible's encrypted audio into VØRATH. You can cancel here.");
-                phase = "downloading encrypted Audible audio";
-                _viewModel.ReportAudioStatus("Downloading encrypted Audible audio. Keep VØRATH open; this can take several minutes…");
-                await coordinator.DownloadOfflineMediaAsync(asin, cancellationToken);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            phase = "saving the offline status";
-            _viewModel.ReportAudioStatus("Download data received. Verifying and saving the offline status…");
-            await _viewModel.MarkWidevineOfflineAvailableAsync(book.Id, cancellationToken);
-
-            if (!startPlayback)
-            {
-                _viewModel.ReportAudioStatus("Download complete. This audiobook is saved in VØRATH and ready for offline playback.");
-                return;
-            }
-
-            phase = "starting offline playback";
-            await coordinator.PlayAsync(
-                asin,
-                book.Title,
-                _viewModel.GetResumePositionMilliseconds(book.Id),
-                cancellationToken: cancellationToken);
-
-            _playingAudiobookId = book.Id;
-            _viewModel.SetNowPlayingBook(book.Id);
-            _playbackProgressTimer.Start();
-            _playbackCheckpointTimer.Start();
-            await _viewModel.MarkPlaybackStartedAsync(book.Id);
-            BeginChapterMetadataLoad(book.Id);
-            UpdatePlaybackProgressUi();
-            _viewModel.ReportAudioStatus("Playing the saved Audible audiobook offline through Android Widevine.");
-        }
-        catch (NotSupportedException ex)
-        {
-            _viewModel.ReportAudioStatus("Audible offline download is not supported for this title/device: " + ex.Message);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            _viewModel.ReportAudioStatus("Audible offline operation cancelled. Partial encrypted segments are retained for retry.");
-        }
-        catch (Exception ex)
-        {
-            var details = new List<string>();
-            for (Exception? current = ex; current is not null && details.Count < 3; current = current.InnerException)
-            {
-                var message = current.Message?.Trim();
-                if (!string.IsNullOrWhiteSpace(message) && !details.Contains(message, StringComparer.Ordinal))
-                    details.Add(message);
-            }
-            var detail = details.Count == 0 ? ex.GetType().Name : string.Join(" → ", details);
-            if (ex is HttpRequestException { StatusCode: { } statusCode })
-                detail = $"HTTP {(int)statusCode} ({statusCode}): {detail}";
-            if (detail.Length > 500) detail = detail[..500];
-            _viewModel.ReportAudioStatus($"Audible download failed while {phase}: {detail}");
-        }
-        finally
-        {
-            if (ReferenceEquals(_protectedAudibleOperationCts, operationCts))
-                _protectedAudibleOperationCts = null;
-            _viewModel.SetProtectedAudibleOperationInProgress(false);
-            operationCts.Dispose();
+            default:
+                _viewModel.ReportAudioStatus(
+                    "No completed protected download was confirmed. Check Settings → Downloads for the current queue state.");
+                break;
         }
     }
-
-    private async Task PlayProtectedAudibleBookAsync(Audiobook book) =>
-        await RunProtectedAudibleOperationAsync(book, startPlayback: true);
 
     private void CancelProtectedAudibleOperationClicked(
         object? sender,
@@ -1845,13 +1883,36 @@ public partial class MainView : UserControl
 
     private async Task PauseDownloadQueueAsync()
     {
-        var completionTask = _downloadRunCompletion?.Task;
-        _downloadRunCts?.Cancel();
+        Task? completionTask;
+        var requestedPause = false;
+
+        await _downloadRunGate.WaitAsync();
+        try
+        {
+            completionTask = _downloadRunCompletion?.Task;
+            if (_downloadRunCts is { } running && !running.IsCancellationRequested)
+            {
+                // Cancel while holding the same gate used to reserve/clear a run.
+                // Start can no longer race with a stale or replaced CTS.
+                _downloadQueueRestartRequested = false;
+                running.Cancel();
+                requestedPause = true;
+            }
+        }
+        finally
+        {
+            _downloadRunGate.Release();
+        }
+
         if (completionTask is not null)
             await completionTask;
+
         await _viewModel.RefreshDownloadQueueAsync();
-        _viewModel.ReportDownloadSettingsStatus(
-            "Downloads paused. Partial data is saved and will resume from the retained bytes.");
+        if (requestedPause || _viewModel.QueueItems.Any(item => item.Status == DownloadStatus.Paused))
+        {
+            _viewModel.ReportDownloadSettingsStatus(
+                "Downloads paused. Partial bytes are saved and will be used when you resume.");
+        }
     }
 
     private void OpenDownloadsPageClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -1889,69 +1950,108 @@ public partial class MainView : UserControl
             _viewModel.ReportDownloadSettingsStatus("Choose a download folder in Settings before starting downloads.");
             return;
         }
-        if (_downloadRunCts is { } existingRun)
+
+        CancellationTokenSource? cancellation = null;
+        TaskCompletionSource? completion = null;
+        Task? previousCompletion = null;
+
+        // Reserve the runner before the first queue I/O. A second Start tap now
+        // sees the active runner immediately; a Pause tap can cancel it even
+        // while queue state is being refreshed.
+        await _downloadRunGate.WaitAsync();
+        try
         {
-            if (!existingRun.IsCancellationRequested)
-                return;
-            var completionTask = _downloadRunCompletion?.Task;
-            if (completionTask is not null)
-                await completionTask;
+            if (_downloadRunCts is { } existingRun)
+            {
+                if (!existingRun.IsCancellationRequested)
+                {
+                    // A caller may have enqueued an item just as the current loop
+                    // observed an empty queue. The current loop will process it if
+                    // possible; request one safe follow-up check after it exits.
+                    _downloadQueueRestartRequested = true;
+                    return;
+                }
+
+                previousCompletion = _downloadRunCompletion?.Task;
+            }
+            else
+            {
+                cancellation = new CancellationTokenSource();
+                completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _downloadRunCts = cancellation;
+                _downloadRunCompletion = completion;
+                _viewModel.SetDownloadQueueRunning(true);
+            }
+        }
+        finally
+        {
+            _downloadRunGate.Release();
         }
 
-        var queued = (await _downloadQueue.GetItemsAsync())
-            .Any(item => item.Status == DownloadStatus.Queued);
-        if (!queued)
+        // A previous paused run is still unwinding. Wait outside the gate so its
+        // finally block can clear the old run, then compete safely for a new one.
+        if (previousCompletion is not null)
         {
-            _viewModel.ReportDownloadSettingsStatus("There are no pending downloads.");
-            await _viewModel.RefreshDownloadQueueAsync();
+            await previousCompletion;
+            await StartPendingDownloadsAsync();
             return;
         }
 
-        var cancellation = new CancellationTokenSource();
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _downloadRunCts = cancellation;
-        _downloadRunCompletion = completion;
-        _viewModel.SetDownloadQueueRunning(true);
-        _viewModel.ReportDownloadSettingsStatus("Download queue started. Downloads run one at a time.");
-        PlatformDownloadNotificationStartAction?.Invoke("VØRATH · Audiobook downloads");
-        var lastNotificationBytes = 0L;
-        var lastNotificationAt = DateTimeOffset.UtcNow;
-        var lastNotificationPercent = -1;
-        var progress = new Progress<DownloadQueueProgress>(value =>
-        {
-            // Progress<T> posts to the UI context; discard callbacks that arrive
-            // after pause/completion so they cannot resurrect a stale notification.
-            if (!_viewModel.IsDownloadQueueRunning)
-                return;
-            _viewModel.ReportDownloadProgress(value);
-            var now = DateTimeOffset.UtcNow;
-            var percent = value.Percentage is { } p ? (int)Math.Clamp(Math.Round(p), 0, 100) : (int?)null;
-            // Keep the live UI responsive, but throttle Android notification IPC
-            // to at most once per second unless the visible percentage changes.
-            if (now - lastNotificationAt < TimeSpan.FromSeconds(1) &&
-                percent == lastNotificationPercent)
-                return;
-
-            var title = _viewModel.QueueItems.FirstOrDefault(item => item.AudiobookId == value.AudiobookId)?.DisplayTitle
-                ?? "Downloading audiobook";
-            var elapsed = Math.Max(0.1, (now - lastNotificationAt).TotalSeconds);
-            var speed = Math.Max(0, value.BytesReceived - lastNotificationBytes) / elapsed;
-            lastNotificationBytes = value.BytesReceived;
-            lastNotificationAt = now;
-            lastNotificationPercent = percent ?? -1;
-            var detail = value.TotalBytes is > 0
-                ? $"{value.Percentage:0}% · {FormatTransferBytes(value.BytesReceived)} of {FormatTransferBytes(value.TotalBytes.Value)} · {FormatTransferBytes((long)speed)}/s"
-                : $"{FormatTransferBytes(value.BytesReceived)} downloaded · {FormatTransferBytes((long)speed)}/s";
-            if (speed > 0 && value.TotalBytes is > 0 && value.TotalBytes.Value > value.BytesReceived)
-            {
-                var remaining = TimeSpan.FromSeconds((value.TotalBytes.Value - value.BytesReceived) / speed);
-                detail += $" · {FormatTransferEta(remaining)} left";
-            }
-            PlatformDownloadNotificationUpdateAction?.Invoke(title, detail, percent, percent is null);
-        });
+        if (cancellation is null || completion is null)
+            return;
 
         try
         {
+            var queuedItems = await _downloadQueue.GetItemsAsync(cancellation.Token);
+            foreach (var pausedItem in queuedItems.Where(item => item.Status == DownloadStatus.Paused))
+            {
+                await _downloadQueue.UpdateStatusAsync(
+                    pausedItem.AudiobookId, DownloadStatus.Queued,
+                    cancellationToken: cancellation.Token);
+            }
+
+            await _viewModel.RefreshDownloadQueueAsync(cancellation.Token);
+            queuedItems = await _downloadQueue.GetItemsAsync(cancellation.Token);
+            if (!queuedItems.Any(item => item.Status == DownloadStatus.Queued))
+            {
+                _viewModel.ReportDownloadSettingsStatus("There are no pending downloads.");
+                return;
+            }
+
+            _viewModel.ReportDownloadSettingsStatus("Download queue started. Downloads run one at a time.");
+            PlatformDownloadNotificationStartAction?.Invoke("VØRATH · Audiobook downloads");
+            var lastNotificationBytes = 0L;
+            var lastNotificationAt = DateTimeOffset.UtcNow;
+            var lastNotificationPercent = -1;
+            var progress = new Progress<DownloadQueueProgress>(value =>
+            {
+                if (!_viewModel.IsDownloadQueueRunning)
+                    return;
+                _viewModel.ReportDownloadProgress(value);
+                var now = DateTimeOffset.UtcNow;
+                var percent = value.Percentage is { } p ? (int)Math.Clamp(Math.Round(p), 0, 100) : (int?)null;
+                if (now - lastNotificationAt < TimeSpan.FromSeconds(1) &&
+                    percent == lastNotificationPercent)
+                    return;
+
+                var title = _viewModel.QueueItems.FirstOrDefault(item => item.AudiobookId == value.AudiobookId)?.DisplayTitle
+                    ?? "Downloading audiobook";
+                var elapsed = Math.Max(0.1, (now - lastNotificationAt).TotalSeconds);
+                var speed = Math.Max(0, value.BytesReceived - lastNotificationBytes) / elapsed;
+                lastNotificationBytes = value.BytesReceived;
+                lastNotificationAt = now;
+                lastNotificationPercent = percent ?? -1;
+                var detail = value.TotalBytes is > 0
+                    ? $"{value.Percentage:0}% · {FormatTransferBytes(value.BytesReceived)} of {FormatTransferBytes(value.TotalBytes.Value)} · {FormatTransferBytes((long)speed)}/s"
+                    : $"{FormatTransferBytes(value.BytesReceived)} downloaded · {FormatTransferBytes((long)speed)}/s";
+                if (speed > 0 && value.TotalBytes is > 0 && value.TotalBytes.Value > value.BytesReceived)
+                {
+                    var remaining = TimeSpan.FromSeconds((value.TotalBytes.Value - value.BytesReceived) / speed);
+                    detail += $" · {FormatTransferEta(remaining)} left";
+                }
+                PlatformDownloadNotificationUpdateAction?.Invoke(title, detail, percent, percent is null);
+            });
+
             while (await _downloadWorker.ProcessNextAsync(progress, cancellation.Token))
             {
                 await _viewModel.RefreshDownloadQueueAsync(cancellation.Token);
@@ -1960,20 +2060,20 @@ public partial class MainView : UserControl
 
             await _viewModel.RefreshDownloadQueueAsync(CancellationToken.None);
             await _viewModel.RefreshLibraryAfterDownloadAsync(CancellationToken.None);
-            var failed = (await _downloadQueue.GetItemsAsync(CancellationToken.None))
-                .Count(item => item.Status == DownloadStatus.Failed);
-            var protectedCount = (await _downloadQueue.GetItemsAsync(CancellationToken.None))
-                .Count(item => item.Status == DownloadStatus.Protected);
+            var finalItems = await _downloadQueue.GetItemsAsync(CancellationToken.None);
+            var failed = finalItems.Count(item => item.Status == DownloadStatus.Failed);
+            var protectedCount = finalItems.Count(item => item.Status == DownloadStatus.Protected);
             _viewModel.ReportDownloadSettingsStatus(failed > 0
                 ? $"{failed} download(s) failed. Check the queue for details and retry options."
                 : protectedCount > 0
-                    ? $"{protectedCount} protected file(s) downloaded. They remain DRM-protected and are not playable in VØRATH yet."
+                    ? $"{protectedCount} protected file(s) downloaded. They remain DRM-protected and are not playable in VØRATH."
                     : "All queued downloads finished successfully.");
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
             await _viewModel.RefreshDownloadQueueAsync(CancellationToken.None);
-            _viewModel.ReportDownloadSettingsStatus("Downloads paused. Any unfinished item remains queued.");
+            _viewModel.ReportDownloadSettingsStatus(
+                "Downloads paused. The active item retains its partial bytes and can be resumed.");
         }
         catch (Exception ex)
         {
@@ -1983,18 +2083,38 @@ public partial class MainView : UserControl
         finally
         {
             _viewModel.ReportDownloadProgress(null);
-            _viewModel.SetDownloadQueueRunning(false);
             if (cancellation.IsCancellationRequested)
                 PlatformDownloadNotificationPausedAction?.Invoke();
             else
                 PlatformDownloadNotificationFinishAction?.Invoke();
-            if (ReferenceEquals(_downloadRunCts, cancellation))
+
+            var restartRequested = false;
+            await _downloadRunGate.WaitAsync();
+            try
             {
-                _downloadRunCts = null;
-                _downloadRunCompletion = null;
+                if (ReferenceEquals(_downloadRunCts, cancellation))
+                {
+                    _downloadRunCts = null;
+                    _downloadRunCompletion = null;
+                    _viewModel.SetDownloadQueueRunning(false);
+                    restartRequested = _downloadQueueRestartRequested && !cancellation.IsCancellationRequested;
+                    _downloadQueueRestartRequested = false;
+                }
+                cancellation.Dispose();
+                completion.TrySetResult();
             }
-            completion.TrySetResult();
-            cancellation.Dispose();
+            finally
+            {
+                _downloadRunGate.Release();
+            }
+
+            // Close the narrow race where an item is enqueued after the worker's
+            // final empty-queue check but before this runner clears its state.
+            if (restartRequested && _downloadQueue is not null &&
+                (await _downloadQueue.GetItemsAsync()).Any(item => item.Status == DownloadStatus.Queued))
+            {
+                await StartPendingDownloadsAsync();
+            }
         }
     }
 
@@ -2047,36 +2167,29 @@ public partial class MainView : UserControl
     private async void QueueAudibleDownloadActionClicked(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is not Button { DataContext: DownloadQueueItem item } ||
-            !item.AudiobookId.StartsWith("provider:", StringComparison.Ordinal))
+            !item.AudiobookId.StartsWith("provider:", StringComparison.Ordinal) ||
+            _downloadQueue is null)
             return;
 
-        if (item.Status == DownloadStatus.Downloading)
+        // Read the persisted status rather than the possibly stale item template.
+        // The worker marks an item Downloading before its first provider/network call.
+        var currentItem = (await _downloadQueue.GetItemsAsync())
+            .FirstOrDefault(entry => entry.AudiobookId == item.AudiobookId);
+        if (currentItem is null)
+            return;
+
+        if (currentItem.Status == DownloadStatus.Downloading)
         {
-            // Audible ADRM transfers run through the shared queue worker. Pause
-            // that worker so the .part file remains available for HTTP Range resume.
-            var completionTask = _downloadRunCompletion?.Task;
-            _downloadRunCts?.Cancel();
-            if (completionTask is not null)
-                await completionTask;
-            await _viewModel.RefreshDownloadQueueAsync();
+            await PauseDownloadQueueAsync();
             _viewModel.ReportDownloadSettingsStatus(
-                "Audible ADRM download paused. Partial bytes are retained for resume.");
+                "Audible protected download paused. Partial bytes are retained for resume.");
             return;
         }
 
-        // Wait for any previous queue run to fully unwind before trying to
-        // resume. This prevents the first tap being swallowed by a stale CTS.
-        if (_downloadRunCts is { } running)
-        {
-            if (!running.IsCancellationRequested)
-                return;
-            var completion = _downloadRunCompletion?.Task;
-            if (completion is not null)
-                await completion;
-        }
-
+        // Re-enqueue a paused provider item before requesting a run. If another
+        // item is already downloading, that runner will pick this one up next.
         await _viewModel.EnqueueAudibleDownloadAsync(
-            item.AudiobookId, item.DisplayTitle ?? "Audible audiobook");
+            currentItem.AudiobookId, currentItem.DisplayTitle ?? "Audible audiobook");
         await _viewModel.RefreshDownloadQueueAsync();
         await StartPendingDownloadsAsync();
     }

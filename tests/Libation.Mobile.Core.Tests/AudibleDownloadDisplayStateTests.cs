@@ -21,15 +21,16 @@ public sealed class AudibleDownloadDisplayStateTests
             ProtectedAudioProtection = "AudibleAdrm"
         };
 
-        Assert.Equal("PROTECTED BACKUP ONLY", book.AudibleAvailabilityShortLabel);
+        Assert.Equal("STATUS UNKNOWN", book.AudibleAvailabilityShortLabel);
         Assert.Contains("not playable in a normal audio app", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("⇩  Download & play offline", book.DownloadActionLabel);
+        Assert.Equal("✓", book.DownloadActionIcon);
+        Assert.Equal("Protected backup already saved", book.DownloadActionLabel);
         Assert.DoesNotContain("Widevine", book.AudibleAvailabilityLabel, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void WidevineOfflineState_ReportsProtectedAuthorizedPlaybackNotPlainExport()
+    public void WidevineOfflineState_ReportsCachedProtectedCopyWithPlaybackDisabled()
     {
         var book = new Audiobook(
             "provider:1234567890",
@@ -42,13 +43,13 @@ public sealed class AudibleDownloadDisplayStateTests
             IsWidevineOfflineAvailable = true
         };
 
-        Assert.Equal("OFFLINE PLAYBACK READY", book.AudibleAvailabilityShortLabel);
-        Assert.Contains("authorized playback", book.AudibleAvailabilityLabel,
+        Assert.Equal("STATUS UNKNOWN", book.AudibleAvailabilityShortLabel);
+        Assert.Contains("playback is currently disabled", book.AudibleAvailabilityLabel,
             StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void UnprotectedLocalAudio_IsTheOnlyStateThatReportsReadyToPlay()
+    public void UnprotectedLocalAudio_DoesNotOverrideAudibleAvailabilityStatus()
     {
         var book = new Audiobook(
             "provider:1234567890",
@@ -58,10 +59,12 @@ public sealed class AudibleDownloadDisplayStateTests
             "1h",
             "Not started")
         {
-            AudioFilePath = "/private/example.mp3"
+            AudioFilePath = "/private/example.mp3",
+            IsPlayableOnAudible = true
         };
 
-        Assert.Equal("READY TO PLAY", book.AudibleAvailabilityShortLabel);
+        Assert.Equal("AVAILABLE", book.AudibleAvailabilityShortLabel);
+        Assert.Equal("▶", book.DownloadActionIcon);
         Assert.Equal("▶  Play", book.DownloadActionLabel);
     }
 }

@@ -2,53 +2,68 @@
   <UserControl.Resources>
     <local:CoverImageConverter x:Key="CoverImageConverter" />
     <local:CoverImageVisibilityConverter x:Key="CoverImageVisibilityConverter" />
+    <Geometry x:Key="PlayIconGeometry">M 6 3 L 20 12 L 6 21 Z</Geometry>
+    <Geometry x:Key="PlayerPlayIconGeometry">M 7.33 3 L 21.33 12 L 7.33 21 Z</Geometry>
+    <Geometry x:Key="PauseIconGeometry">M 5 4 H 9 V 20 H 5 Z M 15 4 H 19 V 20 H 15 Z</Geometry>
+    <Geometry x:Key="PreviousChapterIconGeometry">M 5 4 H 8 V 20 H 5 Z M 19 5 L 9 12 L 19 19 Z</Geometry>
+    <Geometry x:Key="NextChapterIconGeometry">M 16 4 H 19 V 20 H 16 Z M 5 5 L 15 12 L 5 19 Z</Geometry>
+    <Geometry x:Key="RewindIconGeometry">M 13 5 L 5 12 L 13 19 M 21 5 L 13 12 L 21 19</Geometry>
+    <Geometry x:Key="ForwardIconGeometry">M 11 5 L 19 12 L 11 19 M 3 5 L 11 12 L 3 19</Geometry>
+    <Geometry x:Key="CollapsePlayerIconGeometry">M 5 9 L 12 16 L 19 9</Geometry>
   </UserControl.Resources>
   <Grid RowDefinitions="*,Auto,Auto" Background="#0B0911">
     <Grid Grid.Row="0">
       <ScrollViewer>
         <StackPanel Margin="20,16,20,20" Spacing="16">
           <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Grid.Column="0" Spacing="0" IsVisible="{Binding IsHomeNavigationSelected}">
+            <StackPanel Grid.Column="0" Spacing="0" VerticalAlignment="Center" IsVisible="{Binding IsHomeBrandingVisible}">
               <TextBlock Text="VØRATH" FontSize="13" FontWeight="Bold" LetterSpacing="3" Foreground="#B9A5E8"/>
               <TextBlock Text="BEYOND THE SILENCE" FontSize="9" LetterSpacing="2" Foreground="#817494"/>
             </StackPanel>
-            <Button Grid.Column="1" Content="⌕" FontSize="28" Foreground="#B9A5E8"
-                    Background="Transparent" BorderThickness="0" Padding="4" Width="48" Height="44"
+            <Button Grid.Column="1" Background="Transparent" BorderThickness="0"
+                    Padding="0" Width="44" Height="44"
+                    VerticalAlignment="Center"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                     ToolTip.Tip="Search audiobooks" IsVisible="{Binding IsHomeTab}"
-                    Click="OpenHomeSearchClicked"/>
+                    Click="OpenHomeSearchClicked">
+              <Path Width="22" Height="22" Stretch="Uniform"
+                    Data="M 18,10 A 8,8 0,1,1 2,10 A 8,8 0,1,1 18,10 M 15.7,15.7 L 22,22"
+                    Stroke="#B9A5E8" StrokeThickness="2"
+                    StrokeLineCap="Round"/>
+            </Button>
           </Grid>
 
-          <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16">
+          <StackPanel IsVisible="{Binding IsHomeTab}" Spacing="16" Margin="0,-14,0,0">
             <Border CornerRadius="8" BorderBrush="#51416F" BorderThickness="1"
-                    Background="Transparent" Padding="0">
+                    Background="Transparent" Padding="0" Margin="0,-2,0,0">
               <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="0">
                 <Button Grid.Column="0" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowAllClicked">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="All" FontSize="10" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding AllCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                  </Grid>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="3">
+                    <TextBlock Text="All" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding AllCount}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </StackPanel>
                 </Button>
                 <Button Grid.Column="1" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowNotStartedClicked">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="Not started" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding NotStartedCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                  </Grid>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="3">
+                    <TextBlock Text="Not Started" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                    <TextBlock Text="{Binding NotStartedCount}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </StackPanel>
                 </Button>
                 <Button Grid.Column="2" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowInProgressClicked">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="In progress" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding InProgressCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                  </Grid>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="3">
+                    <TextBlock Text="In Progress" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                    <TextBlock Text="{Binding InProgressCount}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </StackPanel>
                 </Button>
                 <Button Grid.Column="3" MinWidth="0" MinHeight="40" Padding="5,4"
                         Background="Transparent" BorderThickness="0" Click="ShowFinishedClicked">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="3">
-                    <TextBlock Grid.Column="0" Text="Finished" FontSize="8" LineHeight="9" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="1" Text="{Binding FinishedCount}" FontSize="9" LineHeight="10" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
-                  </Grid>
+                  <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="3">
+                    <TextBlock Text="Finished" FontSize="9" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                    <TextBlock Text="{Binding FinishedCount}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" TextWrapping="NoWrap"/>
+                  </StackPanel>
                 </Button>
                 <Border Grid.Column="0" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
                 <Border Grid.Column="1" Width="1" HorizontalAlignment="Right" Background="#51416F" IsHitTestVisible="False"/>
@@ -86,7 +101,14 @@
                           <TextBlock Text="{Binding Length}" FontSize="11" Opacity="0.65"/>
                           <TextBlock Text="Resume from saved position" FontSize="11" Foreground="#C4B5FD"/>
                         </StackPanel>
-                        <Button Grid.Column="2" Content="▶" FontSize="18" VerticalAlignment="Center" Click="PlayAudioClicked"/>
+                        <Button Grid.Column="2" Width="40" Height="40" MinWidth="40" MinHeight="40"
+                                VerticalAlignment="Center" Padding="0"
+                                Background="Transparent" BorderThickness="0" CornerRadius="20"
+                                Foreground="#FFFFFF"
+                                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                ToolTip.Tip="Play audiobook" Click="PlayAudioClicked">
+                          <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="18" Height="18" Stretch="Uniform"/>
+                        </Button>
                       </Grid>
                     </Border>
                   </DataTemplate>
@@ -117,9 +139,21 @@
                             <TextBlock Text="{Binding ListeningStatus}" FontSize="10" FontWeight="SemiBold"/>
                           </Border>
                         </StackPanel>
-                        <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" Spacing="6">
-                          <Button Content="⋮" FontSize="22" Padding="8,4" Background="Transparent" BorderThickness="0" Click="BookOverflowClicked"/>
-                          <Button Content="▶" FontSize="20" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}"/>
+                        <StackPanel Grid.Column="2" Grid.RowSpan="2" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
+                          <Button Content="⋮" FontSize="22" Width="40" Height="40" MinWidth="40" MinHeight="40"
+                                  HorizontalAlignment="Center"
+                                  Padding="0" Background="Transparent" BorderThickness="0" CornerRadius="20"
+                                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                  Click="BookOverflowClicked"/>
+                          <Button Width="40" Height="40" MinWidth="40" MinHeight="40"
+                                  HorizontalAlignment="Center" Padding="0" Background="Transparent" BorderThickness="0" CornerRadius="20"
+                                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                  ToolTip.Tip="Play audiobook" Click="PlayAudioClicked" IsVisible="{Binding CanDelete}">
+                            <Button.RenderTransform>
+                              <TranslateTransform X="4"/>
+                            </Button.RenderTransform>
+                            <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="18" Height="18" Stretch="Uniform"/>
+                          </Button>
                           <CheckBox Content="Select" IsVisible="{Binding DataContext.IsSelectionMode, RelativeSource={RelativeSource AncestorType=UserControl}}" IsChecked="{Binding IsSelectedForBulkAction, Mode=OneWay}" Click="ToggleSelectionClicked"/>
                         </StackPanel>
                       </Grid>
@@ -182,7 +216,7 @@
             </Grid>
             <Border CornerRadius="22" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="13">
-                <Image Width="260" Height="260" HorizontalAlignment="Center" Source="{Binding DetailBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                <Image Width="260" Height="260" HorizontalAlignment="Center" Source="{Binding DetailBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="Uniform"/>
                 <TextBlock Text="{Binding DetailBook.Title}" FontSize="25" FontWeight="Bold" TextWrapping="Wrap" TextAlignment="Center"/>
                 <TextBlock Text="{Binding DetailBook.Author}" FontSize="17" TextAlignment="Center" Foreground="#C4B5FD"/>
                 <TextBlock Text="{Binding DetailBook.Narrator}" FontSize="14" TextAlignment="Center" Opacity="0.75"/>
@@ -212,7 +246,12 @@
                   <TextBlock Text="{Binding DetailBook.ListeningStatus}" FontWeight="SemiBold" FontSize="12"/>
                 </Border>
                 <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsDetailLocalBook}">
-                  <Button Grid.Column="0" Content="▶  Play audiobook" FontSize="16" Click="PlayDetailBookClicked"/>
+                  <Button Grid.Column="0" FontSize="16" Click="PlayDetailBookClicked">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
+                      <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="16" Height="16" Stretch="Uniform"/>
+                      <TextBlock Text="Play audiobook" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </Button>
                   <Button Grid.Column="1" Content="⋮" FontSize="22" Click="DetailBookMenuClicked"/>
                 </Grid>
                 <Button Content="Export playable M4B"
@@ -231,8 +270,13 @@
                                FontSize="11" Opacity="0.78" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding AudioImportStatus}" FontSize="12"
                                Foreground="#F0C6A8" TextWrapping="Wrap"/>
-                    <Button Content="▶  Play audiobook in VØRATH" HorizontalAlignment="Stretch"
-                            IsVisible="{Binding HasPlayableDetailAudio}" Click="PlayDetailBookClicked"/>
+                    <Button HorizontalAlignment="Stretch" IsVisible="{Binding HasPlayableDetailAudio}"
+                            Click="PlayDetailBookClicked">
+                      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
+                        <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="16" Height="16" Stretch="Uniform"/>
+                        <TextBlock Text="Play audiobook in VØRATH" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
                     <Button Content="Export playable M4B"
                             IsVisible="{Binding CanExportDetailM4b}"
                             HorizontalAlignment="Stretch"
@@ -359,11 +403,15 @@
                           </StackPanel>
                         </Grid>
                       </Button>
-                      <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <Button Content="{Binding DownloadActionLabel}" FontSize="10" Padding="7,8"
+                      <StackPanel Grid.Column="2" Width="96" Spacing="4"
+                                  VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <Button Content="{Binding DownloadActionIcon}" FontSize="22" Padding="8,6"
+                                Width="48" Height="48" HorizontalAlignment="Center"
+                                ToolTip.Tip="{Binding DownloadActionLabel}"
                                 Click="DownloadAudibleBookClicked"/>
-                        <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" FontSize="8" LetterSpacing="0.3"
-                                   Foreground="#B9A5E8" TextAlignment="Center" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding AudibleAvailabilityShortLabel}" Width="96"
+                                   FontSize="8" LetterSpacing="0.3" Foreground="#B9A5E8"
+                                   TextAlignment="Center" TextWrapping="NoWrap"/>
                       </StackPanel>
                     </Grid>
                   </Border>
@@ -423,53 +471,11 @@
                          VerticalAlignment="Center"/>
             </Grid>
             <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
-              <StackPanel Spacing="11">
-                <TextBlock Text="Download settings" FontSize="19" FontWeight="Bold"/>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="Download directory" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding DownloadDirectoryLabel}" FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
-                  </StackPanel>
-                  <Button Grid.Column="1" Content="Choose folder" Padding="12,9"
-                          VerticalAlignment="Center" Click="ChooseDownloadFolderClicked"/>
-                </Grid>
-                <TextBlock Text="Android will remember the folder permission. You can change it at any time."
-                           FontSize="11" Opacity="0.62" TextWrapping="Wrap"/>
-                <Border Height="1" Background="#40324F" Margin="0,2"/>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="File organization" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding DownloadFolderOrganizationLabel}" FontSize="12" Foreground="#C4B5FD"/>
-                  </StackPanel>
-                  <Button Grid.Column="1" Content="Change" Padding="16,9"
-                          VerticalAlignment="Center" Click="CycleDownloadFolderOrganizationClicked"/>
-                </Grid>
-                <TextBlock Text="{Binding DownloadFolderOrganizationExample}" FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
-                <Border Height="1" Background="#40324F" Margin="0,2"/>
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
-                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
-                    <TextBlock Text="Audible download quality" FontSize="14" FontWeight="SemiBold"/>
-                    <TextBlock Text="{Binding AudibleDownloadQualityLabel}" FontSize="12" Foreground="#C4B5FD"/>
-                  </StackPanel>
-                  <Button Grid.Column="1" Content="Change" Padding="16,9"
-                          VerticalAlignment="Center" Click="CycleAudibleDownloadQualityClicked"/>
-                </Grid>
-                <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
-                <TextBlock Text="Audible downloads remain encrypted and protected. Unprotected audio is saved to the selected folder."
-                           FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
-              </StackPanel>
-            </Border>
-            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="12">
                 <TextBlock Text="Download queue" FontSize="21" FontWeight="Bold"/>
                 <TextBlock Text="{Binding QueueSummaryLabel}" FontSize="12" Opacity="0.72" TextWrapping="Wrap"/>
                 <Button Content="{Binding DownloadQueueActionLabel}" HorizontalAlignment="Stretch"
                         Padding="14,11" Click="DownloadQueueActionClicked"/>
-                <StackPanel Spacing="5" IsVisible="{Binding HasActiveDownloadProgress}">
-                  <TextBlock Text="{Binding ActiveDownloadProgressTitle}" FontSize="13" FontWeight="SemiBold"/>
-                  <ProgressBar Minimum="0" Maximum="100" Value="{Binding ActiveDownloadProgressPercent}" Height="7"/>
-                  <TextBlock Text="{Binding ActiveDownloadProgressLabel}" FontSize="11" Opacity="0.72"/>
-                </StackPanel>
                 <TextBlock Text="No downloads yet. Start a download from an audiobook’s details page."
                            FontSize="12" Opacity="0.65" IsVisible="{Binding IsQueueEmpty}"/>
                 <ItemsControl ItemsSource="{Binding QueueItems}">
@@ -506,32 +512,97 @@
                 </ItemsControl>
               </StackPanel>
             </Border>
+            <Border CornerRadius="16" Padding="16" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
+              <StackPanel Spacing="11">
+                <TextBlock Text="Download settings" FontSize="19" FontWeight="Bold"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="Download directory" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadDirectoryLabel}" FontSize="12" Opacity="0.78" TextWrapping="Wrap"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Choose folder" Padding="12,9"
+                          VerticalAlignment="Center" Click="ChooseDownloadFolderClicked"/>
+                </Grid>
+                <TextBlock Text="Android will remember the folder permission. You can change it at any time."
+                           FontSize="11" Opacity="0.62" TextWrapping="Wrap"/>
+                <Border Height="1" Background="#40324F" Margin="0,2"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="File organization" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding DownloadFolderOrganizationLabel}" FontSize="12" Foreground="#C4B5FD"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Change" Padding="16,9"
+                          VerticalAlignment="Center" Click="CycleDownloadFolderOrganizationClicked"/>
+                </Grid>
+                <TextBlock Text="{Binding DownloadFolderOrganizationExample}" FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+                <Border Height="1" Background="#40324F" Margin="0,2"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                  <StackPanel Grid.Column="0" Spacing="3" VerticalAlignment="Center">
+                    <TextBlock Text="Audible download quality" FontSize="14" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding AudibleDownloadQualityLabel}" FontSize="12" Foreground="#C4B5FD"/>
+                  </StackPanel>
+                  <Button Grid.Column="1" Content="Change" Padding="16,9"
+                          VerticalAlignment="Center" Click="CycleAudibleDownloadQualityClicked"/>
+                </Grid>
+                <TextBlock Text="{Binding DownloadSettingsStatus}" FontSize="11" Foreground="#B9A5E8" TextWrapping="Wrap"/>
+                <TextBlock Text="Audible downloads remain encrypted and protected. Unprotected audio is saved to the selected folder."
+                           FontSize="11" Opacity="0.68" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
           </StackPanel>
 
           <StackPanel IsVisible="{Binding IsFullPlayerVisible}" Spacing="14">
-            <Grid ColumnDefinitions="*,Auto">
-              <Button Grid.Column="0" Content="‹  Back" HorizontalAlignment="Left" Click="CloseFullPlayerClicked"/>
-              <Button Grid.Column="1" Content="☷  Chapters" Click="OpenChaptersClicked"/>
-            </Grid>
             <Border CornerRadius="24" Padding="18" Background="#171321" BorderBrush="#51416F" BorderThickness="1">
               <StackPanel Spacing="14">
-                <Image Width="320" Height="320" HorizontalAlignment="Center" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
+                <Grid Width="320" Height="320" HorizontalAlignment="Center">
+                  <Image Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="Uniform"/>
+                  <Button Width="44" Height="44" MinWidth="44" MinHeight="44" Padding="0"
+                          HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8"
+                          Background="Transparent" BorderThickness="0" CornerRadius="0"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                          ToolTip.Tip="Collapse player" Click="CloseFullPlayerClicked">
+                    <Path Data="{StaticResource CollapsePlayerIconGeometry}" Stroke="#FFFFFF" StrokeThickness="2.4"
+                          StrokeLineCap="Round" Width="22" Height="22" Stretch="Uniform"/>
+                  </Button>
+                </Grid>
                 <TextBlock Text="{Binding NowPlayingBook.Title}" FontSize="24" FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="16" TextAlignment="Center" Opacity="0.7"/>
                 <TextBlock x:Name="CurrentChapterTitleLabel" Text="Ready when you are" FontSize="14" TextAlignment="Center" Foreground="#D8C7FF" TextWrapping="Wrap"/>
                 <TextBlock x:Name="ChapterProgressLabel" Text="{Binding NowPlayingChapterCountLabel}" FontSize="12" TextAlignment="Center" Opacity="0.65"/>
-                <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0" IsEnabled="False"/>
+                <Slider x:Name="PlaybackSeekSlider" Minimum="0" Maximum="1000" Value="0"
+                        IsEnabled="False" MinHeight="36" Foreground="#FFFFFF"
+                        IsSnapToTickEnabled="False" TickFrequency="0"/>
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
-                  <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="11" HorizontalAlignment="Left"/>
-                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="11" HorizontalAlignment="Center"/>
-                  <TextBlock x:Name="PlaybackRemainingLabel" Grid.Column="2" Text="−--:--" FontSize="11" HorizontalAlignment="Right"/>
+                  <TextBlock x:Name="PlaybackPositionLabel" Grid.Column="0" Text="00:00" FontSize="11" Foreground="#FFFFFF" HorizontalAlignment="Left"/>
+                  <TextBlock x:Name="PlaybackDurationLabel" Grid.Column="1" Text="--:--" FontSize="11" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
+                  <TextBlock x:Name="PlaybackRemainingLabel" Grid.Column="2" Text="−--:--" FontSize="11" Foreground="#FFFFFF" HorizontalAlignment="Right"/>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="3">
-                  <Button Grid.Column="0" Content="⏮" FontSize="22" Click="PreviousChapterClicked"/>
-                  <Button Grid.Column="1" Content="↶" FontSize="22" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked"/>
-                  <Button x:Name="PlayPauseButton" Grid.Column="2" Content="▶" FontSize="25" Click="TogglePlaybackClicked"/>
-                  <Button Grid.Column="3" Content="↷" FontSize="22" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked"/>
-                  <Button Grid.Column="4" Content="⏭" FontSize="22" Click="NextChapterClicked"/>
+                  <Button Grid.Column="0" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Previous chapter" Click="PreviousChapterClicked">
+                    <Path Data="{StaticResource PreviousChapterIconGeometry}" Fill="#FFFFFF" Width="22" Height="22" Stretch="Uniform"/>
+                  </Button>
+                  <Button Grid.Column="1" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Rewind 10 seconds" Click="RewindAudioClicked">
+                    <Path Data="{StaticResource RewindIconGeometry}" Stroke="#FFFFFF" StrokeThickness="2.2"
+                          StrokeLineCap="Round" Width="22" Height="22" Stretch="Uniform"/>
+                  </Button>
+                  <Button x:Name="PlayPauseButton" Grid.Column="2" Width="56" Height="56" MinWidth="56" MinHeight="56" Padding="0"
+                          Foreground="#FFFFFF" Background="Transparent" BorderBrush="#FFFFFF" BorderThickness="1" CornerRadius="28"
+                          HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                          Click="TogglePlaybackClicked">
+                    <Path Data="{StaticResource PlayerPlayIconGeometry}" Fill="#FFFFFF" Width="22" Height="22" Stretch="Uniform"
+                          HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Path.RenderTransform>
+                      <TranslateTransform X="3"/>
+                    </Path.RenderTransform>
+                  </Path>
+                  </Button>
+                  <Button Grid.Column="3" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Forward 10 seconds" Click="ForwardAudioClicked">
+                    <Path Data="{StaticResource ForwardIconGeometry}" Stroke="#FFFFFF" StrokeThickness="2.2"
+                          StrokeLineCap="Round" Width="22" Height="22" Stretch="Uniform"/>
+                  </Button>
+                  <Button Grid.Column="4" Foreground="#FFFFFF" Background="Transparent" BorderThickness="0" ToolTip.Tip="Next chapter" Click="NextChapterClicked">
+                    <Path Data="{StaticResource NextChapterIconGeometry}" Fill="#FFFFFF" Width="22" Height="22" Stretch="Uniform"/>
+                  </Button>
                 </Grid>
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
                   <Button x:Name="PlaybackSpeedButton" Grid.Column="0" Content="Speed · 1.0×" Click="PlaybackSpeedClicked"/>
@@ -578,7 +649,7 @@
     </Grid>
 
     <Border Grid.Row="1" Background="#181421" BorderBrush="#51416F" BorderThickness="1,1,1,0"
-            Padding="10,8" IsVisible="{Binding HasNowPlayingBook}">
+            Padding="10,8" IsVisible="{Binding HasMiniPlayer}">
       <Grid ColumnDefinitions="52,*,Auto,Auto" ColumnSpacing="9">
         <Button Grid.Column="0" Padding="0" Background="Transparent" BorderThickness="0" Click="OpenFullPlayerClicked">
           <Image Width="48" Height="48" Source="{Binding NowPlayingBook.CoverImagePath, Converter={StaticResource CoverImageConverter}}" Stretch="UniformToFill"/>
@@ -589,8 +660,23 @@
             <TextBlock Text="{Binding NowPlayingBook.Author}" FontSize="10" Opacity="0.65" MaxLines="1"/>
           </StackPanel>
         </Button>
-        <Button x:Name="MiniRewindButton" Grid.Column="2" Content="↶" FontSize="20" ToolTip.Tip="Rewind 10 seconds" Padding="8" Click="RewindAudioClicked"/>
-        <Button x:Name="MiniPlayPauseButton" Grid.Column="3" Content="▶" FontSize="20" Padding="10" Click="TogglePlaybackClicked"/>
+        <Button x:Name="MiniRewindButton" Grid.Column="2" Foreground="#FFFFFF" ToolTip.Tip="Rewind 10 seconds"
+                Background="Transparent" BorderThickness="0" Padding="8" Click="RewindAudioClicked">
+          <Path Data="{StaticResource RewindIconGeometry}" Stroke="#FFFFFF" StrokeThickness="2.2"
+                StrokeLineCap="Round" Width="20" Height="20" Stretch="Uniform"/>
+        </Button>
+        <Button x:Name="MiniPlayPauseButton" Grid.Column="3"
+                Width="44" Height="44" MinWidth="44" MinHeight="44" Padding="0"
+                Foreground="#FFFFFF" Background="Transparent" BorderBrush="#FFFFFF" BorderThickness="1" CornerRadius="22"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                Click="TogglePlaybackClicked">
+          <Path Data="{StaticResource PlayerPlayIconGeometry}" Fill="#FFFFFF" Width="18" Height="18" Stretch="Uniform"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Path.RenderTransform>
+              <TranslateTransform X="3"/>
+            </Path.RenderTransform>
+          </Path>
+        </Button>
       </Grid>
     </Border>
 
@@ -598,7 +684,12 @@
             <Border Background="#211A2D" CornerRadius="22" Padding="20" VerticalAlignment="Bottom" Margin="8" BorderBrush="#69568D" BorderThickness="1">
               <StackPanel Spacing="10">
                 <TextBlock Text="{Binding MenuBook.Title}" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"/>
-                <Button Content="▶  Play" HorizontalContentAlignment="Left" Click="PlayMenuBookClicked"/>
+                <Button HorizontalContentAlignment="Left" Click="PlayMenuBookClicked">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Path Data="{StaticResource PlayIconGeometry}" Fill="#FFFFFF" Width="16" Height="16" Stretch="Uniform"/>
+                    <TextBlock Text="Play" VerticalAlignment="Center"/>
+                  </StackPanel>
+                </Button>
                 <Button Content="Edit" HorizontalContentAlignment="Left" Click="EditImportedBookClicked"/>
                 <Button Content="Info" HorizontalContentAlignment="Left" Click="BookInfoClicked"/>
                 <Button Content="Remove" Foreground="#FF7B83" HorizontalContentAlignment="Left" Click="RemoveImportedBookClicked"/>

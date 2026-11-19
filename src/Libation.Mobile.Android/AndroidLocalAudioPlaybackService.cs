@@ -20,6 +20,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public const string ActionPlayWidevineDash = "org.libationmobile.app.action.PLAY_WIDEVINE_DASH";
     public const string ActionPause = "org.libationmobile.app.action.PAUSE";
     public const string ActionResume = "org.libationmobile.app.action.RESUME";
+    public const string ActionDismissNotification = "org.libationmobile.app.action.DISMISS_NOTIFICATION";
     public const string ActionSeek = "org.libationmobile.app.action.SEEK";
     public const string ActionRewind = "org.libationmobile.app.action.REWIND";
     public const string ActionForward = "org.libationmobile.app.action.FORWARD";
@@ -54,6 +55,10 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     private string _title = "Audiobook";
     private string? _currentFilePath;
     private bool _isWidevinePlayback;
+    private bool _completionPublished;
+    private int _lastStartId;
+    private bool _notificationDismissed = true;
+    private bool _isForeground;
     private string? _widevineAsin;
     private string? _coverImagePath;
     private Bitmap? _coverBitmap;
@@ -67,6 +72,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public static AndroidLocalAudioPlaybackService? Current { get; private set; }
     public static event Action? PlaybackStateChanged;
+    public static event Action<string, long>? LocalAudioPlaybackCompleted;
     public static event Action<string>? WidevinePlaybackReady;
     public static event Action<string, string>? WidevinePlaybackFailed;
     public static bool HasActivePlayer => Current?._player is not null;
@@ -156,6 +162,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
     {
+        _lastStartId = startId;
         var requestedAction = intent?.Action;
         var requestedAsin = intent?.GetStringExtra(ExtraWidevineAsin);
         try
@@ -174,9 +181,26 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
                     UpdateNotification();
                     break;
                 case ActionResume:
-                    if (_player is not null && !_player.IsPlaying) _player.Play();
+                    _notificationDismissed = false;
+                    if (_player is null)
+                    {
+                        RestoreSavedPlayback(forceAutoPlay: true);
+                    }
+                    else
+                    {
+                        if (!_player.IsPlaying)
+                        {
+                            PromoteToForeground(BuildNotification());
+                            _player.Play();
+                        }
+                    }
                     SavePlaybackSnapshot();
                     UpdateNotification();
+                    break;
+                case ActionDismissNotification:
+                    // A user swipe only dismisses the notification; it must
+                    // not stop the player or clear the saved resume position.
+                    DismissPlaybackNotification();
                     break;
                 case ActionSeek:
                     if (_player is not null)
@@ -247,6 +271,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
             throw new FileNotFoundException("Audiobook audio file was not found.", path);
 
+        DismissPlaybackNotification();
         StopPlayer();
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
@@ -255,13 +280,16 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _widevineAsin = null;
         _currentFilePath = path;
         _isWidevinePlayback = false;
+        _completionPublished = false;
+        _chapterPositions = [];
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
+        _notificationDismissed = false;
 
         // Android requires a service started with startForegroundService() to
         // promote itself promptly. MediaPlayer.Prepare() can block while a
         // large local audiobook is inspected, so promote before preparing it.
-        StartForeground(NotificationId, BuildNotification());
+        PromoteToForeground(BuildNotification());
 
         _player = new ExoPlayerBuilder(this).Build();
         _player.AddListener(this);
@@ -312,6 +340,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             throw new InvalidDataException("The saved Audible content-version cache reference is invalid.");
         intent.RemoveExtra(ExtraWidevineContentVersionKey);
 
+        DismissPlaybackNotification();
         StopPlayer();
         _title = intent.GetStringExtra(ExtraTitle);
         if (string.IsNullOrWhiteSpace(_title))
@@ -320,10 +349,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         _currentFilePath = null; // Protected media is never represented as a clear local file.
         _widevineAsin = asin;
         _isWidevinePlayback = true;
+        _chapterPositions = [];
         SetArtwork(intent.GetStringExtra(ExtraArtworkPath));
         _playbackSpeed = 1f;
+        _notificationDismissed = false;
 
-        StartForeground(NotificationId, BuildNotification());
+        PromoteToForeground(BuildNotification());
 
         MediaItem mediaItem;
         try
@@ -397,8 +428,21 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
         if (playbackState == 4) // Player.STATE_ENDED
         {
+            // Only a natural end of a clear local file marks the catalogue title
+            // Finished. Explicit Stop, decoder errors and protected Audible
+            // playback must never be interpreted as successful completion.
+            if (!_isWidevinePlayback && !_completionPublished &&
+                !string.IsNullOrWhiteSpace(_currentFilePath))
+            {
+                _completionPublished = true;
+                PublishLocalAudioPlaybackCompleted(_currentFilePath, ReadDuration());
+            }
+
             StopPlayback();
-            StopSelf();
+            // Do not let a delayed stop request for this completed start ID
+            // terminate a newer replay command delivered to the same service.
+            StopSelf(_lastStartId);
+            PublishPlaybackState();
             return;
         }
 
@@ -425,7 +469,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         // releasing ExoPlayer so the user can retry after reopening the app.
         SavePlaybackSnapshot();
         StopPlayback(clearRecovery: false);
-        StopSelf();
+        StopSelf(_lastStartId);
         PublishPlaybackState();
     }
 
@@ -471,7 +515,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
     public void OnTracksChanged(Tracks? tracks) { }
     public void OnVideoSizeChanged(VideoSize? size) { }
 
-    private void RestoreSavedPlayback()
+    private void RestoreSavedPlayback(bool forceAutoPlay = false)
     {
         var snapshot = PlaybackRecoveryStore.Load(this);
         if (snapshot is null) return;
@@ -487,7 +531,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         intent.PutExtra(ExtraArtworkPath, snapshot.CoverImagePath);
         intent.PutExtra(ExtraPosition, snapshot.PositionMilliseconds);
         intent.PutExtra(ExtraSpeed, snapshot.PlaybackSpeed);
-        intent.PutExtra(ExtraAutoPlay, snapshot.WasPlaying);
+        intent.PutExtra(ExtraAutoPlay, forceAutoPlay || snapshot.WasPlaying);
         StartPlayback(intent);
     }
 
@@ -633,8 +677,18 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             ? global::Android.Resource.Drawable.IcMediaPause
             : global::Android.Resource.Drawable.IcMediaPlay;
         var controlIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService)).SetAction(action);
-        var controlPendingIntent = PendingIntent.GetService(
-            this, 4103, controlIntent,
+        var controlPendingIntent = !isPlaying && Build.VERSION.SdkInt >= BuildVersionCodes.O
+            ? PendingIntent.GetForegroundService(
+                this, 4103, controlIntent,
+                PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable)
+            : PendingIntent.GetService(
+                this, 4103, controlIntent,
+                PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
+
+        var dismissIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService))
+            .SetAction(ActionDismissNotification);
+        var dismissPendingIntent = PendingIntent.GetService(
+            this, 4108, dismissIntent,
             PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
         var previousIntent = new Intent(this, typeof(AndroidLocalAudioPlaybackService)).SetAction(ActionPreviousChapter);
@@ -660,6 +714,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
             .SetSubText("VØRATH")
             .SetContentText(FormatChapterProgressText())
             .SetContentIntent(contentPendingIntent)
+            .SetDeleteIntent(dismissPendingIntent)
             .SetOngoing(_player?.IsPlaying == true)
             .SetOnlyAlertOnce(true)
             .AddAction(global::Android.Resource.Drawable.IcMediaPrevious, "Previous chapter", previousPendingIntent)
@@ -711,6 +766,12 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         catch (Exception) { /* UI observers must never interrupt playback or notification updates. */ }
     }
 
+    private static void PublishLocalAudioPlaybackCompleted(string filePath, long durationMilliseconds)
+    {
+        try { LocalAudioPlaybackCompleted?.Invoke(filePath, Math.Max(0, durationMilliseconds)); }
+        catch (Exception) { /* Catalogue observers must never interrupt player teardown. */ }
+    }
+
     private static void PublishWidevinePlaybackReady(string asin)
     {
         try { WidevinePlaybackReady?.Invoke(asin); }
@@ -730,8 +791,49 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void UpdateNotification()
     {
+        // The periodic ticker must not recreate a notification after the user
+        // dismisses it or after the player has already been released.
+        if (_notificationDismissed || _player is null)
+            return;
+
+        var notification = BuildNotification();
         var manager = (NotificationManager?)GetSystemService(NotificationService);
-        manager?.Notify(NotificationId, BuildNotification());
+        if (_player.IsPlaying)
+        {
+            if (!_isForeground)
+                PromoteToForeground(notification);
+            else
+                manager?.Notify(NotificationId, notification);
+            return;
+        }
+
+        // A paused session no longer needs foreground-service priority. Detach
+        // the notification so Android allows the user to swipe it away; the
+        // DeleteIntent below records that dismissal to stop the ticker restoring it.
+        if (_isForeground)
+        {
+            StopForeground(StopForegroundFlags.Detach);
+            _isForeground = false;
+        }
+        manager?.Notify(NotificationId, notification);
+    }
+
+    private void PromoteToForeground(Notification notification)
+    {
+        StartForeground(NotificationId, notification);
+        _isForeground = true;
+    }
+
+    private void DismissPlaybackNotification()
+    {
+        _notificationDismissed = true;
+
+        // Remove the notification without touching ExoPlayer. This is used both
+        // for normal teardown and for the user-initiated DeleteIntent while paused.
+        StopForeground(StopForegroundFlags.Remove);
+        _isForeground = false;
+        var manager = (NotificationManager?)GetSystemService(NotificationService);
+        manager?.Cancel(NotificationId);
     }
 
     private long ReadPosition()
@@ -758,6 +860,7 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
 
     private void StopPlayback(bool clearRecovery = true)
     {
+        DismissPlaybackNotification();
         StopPlayer();
         if (clearRecovery)
         {
@@ -766,7 +869,6 @@ public sealed class AndroidLocalAudioPlaybackService : Service, IPlayerListener
         }
         _isWidevinePlayback = false;
         _widevineAsin = null;
-        StopForeground(StopForegroundFlags.Remove);
     }
 
     public override IBinder? OnBind(Intent? intent) => null;
